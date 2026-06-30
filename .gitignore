@@ -1,0 +1,15 @@
+# Byte-compiled / native-compiled artifacts
+*.elc
+*.eln
+eln-cache/
+
+# Package build / lint working files
+/dist/
+.package-lint/
+
+# Editor / OS noise
+*~
+\#*\#
+.\#*
+.DS_Store
+.llm/
