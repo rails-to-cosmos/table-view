@@ -278,9 +278,9 @@
 
 ;;; Navigation (f/b)
 
-(defun tv-test--row-id-at-point ()
-  "Id of the data row point is on, or nil."
-  (get-text-property (point) 'table-view-id))
+(defun tv-test--col-at-point ()
+  "Column key of the cell point is on, or nil."
+  (get-text-property (point) 'table-view-col))
 
 (ert-deftest tv-test-on-row-p ()
   (tv-test--with-table
@@ -289,51 +289,65 @@
     (table-view--goto-id "a")
     (should (table-view--on-row-p))))
 
-(ert-deftest tv-test-forward-row ()
+(ert-deftest tv-test-cells-tagged-with-column ()
+  (tv-test--with-table
+    (table-view--goto-id "a")           ; point at the row's leading "|"
+    (goto-char (+ (point) 2))           ; into the first cell, past "| "
+    (should (equal (tv-test--col-at-point) "name"))))
+
+(ert-deftest tv-test-forward-column ()
+  (tv-test--with-table
+    (table-view--goto-id "a")           ; point at the row's leading "|"
+    (table-view-forward-column)
+    (should (equal (tv-test--col-at-point) "name"))
+    (table-view-forward-column)
+    (should (equal (tv-test--col-at-point) "count"))
+    (table-view-forward-column)
+    (should (equal (tv-test--col-at-point) "status"))))
+
+(ert-deftest tv-test-backward-column ()
   (tv-test--with-table
     (table-view--goto-id "a")
-    (table-view-forward-row)
-    (should (equal (tv-test--row-id-at-point) "b"))
-    (table-view-forward-row)
-    (should (equal (tv-test--row-id-at-point) "c"))))
+    (table-view-forward-column 3)       ; status
+    (should (equal (tv-test--col-at-point) "status"))
+    (table-view-backward-column)
+    (should (equal (tv-test--col-at-point) "count"))
+    (table-view-backward-column)
+    (should (equal (tv-test--col-at-point) "name"))))
 
-(ert-deftest tv-test-backward-row ()
-  (tv-test--with-table
-    (table-view--goto-id "c")
-    (table-view-backward-row)
-    (should (equal (tv-test--row-id-at-point) "b"))
-    (table-view-backward-row)
-    (should (equal (tv-test--row-id-at-point) "a"))))
-
-(ert-deftest tv-test-forward-row-count ()
+(ert-deftest tv-test-forward-column-count ()
   (tv-test--with-table
     (table-view--goto-id "a")
-    (table-view-forward-row 2)
-    (should (equal (tv-test--row-id-at-point) "c"))))
+    (table-view-forward-column 2)
+    (should (equal (tv-test--col-at-point) "count"))))
 
-(ert-deftest tv-test-forward-row-stops-at-last ()
-  (tv-test--with-table
-    (table-view--goto-id "c")
-    (table-view-forward-row)
-    (should (equal (tv-test--row-id-at-point) "c"))))
-
-(ert-deftest tv-test-backward-row-stops-at-first ()
+(ert-deftest tv-test-forward-column-stops-at-last ()
   (tv-test--with-table
     (table-view--goto-id "a")
-    (table-view-backward-row)
-    (should (equal (tv-test--row-id-at-point) "a"))))
+    (table-view-forward-column 9)       ; well past the last cell
+    (should (equal (tv-test--col-at-point) "status"))))
 
-(ert-deftest tv-test-forward-on-row-moves-by-row ()
+(ert-deftest tv-test-backward-column-stops-at-first ()
+  (tv-test--with-table
+    (table-view--goto-id "a")
+    (table-view-forward-column)         ; name (first cell)
+    (table-view-backward-column)        ; no move
+    (should (equal (tv-test--col-at-point) "name"))))
+
+(ert-deftest tv-test-forward-on-row-moves-by-column ()
   (tv-test--with-table
     (table-view--goto-id "a")
     (call-interactively #'table-view-forward)
-    (should (equal (tv-test--row-id-at-point) "b"))))
+    (should (equal (tv-test--col-at-point) "name"))
+    (call-interactively #'table-view-forward)
+    (should (equal (tv-test--col-at-point) "count"))))
 
-(ert-deftest tv-test-backward-on-row-moves-by-row ()
+(ert-deftest tv-test-backward-on-row-moves-by-column ()
   (tv-test--with-table
-    (table-view--goto-id "b")
+    (table-view--goto-id "a")
+    (table-view-forward-column 2)       ; count
     (call-interactively #'table-view-backward)
-    (should (equal (tv-test--row-id-at-point) "a"))))
+    (should (equal (tv-test--col-at-point) "name"))))
 
 (ert-deftest tv-test-forward-off-row-moves-by-char ()
   (tv-test--with-table

@@ -105,7 +105,7 @@ Open one and `M-x eval-buffer`.
 | Key | Action |
 |-----|--------|
 | `n` / `p` | next / previous line |
-| `f` / `b` | forward / backward — by **row** when point is on the table, by **char** elsewhere |
+| `f` / `b` | forward / backward — by **column** (cell) when point is on the table, by **char** elsewhere |
 | `^` | cycle sort column |
 | `~` | toggle sort direction |
 | `g` | clear filter & refresh, preserving the current sort order |

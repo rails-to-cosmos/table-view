@@ -57,7 +57,7 @@
 ;;   ~   — toggle sort direction
 ;;   /   — filter rows by substring
 ;;   n/p — next/previous line
-;;   f/b — forward/backward: by row on the table, by char elsewhere
+;;   f/b — forward/backward: by column on the table, by char elsewhere
 ;;   q   — quit
 
 ;;; Code:
@@ -191,7 +191,9 @@ place without moving it."
       (concat s (make-string gap ?\s)))))
 
 (defun table-view--cell-string (col row widths)
-  "Return the padded, possibly coloured cell string for COL in ROW."
+  "Return the padded, possibly coloured cell string for COL in ROW.
+The whole cell carries the `table-view-col' text property (its column
+key) so column navigation can locate cell boundaries."
   (let* ((key (alist-get 'key col))
          (val (table-view--cell row key))
          (s (table-view--str val)))
@@ -199,7 +201,9 @@ place without moving it."
       (let ((color (table-view--badge-color col s)))
         (when color
           (setq s (propertize s 'face (list :foreground color :weight 'bold))))))
-    (table-view--pad s (alist-get key widths nil nil #'equal) (alist-get 'align col))))
+    (propertize
+     (table-view--pad s (alist-get key widths nil nil #'equal) (alist-get 'align col))
+     'table-view-col key)))
 
 (defun table-view--row-string (spec row widths cell-fn)
   "Build one \"| ... |\" line for ROW, each cell via CELL-FN."
@@ -304,41 +308,63 @@ stamps on each row line, so it ignores the title, hint, header, and
 rule lines (and any \"(no rows)\" placeholder)."
   (get-text-property (or pos (point)) 'table-view-row))
 
-(defun table-view-forward-row (&optional n)
-  "Move to the start of the Nth following data row (default 1).
-With a negative N move backward.  Stops at the table edges instead of
-leaving the rows, and never signals."
-  (interactive "p")
-  (let* ((n (or n 1))
-         (step (if (< n 0) -1 1)))
-    (dotimes (_ (abs n))
-      (let ((dest (save-excursion
-                    (forward-line step)
-                    (and (table-view--on-row-p) (point)))))
-        (when dest (goto-char dest))))))
+(defun table-view--cell-starts ()
+  "Buffer positions where each cell begins on the current line, left to right.
+Cells are the regions the renderer tags with the `table-view-col' text
+property; the bordering \"|\" separators are not tagged."
+  (let* ((eol (line-end-position))
+         (pos (line-beginning-position))
+         (starts '()))
+    (while (< pos eol)
+      (let ((next (or (next-single-property-change pos 'table-view-col nil eol) eol)))
+        (when (get-text-property pos 'table-view-col)
+          (push pos starts))
+        (setq pos next)))
+    (nreverse starts)))
 
-(defun table-view-backward-row (&optional n)
-  "Move to the start of the Nth preceding data row (default 1).
-See `table-view-forward-row'."
+(defun table-view--goto-column (dir)
+  "Move to the start of the adjacent cell in DIR (1 forward, -1 backward).
+Return non-nil when point actually moves."
+  (let* ((starts (table-view--cell-starts))
+         (pt (point))
+         (target (if (> dir 0)
+                     (seq-find (lambda (s) (> s pt)) starts)
+                   (seq-find (lambda (s) (< s pt)) (reverse starts)))))
+    (when target
+      (goto-char target)
+      t)))
+
+(defun table-view-forward-column (&optional n)
+  "Move to the start of the Nth following cell on the current row (default 1).
+With a negative N move backward.  Stops at the row's first or last cell
+instead of leaving it, and never signals."
   (interactive "p")
-  (table-view-forward-row (- (or n 1))))
+  (let ((dir (if (< (or n 1) 0) -1 1)))
+    (dotimes (_ (abs (or n 1)))
+      (table-view--goto-column dir))))
+
+(defun table-view-backward-column (&optional n)
+  "Move to the start of the Nth preceding cell on the current row (default 1).
+See `table-view-forward-column'."
+  (interactive "p")
+  (table-view-forward-column (- (or n 1))))
 
 (defun table-view-forward (&optional n)
-  "Move forward N times, by row on the table and by character elsewhere.
-On a data row this steps over whole rows; off the table it falls back
-to `forward-char'."
+  "Move forward N times, by table column on a row and by character elsewhere.
+On a data row this steps between cells; off the table it falls back to
+`forward-char'."
   (interactive "p")
   (if (table-view--on-row-p)
-      (table-view-forward-row n)
+      (table-view-forward-column n)
     (forward-char n)))
 
 (defun table-view-backward (&optional n)
-  "Move backward N times, by row on the table and by character elsewhere.
-On a data row this steps over whole rows; off the table it falls back
-to `backward-char'."
+  "Move backward N times, by table column on a row and by character elsewhere.
+On a data row this steps between cells; off the table it falls back to
+`backward-char'."
   (interactive "p")
   (if (table-view--on-row-p)
-      (table-view-backward-row n)
+      (table-view-backward-column n)
     (backward-char n)))
 
 ;;; Keymap
