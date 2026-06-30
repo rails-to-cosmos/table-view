@@ -8,19 +8,32 @@ turns a declarative table description — columns, actions, default sort
 — into a live read-only Emacs buffer and dispatches keys to
 consumer-registered command handlers.
 
-## Features
+## Example
 
-- **Declarative spec**, parsed from JSON or built as a plain alist: columns,
-  actions, default sort.
-- **Aligned, org-table-styled rendering** with bold headers and per-column
-  alignment.
-- **Colored `badge` cells** driven by a declared palette.
-- **Client-side sorting** on sortable columns — by string, number, or badge
-  priority.
-- **Interactive substring filtering** (case-insensitive).
-- **Keyed row store** with bulk `set-rows` and streaming, in-place `upsert-row`.
-- **Pluggable fill function** for populating/refreshing from any backend.
-- **Action keys** dispatched to your handlers by command name.
+```elisp
+(require 'table-view)
+
+(table-view-display
+ "*books*"
+ (table-view-parse "
+   { \"title\": \"Books\",
+     \"columns\": [ { \"key\": \"title\", \"header\": \"Title\" },
+                    { \"key\": \"year\",  \"header\": \"Year\", \"type\": \"number\" } ],
+     \"rows\": [ { \"id\": \"1\", \"cells\": { \"title\": \"SICP\", \"year\": 1996 } },
+                 { \"id\": \"2\", \"cells\": { \"title\": \"PAIP\", \"year\": 1992 } } ] }")
+ nil)
+```
+
+…opens a read-only buffer:
+
+```
+Books
+sort: unsorted (^)
+| Title | Year |
+|-------+------|
+| SICP  | 1996 |
+| PAIP  | 1992 |
+```
 
 ## Installation
 
