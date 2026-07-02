@@ -424,10 +424,12 @@ screen instead of drifting or following its row."
 
 (defun table-view-filter (pattern)
   "Filter rows to those with any cell matching PATTERN.
-Empty PATTERN clears the filter."
+Empty PATTERN clears the filter.  Point keeps its on-screen location
+(line and column) across the re-render."
   (interactive "sFilter: ")
-  (setq table-view--filter (if (string-empty-p pattern) nil pattern))
-  (table-view--render)
+  (table-view--save-point-location
+    (setq table-view--filter (if (string-empty-p pattern) nil pattern))
+    (table-view--render))
   (if table-view--filter
       (message "Filter: %s (%d/%d rows)"
                table-view--filter
@@ -438,12 +440,14 @@ Empty PATTERN clears the filter."
 (defun table-view-sort ()
   "Clear any filter and refresh the view, preserving the current ordering.
 An unsorted table stays in load order; a sorted table keeps its sort.
+Point keeps its on-screen location (line and column) across the refresh.
 Begin sorting with `^' (cycle column) or `~' (toggle direction)."
   (interactive)
-  (setq table-view--filter nil)
-  (when table-view--sorted
-    (table-view--sort-rows))
-  (table-view--render)
+  (table-view--save-point-location
+    (setq table-view--filter nil)
+    (when table-view--sorted
+      (table-view--sort-rows))
+    (table-view--render))
   (message (if table-view--sorted
                (format "Sort: %s %s" table-view--sort-key
                        (if table-view--sort-asc "asc" "desc"))

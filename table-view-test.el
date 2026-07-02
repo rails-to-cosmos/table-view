@@ -392,7 +392,7 @@
     (should (equal (mapcar (lambda (r) (alist-get 'id r)) table-view--rows)
                    '("b" "c" "a")))))
 
-;;; Sort keeps cursor location (^)
+;;; Cursor location preserved across re-renders (^ ~ g /)
 
 (ert-deftest tv-test-sort-cycle-preserves-point-location ()
   (tv-test--with-table
@@ -421,6 +421,28 @@
       (should-not table-view--sort-asc)               ; direction flipped (reorder)
       (should (= (line-number-at-pos) line))          ; same on-screen line
       (should (= (current-column) col)))))            ; same column
+
+(ert-deftest tv-test-g-preserves-point-location ()
+  (tv-test--with-table
+    (goto-char (point-min))
+    (forward-line 6)                    ; a data row (rows render a,b,c)
+    (forward-char 4)
+    (let ((line (line-number-at-pos))
+          (col (current-column)))
+      (call-interactively #'table-view-sort)          ; g (refresh)
+      (should (= (line-number-at-pos) line))          ; same on-screen line
+      (should (= (current-column) col)))))            ; same column (not col 0)
+
+(ert-deftest tv-test-filter-preserves-point-location ()
+  (tv-test--with-table
+    (goto-char (point-min))
+    (forward-line 3)                    ; header line, stable across filtering
+    (forward-char 2)
+    (let ((line (line-number-at-pos))
+          (col (current-column)))
+      (table-view-filter "alpha")       ; hint grows, rows drop
+      (should (= (line-number-at-pos) line))          ; same on-screen line
+      (should (= (current-column) col)))))            ; same column (not col 0)
 
 (provide 'table-view-test)
 ;;; table-view-test.el ends here
