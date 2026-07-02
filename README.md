@@ -114,10 +114,12 @@ Open one and `M-x eval-buffer`.
 | `q` | quit window |
 | *action keys* | dispatched to your handlers (e.g. `RET`) |
 
-Tables open **unsorted** (in load order); sorting is opt-in via `^` (with
-point on a data cell or its column header), and `g` never imposes a sort it
-wasn't already in.  `C-u ^` adds the column at point as a lower-priority
-tie-breaker, so you can sort within groups — e.g. by name, then by year.
+Unless the spec declares a `sort`, tables open **unsorted** (in load order);
+sorting is otherwise opt-in via `^` (with point on a data cell or its column
+header), and `g` never imposes a sort it wasn't already in.  `C-u ^` adds the
+column at point as a lower-priority tie-breaker, so you can sort within groups
+— e.g. by name, then by year.  A spec `sort` may itself be a list for a
+multi-column default.
 
 ## Spec format
 
@@ -130,7 +132,7 @@ The spec is an alist (typically produced by `table-view-parse` from JSON).
 | `title` | buffer title line |
 | `columns` | list of column definitions (see below) |
 | `actions` | list of action keybindings (see below) |
-| `sort` | default sort: `{ "column": KEY, "ascending": BOOL }` |
+| `sort` | default sort, applied on open when the spec supplies rows: a single `{ "column": KEY, "ascending": BOOL }`, or a **list** of them `[{…}, {…}]` for a multi-column default (order = priority) |
 | `rows` | initial rows (optional; can be filled later) |
 
 **Column**

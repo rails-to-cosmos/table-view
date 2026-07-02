@@ -167,6 +167,23 @@ without moving it."
                (format "%s %s" (car ka) (if (cdr ka) "asc" "desc")))
              table-view--sort-keys " -> "))
 
+(defun table-view--parse-sort (sort)
+  "Return the default sort chain declared by a spec's SORT value.
+SORT is either a single {column, ascending} alist or a list of them for
+a multi-column default; the result is a list of (KEY . ASC), highest
+priority first.  A missing `ascending' defaults to ascending."
+  (let ((specs (if (alist-get 'column sort)
+                   (list sort)          ; single {column, ascending}
+                 sort)))                ; list of them, or nil
+    (delq nil
+          (mapcar (lambda (s)
+                    (let ((col (alist-get 'column s)))
+                      (when col
+                        (cons col (if (assq 'ascending s)
+                                      (and (alist-get 'ascending s) t)
+                                    t)))))
+                  specs))))
+
 ;;; Filtering
 
 (defun table-view--row-matches-p (row filter)
@@ -606,7 +623,12 @@ keeps its on-screen location across the re-sort."
 SPEC is a parsed alist (see `table-view-parse').  HANDLERS is an alist of
 command-name (string) -> (FN ID ROW).  FILL-FN, if non-nil, is a function
 of one argument (BUFFER) that populates rows via `table-view-set-rows' /
-`table-view-upsert-row'.  Returns the buffer."
+`table-view-upsert-row'.  Returns the buffer.
+
+SPEC's `sort' (a single {column, ascending}, or a list of them for a
+multi-column default) is applied as the default sort when SPEC itself
+supplies rows.  Rows arriving later via FILL-FN / `table-view-set-rows'
+start unsorted."
   (let ((buf (get-buffer-create buffer)))
     (with-current-buffer buf
       (table-view-mode)
@@ -614,14 +636,9 @@ of one argument (BUFFER) that populates rows via `table-view-set-rows' /
             table-view--rows (alist-get 'rows spec)
             table-view--handlers handlers
             table-view--fill-fn fill-fn)
-      (let* ((sort (alist-get 'sort spec))
-             (column (alist-get 'column sort)))
-        (setq table-view--sort-keys
-              (when column
-                (list (cons column
-                            (if (assq 'ascending sort)
-                                (and (alist-get 'ascending sort) t)
-                              t))))))
+      (setq table-view--sort-keys (table-view--parse-sort (alist-get 'sort spec)))
+      (when (and table-view--sort-keys table-view--rows)
+        (table-view--sort-rows))          ; apply the declared default sort
       (table-view--install-action-keys spec)
       (table-view--render))
     (switch-to-buffer buf)

@@ -1,7 +1,8 @@
 ;;; minimal.el --- Minimal table-view example -*- lexical-binding: t; -*-
 
-;; Eval this buffer to display a table with inline rows.
-;; Press RET on a row to see its id, g to sort, / to filter.
+;; Eval this buffer to display a table with inline rows.  It opens sorted by
+;; the spec's default sort (year, descending).
+;; Press RET on a row to see its id, ^ to re-sort, / to filter, g to refresh.
 
 (require 'table-view)
 

@@ -43,6 +43,16 @@
            (with-current-buffer buf ,@body))
        (kill-buffer buf))))
 
+(defmacro tv-test--with-display (json &rest body)
+  "Display the JSON spec (with its own rows) in a temp buffer, then run BODY."
+  (declare (indent 1))
+  `(let ((buf (get-buffer-create " *tv-disp*")))
+     (unwind-protect
+         (progn
+           (table-view-display buf (table-view-parse ,json) nil)
+           (with-current-buffer buf ,@body))
+       (kill-buffer buf))))
+
 ;;; Parse
 
 (ert-deftest tv-test-parse ()
@@ -283,6 +293,55 @@
       (should (equal table-view--sort-keys '(("name" . t) ("count"))))
       (call-interactively cmd)          ; continuous `^' keeps toggling
       (should (equal table-view--sort-keys '(("name" . t) ("count" . t)))))))
+
+;;; Default sort declared in the spec
+
+(ert-deftest tv-test-parse-sort ()
+  ;; single {column, ascending}
+  (should (equal (table-view--parse-sort '((column . "a") (ascending . t))) '(("a" . t))))
+  (should (equal (table-view--parse-sort '((column . "a") (ascending . nil))) '(("a"))))
+  (should (equal (table-view--parse-sort '((column . "a"))) '(("a" . t))))   ; default asc
+  ;; list of them -> multi-column chain, order preserved
+  (should (equal (table-view--parse-sort '(((column . "a") (ascending . t))
+                                           ((column . "b") (ascending . nil))))
+                 '(("a" . t) ("b"))))
+  (should (equal (table-view--parse-sort nil) nil)))
+
+(ert-deftest tv-test-default-single-sort-applied ()
+  (tv-test--with-display
+      "{ \"columns\": [ {\"key\":\"n\",\"header\":\"N\",\"type\":\"number\",\"sortable\":true} ],
+         \"sort\": { \"column\": \"n\", \"ascending\": true },
+         \"rows\": [ {\"id\":\"1\",\"cells\":{\"n\":3}},
+                     {\"id\":\"2\",\"cells\":{\"n\":1}},
+                     {\"id\":\"3\",\"cells\":{\"n\":2}} ] }"
+    (should (equal table-view--sort-keys '(("n" . t))))
+    (should table-view--sorted)                          ; applied on open
+    (should (equal (mapcar (lambda (r) (alist-get 'id r)) table-view--rows)
+                   '("2" "3" "1")))))
+
+(ert-deftest tv-test-default-multi-sort-applied ()
+  (tv-test--with-display
+      "{ \"columns\": [ {\"key\":\"g\",\"header\":\"G\",\"sortable\":true},
+                        {\"key\":\"n\",\"header\":\"N\",\"type\":\"number\",\"sortable\":true} ],
+         \"sort\": [ { \"column\": \"g\", \"ascending\": true },
+                     { \"column\": \"n\", \"ascending\": false } ],
+         \"rows\": [ {\"id\":\"x\",\"cells\":{\"g\":\"A\",\"n\":1}},
+                     {\"id\":\"y\",\"cells\":{\"g\":\"A\",\"n\":9}},
+                     {\"id\":\"z\",\"cells\":{\"g\":\"B\",\"n\":5}} ] }"
+    (should (equal table-view--sort-keys '(("g" . t) ("n"))))   ; multi-column chain
+    (should table-view--sorted)                                  ; applied on open
+    (should (equal (mapcar (lambda (r) (alist-get 'id r)) table-view--rows)
+                   '("y" "x" "z")))))                            ; group by g, n desc within
+
+(ert-deftest tv-test-no-default-sort-opens-unsorted ()
+  (tv-test--with-display
+      "{ \"columns\": [ {\"key\":\"n\",\"header\":\"N\",\"type\":\"number\"} ],
+         \"rows\": [ {\"id\":\"1\",\"cells\":{\"n\":3}},
+                     {\"id\":\"2\",\"cells\":{\"n\":1}} ] }"
+    (should-not table-view--sort-keys)
+    (should-not table-view--sorted)
+    (should (equal (mapcar (lambda (r) (alist-get 'id r)) table-view--rows)
+                   '("1" "2")))))                                ; load order
 
 ;;; Filtering
 
