@@ -53,8 +53,8 @@
 ;;
 ;; Keybindings in table-view-mode:
 ;;   g   — clear filter & refresh, preserving the current sort order
-;;   ^   — cycle sort column
-;;   ~   — toggle sort direction
+;;   ^   — sort by the column at point, repeat toggles asc/desc;
+;;         off a column, cycle through every column and direction
 ;;   /   — filter rows by substring
 ;;   n/p — next/previous line
 ;;   f/b — forward/backward: by column on the table, by char elsewhere
@@ -134,7 +134,7 @@ cell matching the string (case-insensitive substring) are rendered.")
 (defun table-view--sort-rows ()
   "Sort `table-view--rows' in place by the current sort column.
 No-op when no sort column is selected.  Sorting is explicit: it runs
-only from the sort commands (`^', `~', and `g' when a sort is already
+only from the sort commands (`^' and `g' when a sort is already
 active), never from row updates, so operating on a row updates it in
 place without moving it."
   (let ((key table-view--sort-key))
@@ -233,7 +233,7 @@ key) so column navigation can locate cell boundaries."
 (defun table-view--hint-string ()
   "A one-line status/help string: current sort + declared action keys.
 Shows \"unsorted\" until an explicit sort has been applied, since rows
-render in load order and only reorder on `^'/`~'."
+render in load order and only reorder on `^'."
   (format "sort: %s%s    %s"
           (if (and table-view--sorted table-view--sort-key)
               (format "%s %s" table-view--sort-key
@@ -378,7 +378,6 @@ On a data row this steps between cells; off the table it falls back to
     (define-key map "g" #'table-view-sort)
     (define-key map "/" #'table-view-filter)
     (define-key map "^" #'table-view-sort-cycle)
-    (define-key map "~" #'table-view-sort-toggle-direction)
     (define-key map "q" #'quit-window)
     map)
   "Base keymap for `table-view-mode'; action keys overlay it per buffer.")
@@ -441,7 +440,7 @@ Empty PATTERN clears the filter.  Point keeps its on-screen location
   "Clear any filter and refresh the view, preserving the current ordering.
 An unsorted table stays in load order; a sorted table keeps its sort.
 Point keeps its on-screen location (line and column) across the refresh.
-Begin sorting with `^' (cycle column) or `~' (toggle direction)."
+Begin sorting with `^'."
   (interactive)
   (table-view--save-point-location
     (setq table-view--filter nil)
@@ -453,31 +452,52 @@ Begin sorting with `^' (cycle column) or `~' (toggle direction)."
                        (if table-view--sort-asc "asc" "desc"))
              "Unsorted")))
 
+(defun table-view--sort-advance ()
+  "Advance the sort to the next column/direction in the cycle.
+The cycle visits every sortable column ascending then descending,
+wrapping around; when the table is not yet sorted it starts at the
+first column ascending."
+  (let ((keys (table-view--sortable-keys)))
+    (when keys
+      (let* ((states (mapcan (lambda (k) (list (cons k t) (cons k nil))) keys))
+             (cur (and table-view--sorted
+                       (cons table-view--sort-key table-view--sort-asc)))
+             (idx (and cur (cl-position cur states :test #'equal)))
+             (next (nth (mod (1+ (or idx -1)) (length states)) states)))
+        (setq table-view--sort-key (car next)
+              table-view--sort-asc (cdr next))))))
+
 (defun table-view-sort-cycle ()
-  "Cycle the sort column among sortable columns.
-Point keeps its on-screen location (line and column) across the
-re-sort, rather than following the row it was on."
+  "Sort the table via `^'.
+With point on a sortable column's cell, sort by that column; pressing
+`^' again while still on that already-sorted column toggles
+ascending/descending.  With point off any column, walk through every
+sortable column in ascending then descending order, one step per press.
+Point keeps its on-screen location across the re-sort."
   (interactive)
-  (let* ((keys (table-view--sortable-keys))
-         (idx (cl-position table-view--sort-key keys :test #'equal))
-         (next (and keys (nth (mod (1+ (or idx -1)) (length keys)) keys))))
-    (when next
+  (let ((col (get-text-property (point) 'table-view-col))
+        (sortable (table-view--sortable-keys)))
+    (cond
+     ((null sortable)
+      (message "No sortable columns"))
+     ((and col (not (member col sortable)))
+      (message "Column %s is not sortable" col))
+     (t
       (table-view--save-point-location
-        (setq table-view--sort-key next table-view--sort-asc t)
+        (cond
+         ;; Already sorted by the column at point -> flip direction.
+         ((and col (equal col table-view--sort-key) table-view--sorted)
+          (setq table-view--sort-asc (not table-view--sort-asc)))
+         ;; On a (different) sortable column -> sort by it, ascending.
+         (col
+          (setq table-view--sort-key col table-view--sort-asc t))
+         ;; Off any column -> step through the column/direction cycle.
+         (t
+          (table-view--sort-advance)))
         (table-view--sort-rows)
         (table-view--render))
-      (message "Sort: %s asc" next))))
-
-(defun table-view-sort-toggle-direction ()
-  "Toggle ascending/descending of the current sort.
-Point keeps its on-screen location (line and column) across the
-re-sort, as with `table-view-sort-cycle'."
-  (interactive)
-  (table-view--save-point-location
-    (setq table-view--sort-asc (not table-view--sort-asc))
-    (table-view--sort-rows)
-    (table-view--render))
-  (message "Sort: %s %s" table-view--sort-key (if table-view--sort-asc "asc" "desc")))
+      (message "Sort: %s %s" table-view--sort-key
+               (if table-view--sort-asc "asc" "desc"))))))
 
 ;;; Public API
 

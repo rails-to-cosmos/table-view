@@ -106,15 +106,14 @@ Open one and `M-x eval-buffer`.
 |-----|--------|
 | `n` / `p` | next / previous line |
 | `f` / `b` | forward / backward — by **column** (cell) when point is on the table, by **char** elsewhere |
-| `^` | cycle sort column |
-| `~` | toggle sort direction |
+| `^` | sort by the column at point (repeat toggles asc/desc); off a column, cycles through every column and direction |
 | `g` | clear filter & refresh, preserving the current sort order |
 | `/` | filter rows by substring |
 | `q` | quit window |
 | *action keys* | dispatched to your handlers (e.g. `RET`) |
 
-Tables open **unsorted** (in load order); sorting is opt-in via `^` / `~`, and
-`g` never imposes a sort it wasn't already in.
+Tables open **unsorted** (in load order); sorting is opt-in via `^`, and `g`
+never imposes a sort it wasn't already in.
 
 ## Spec format
 

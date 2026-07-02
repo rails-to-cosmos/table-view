@@ -154,25 +154,42 @@
     (table-view-set-rows (current-buffer) (tv-test--rows))
     (should-not table-view--sorted)))
 
-(ert-deftest tv-test-sort-cycle ()
+(ert-deftest tv-test-sort-cycle-walks-columns-and-directions ()
   (tv-test--with-table
-    (setq table-view--sort-key nil)
-    (call-interactively #'table-view-sort-cycle)
-    (should (equal table-view--sort-key "name"))
+    (goto-char (point-min))             ; not on a column cell
+    (setq table-view--sort-key nil table-view--sort-asc t table-view--sorted nil)
+    (cl-flet ((step ()
+                (call-interactively #'table-view-sort-cycle)
+                (cons table-view--sort-key table-view--sort-asc)))
+      (should (equal (step) '("name" . t)))
+      (should (equal (step) '("name")))        ; name desc
+      (should (equal (step) '("count" . t)))
+      (should (equal (step) '("count")))       ; count desc
+      (should (equal (step) '("status" . t)))
+      (should (equal (step) '("status")))      ; status desc
+      (should (equal (step) '("name" . t)))))) ; wraps around
+
+(ert-deftest tv-test-sort-by-column-at-point ()
+  (tv-test--with-table
+    (table-view--goto-id "a")
+    (table-view-forward-column 2)       ; onto the "count" cell
+    (should (equal (tv-test--col-at-point) "count"))
     (call-interactively #'table-view-sort-cycle)
     (should (equal table-view--sort-key "count"))
-    (call-interactively #'table-view-sort-cycle)
-    (should (equal table-view--sort-key "status"))
-    (call-interactively #'table-view-sort-cycle)
-    (should (equal table-view--sort-key "name"))))
+    (should table-view--sort-asc)
+    (should table-view--sorted)))
 
-(ert-deftest tv-test-sort-toggle-direction ()
+(ert-deftest tv-test-sort-column-at-point-toggles ()
   (tv-test--with-table
-    (setq table-view--sort-key "count"
-          table-view--sort-asc t)
-    (call-interactively #'table-view-sort-toggle-direction)
+    (table-view--goto-id "a")
+    (table-view-forward-column 2)       ; onto "count"
+    (call-interactively #'table-view-sort-cycle)      ; count asc
+    (should table-view--sort-asc)
+    (should (equal (tv-test--col-at-point) "count"))  ; cursor still on count
+    (call-interactively #'table-view-sort-cycle)      ; same column -> toggle desc
+    (should (equal table-view--sort-key "count"))
     (should-not table-view--sort-asc)
-    (call-interactively #'table-view-sort-toggle-direction)
+    (call-interactively #'table-view-sort-cycle)      ; toggle back to asc
     (should table-view--sort-asc)))
 
 ;;; Filtering
@@ -392,35 +409,19 @@
     (should (equal (mapcar (lambda (r) (alist-get 'id r)) table-view--rows)
                    '("b" "c" "a")))))
 
-;;; Cursor location preserved across re-renders (^ ~ g /)
+;;; Cursor location preserved across re-renders (^ g /)
 
 (ert-deftest tv-test-sort-cycle-preserves-point-location ()
   (tv-test--with-table
-    (setq table-view--sort-key "name")  ; so ^ advances to "count" and reorders
     (goto-char (point-min))
-    (forward-line 6)                    ; second data row (rows render a,b,c)
-    (forward-char 4)
+    (forward-line 3)                    ; header line: not a data column cell
+    (forward-char 2)
     (let ((line (line-number-at-pos))
           (col (current-column)))
-      (call-interactively #'table-view-sort-cycle)
-      (should (equal table-view--sort-key "count"))   ; sort changed (rows reorder)
+      (call-interactively #'table-view-sort-cycle)    ; walk-through sort (re-renders)
+      (should table-view--sorted)                     ; a sort was applied
       (should (= (line-number-at-pos) line))          ; same on-screen line
-      (should (= (current-column) col)))))            ; same column
-
-(ert-deftest tv-test-sort-toggle-preserves-point-location ()
-  (tv-test--with-table
-    (setq table-view--sort-key "count")
-    (table-view--sort-rows)             ; ascending count -> b,c,a
-    (table-view--render)
-    (goto-char (point-min))
-    (forward-line 7)                    ; third data row
-    (forward-char 4)
-    (let ((line (line-number-at-pos))
-          (col (current-column)))
-      (call-interactively #'table-view-sort-toggle-direction)  ; -> desc, a,c,b
-      (should-not table-view--sort-asc)               ; direction flipped (reorder)
-      (should (= (line-number-at-pos) line))          ; same on-screen line
-      (should (= (current-column) col)))))            ; same column
+      (should (= (current-column) col)))))            ; same column (not col 0)
 
 (ert-deftest tv-test-g-preserves-point-location ()
   (tv-test--with-table
