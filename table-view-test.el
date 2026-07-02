@@ -109,32 +109,28 @@
 
 (ert-deftest tv-test-sort-ascending ()
   (tv-test--with-table
-    (setq table-view--sort-key "count"
-          table-view--sort-asc t)
+    (setq table-view--sort-keys '(("count" . t)))
     (table-view--sort-rows)
     (should (equal (mapcar (lambda (r) (alist-get 'id r)) table-view--rows)
                    '("b" "c" "a")))))
 
 (ert-deftest tv-test-sort-descending ()
   (tv-test--with-table
-    (setq table-view--sort-key "count"
-          table-view--sort-asc nil)
+    (setq table-view--sort-keys '(("count")))   ; ("count" . nil) = descending
     (table-view--sort-rows)
     (should (equal (mapcar (lambda (r) (alist-get 'id r)) table-view--rows)
                    '("a" "c" "b")))))
 
 (ert-deftest tv-test-sort-string ()
   (tv-test--with-table
-    (setq table-view--sort-key "name"
-          table-view--sort-asc t)
+    (setq table-view--sort-keys '(("name" . t)))
     (table-view--sort-rows)
     (should (equal (mapcar (lambda (r) (alist-get 'id r)) table-view--rows)
                    '("a" "b" "c")))))
 
 (ert-deftest tv-test-sort-badge ()
   (tv-test--with-table
-    (setq table-view--sort-key "status"
-          table-view--sort-asc t)
+    (setq table-view--sort-keys '(("status" . t)))
     (table-view--sort-rows)
     (should (equal (mapcar (lambda (r) (alist-get 'id r)) table-view--rows)
                    '("a" "c" "b")))))
@@ -142,13 +138,13 @@
 (ert-deftest tv-test-sort-sets-sorted-flag ()
   (tv-test--with-table
     (should-not table-view--sorted)
-    (setq table-view--sort-key "count")
+    (setq table-view--sort-keys '(("count" . t)))
     (table-view--sort-rows)
     (should table-view--sorted)))
 
 (ert-deftest tv-test-set-rows-clears-sorted ()
   (tv-test--with-table
-    (setq table-view--sort-key "count")
+    (setq table-view--sort-keys '(("count" . t)))
     (table-view--sort-rows)
     (should table-view--sorted)
     (table-view-set-rows (current-buffer) (tv-test--rows))
@@ -157,10 +153,10 @@
 (ert-deftest tv-test-sort-cycle-walks-columns-and-directions ()
   (tv-test--with-table
     (goto-char (point-min))             ; not on a column cell
-    (setq table-view--sort-key nil table-view--sort-asc t table-view--sorted nil)
+    (setq table-view--sort-keys nil table-view--sorted nil)
     (cl-flet ((step ()
                 (call-interactively #'table-view-sort-cycle)
-                (cons table-view--sort-key table-view--sort-asc)))
+                (car table-view--sort-keys)))
       (should (equal (step) '("name" . t)))
       (should (equal (step) '("name")))        ; name desc
       (should (equal (step) '("count" . t)))
@@ -175,8 +171,7 @@
     (table-view-forward-column 2)       ; onto the "count" cell
     (should (equal (tv-test--col-at-point) "count"))
     (call-interactively #'table-view-sort-cycle)
-    (should (equal table-view--sort-key "count"))
-    (should table-view--sort-asc)
+    (should (equal table-view--sort-keys '(("count" . t))))
     (should table-view--sorted)))
 
 (ert-deftest tv-test-sort-column-at-point-toggles ()
@@ -184,13 +179,110 @@
     (table-view--goto-id "a")
     (table-view-forward-column 2)       ; onto "count"
     (call-interactively #'table-view-sort-cycle)      ; count asc
-    (should table-view--sort-asc)
+    (should (equal table-view--sort-keys '(("count" . t))))
     (should (equal (tv-test--col-at-point) "count"))  ; cursor still on count
     (call-interactively #'table-view-sort-cycle)      ; same column -> toggle desc
-    (should (equal table-view--sort-key "count"))
-    (should-not table-view--sort-asc)
+    (should (equal table-view--sort-keys '(("count"))))
     (call-interactively #'table-view-sort-cycle)      ; toggle back to asc
-    (should table-view--sort-asc)))
+    (should (equal table-view--sort-keys '(("count" . t))))))
+
+;;; Multi-column sort (C-u ^)
+
+(defconst tv-test--tie-rows
+  '(((id . "x") (cells . ((name . "same") (count . 2) (status . "ok"))))
+    ((id . "y") (cells . ((name . "same") (count . 1) (status . "err"))))
+    ((id . "z") (cells . ((name . "diff") (count . 5) (status . "ok")))))
+  "Rows where X and Y tie on `name'.")
+
+(ert-deftest tv-test-sort-secondary-breaks-ties ()
+  (tv-test--with-table
+    (table-view-set-rows (current-buffer) tv-test--tie-rows)
+    (setq table-view--sort-keys '(("name" . t) ("count" . t)))  ; name asc, count asc
+    (table-view--sort-rows)
+    (should (equal (mapcar (lambda (r) (alist-get 'id r)) table-view--rows)
+                   '("z" "y" "x")))))                            ; ties broken by count
+
+(ert-deftest tv-test-sort-secondary-direction-independent ()
+  (tv-test--with-table
+    (table-view-set-rows (current-buffer) tv-test--tie-rows)
+    (setq table-view--sort-keys '(("name" . t) ("count")))      ; name asc, count DESC
+    (table-view--sort-rows)
+    (should (equal (mapcar (lambda (r) (alist-get 'id r)) table-view--rows)
+                   '("z" "x" "y")))))
+
+(ert-deftest tv-test-sort-cu-appends-secondary ()
+  (tv-test--with-table
+    (table-view--goto-id "a")
+    (table-view-forward-column)                          ; onto "name"
+    (call-interactively #'table-view-sort-cycle)         ; ^ -> name asc
+    (should (equal table-view--sort-keys '(("name" . t))))
+    (table-view-forward-column)                          ; onto "count"
+    (should (equal (tv-test--col-at-point) "count"))
+    (let ((current-prefix-arg '(4)))
+      (call-interactively #'table-view-sort-cycle))      ; C-u ^ -> append count
+    (should (equal table-view--sort-keys '(("name" . t) ("count" . t))))))
+
+(ert-deftest tv-test-sort-cu-toggles-chained-column ()
+  (tv-test--with-table
+    (setq table-view--sort-keys '(("name" . t) ("count" . t)) table-view--sorted t)
+    (table-view--goto-id "a")
+    (table-view-forward-column)                          ; onto "name" (already chained)
+    (let ((current-prefix-arg '(4)))
+      (call-interactively #'table-view-sort-cycle))      ; C-u ^ -> flip name in place
+    (should (equal table-view--sort-keys '(("name") ("count" . t))))))
+
+(ert-deftest tv-test-sort-cu-off-column-is-noop ()
+  (tv-test--with-table
+    (setq table-view--sort-keys '(("name" . t)) table-view--sorted t)
+    (goto-char (point-min))                              ; not on a column
+    (let ((current-prefix-arg '(4)))
+      (call-interactively #'table-view-sort-cycle))      ; C-u ^ off a column
+    (should (equal table-view--sort-keys '(("name" . t))))))  ; unchanged
+
+(ert-deftest tv-test-sort-primary-collapses-chain ()
+  (tv-test--with-table
+    (setq table-view--sort-keys '(("name" . t) ("count" . t)) table-view--sorted t)
+    (table-view--goto-id "a")
+    (table-view-forward-column 2)                        ; onto "count"
+    (call-interactively #'table-view-sort-cycle)         ; ^ (no prefix) collapses
+    (should (equal table-view--sort-keys '(("count" . t))))))
+
+(ert-deftest tv-test-hint-multi-column ()
+  (tv-test--with-table
+    (setq table-view--sort-keys '(("name" . t) ("count") ("status" . t))
+          table-view--sorted t)
+    (should (string-match-p "name asc -> count desc -> status asc"
+                            (table-view--hint-string)))))
+
+(ert-deftest tv-test-sort-by-header-column ()
+  (tv-test--with-table
+    (goto-char (point-min))
+    (forward-line 3)                    ; header row
+    (table-view-forward-column 2)       ; onto the "count" header cell
+    (should (equal (tv-test--col-at-point) "count"))
+    (call-interactively #'table-view-sort-cycle)   ; ^ on the header sorts by count
+    (should (equal table-view--sort-keys '(("count" . t))))
+    (should table-view--sorted)))
+
+(ert-deftest tv-test-toggle-sort-key ()
+  (tv-test--with-table
+    (setq table-view--sort-keys '(("name" . t) ("count" . t)) table-view--sorted t)
+    (table-view--toggle-sort-key "count")
+    (should (equal table-view--sort-keys '(("name" . t) ("count"))))       ; flipped
+    (table-view--toggle-sort-key "count")
+    (should (equal table-view--sort-keys '(("name" . t) ("count" . t)))))) ; flipped back
+
+(ert-deftest tv-test-secondary-toggle-map ()
+  ;; After `C-u ^', a run of plain `^' toggles the just-added key: the
+  ;; transient map binds `^' to flip that column's direction.
+  (tv-test--with-table
+    (setq table-view--sort-keys '(("name" . t) ("count" . t)) table-view--sorted t)
+    (let ((cmd (lookup-key (table-view--secondary-toggle-map "count") "^")))
+      (should (commandp cmd))
+      (call-interactively cmd)          ; simulate one transient `^'
+      (should (equal table-view--sort-keys '(("name" . t) ("count"))))
+      (call-interactively cmd)          ; continuous `^' keeps toggling
+      (should (equal table-view--sort-keys '(("name" . t) ("count" . t)))))))
 
 ;;; Filtering
 
@@ -253,9 +345,8 @@
 
 (ert-deftest tv-test-hint-sorted ()
   (tv-test--with-table
-    (setq table-view--sort-key "count"
-          table-view--sorted t
-          table-view--sort-asc t)
+    (setq table-view--sort-keys '(("count" . t))
+          table-view--sorted t)
     (should (string-match-p "count asc" (table-view--hint-string)))))
 
 (ert-deftest tv-test-hint-filter ()
@@ -299,17 +390,42 @@
   "Column key of the cell point is on, or nil."
   (get-text-property (point) 'table-view-col))
 
-(ert-deftest tv-test-on-row-p ()
+(ert-deftest tv-test-on-cells-p ()
   (tv-test--with-table
-    (goto-char (point-min))             ; title line, not a row
-    (should-not (table-view--on-row-p))
-    (table-view--goto-id "a")
-    (should (table-view--on-row-p))))
+    (goto-char (point-min))             ; title line: no cells
+    (should-not (table-view--on-cells-p))
+    (forward-line 3)                    ; header row: has cells
+    (should (table-view--on-cells-p))
+    (table-view--goto-id "a")           ; data row: has cells
+    (should (table-view--on-cells-p))))
 
 (ert-deftest tv-test-cells-tagged-with-column ()
   (tv-test--with-table
     (table-view--goto-id "a")           ; point at the row's leading "|"
     (goto-char (+ (point) 2))           ; into the first cell, past "| "
+    (should (equal (tv-test--col-at-point) "name"))))
+
+(ert-deftest tv-test-header-cells-tagged ()
+  (tv-test--with-table
+    (goto-char (point-min))
+    (forward-line 3)                    ; header row
+    (forward-char 2)                    ; into the first header cell
+    (should (equal (tv-test--col-at-point) "name"))))
+
+(ert-deftest tv-test-forward-column-on-header ()
+  (tv-test--with-table
+    (goto-char (point-min))
+    (forward-line 3)                    ; header row (at bol)
+    (table-view-forward-column)
+    (should (equal (tv-test--col-at-point) "name"))
+    (table-view-forward-column)
+    (should (equal (tv-test--col-at-point) "count"))))
+
+(ert-deftest tv-test-f-on-header-moves-by-column ()
+  (tv-test--with-table
+    (goto-char (point-min))
+    (forward-line 3)                    ; header row
+    (call-interactively #'table-view-forward)   ; f -> column motion on the header
     (should (equal (tv-test--col-at-point) "name"))))
 
 (ert-deftest tv-test-forward-column ()
@@ -401,7 +517,7 @@
 
 (ert-deftest tv-test-g-keeps-active-sort ()
   (tv-test--with-table
-    (setq table-view--sort-key "count")
+    (setq table-view--sort-keys '(("count" . t)))
     (table-view--sort-rows)             ; ascending by count -> b,c,a
     (should table-view--sorted)
     (call-interactively #'table-view-sort)
@@ -414,11 +530,11 @@
 (ert-deftest tv-test-sort-cycle-preserves-point-location ()
   (tv-test--with-table
     (goto-char (point-min))
-    (forward-line 3)                    ; header line: not a data column cell
+    (forward-line 3)                    ; header row, on the "name" column
     (forward-char 2)
     (let ((line (line-number-at-pos))
           (col (current-column)))
-      (call-interactively #'table-view-sort-cycle)    ; walk-through sort (re-renders)
+      (call-interactively #'table-view-sort-cycle)    ; ^ on the header sorts by it
       (should table-view--sorted)                     ; a sort was applied
       (should (= (line-number-at-pos) line))          ; same on-screen line
       (should (= (current-column) col)))))            ; same column (not col 0)

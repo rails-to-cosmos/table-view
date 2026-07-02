@@ -50,14 +50,18 @@
 ;;   minimal.el       — inline rows from a JSON spec
 ;;   fill-function.el — populate via a fill function (Emacs subprocesses)
 ;;   upsert.el        — streaming row updates via a timer
+;;   multi-sort.el    — column navigation + multi-column (C-u ^) sorting
 ;;
 ;; Keybindings in table-view-mode:
 ;;   g   — clear filter & refresh, preserving the current sort order
 ;;   ^   — sort by the column at point, repeat toggles asc/desc;
 ;;         off a column, cycle through every column and direction
+;;   C-u ^ — add the column at point as a secondary (tie-breaker) sort key;
+;;           a following run of `^' then toggles that key's direction
 ;;   /   — filter rows by substring
 ;;   n/p — next/previous line
-;;   f/b — forward/backward: by column on the table, by char elsewhere
+;;   f/b — forward/backward: by column on a table line (header or row),
+;;         by char elsewhere
 ;;   q   — quit
 
 ;;; Code:
@@ -74,10 +78,10 @@
   "Alist of command-name (string) -> function called as (FN ID ROW).")
 (defvar-local table-view--fill-fn nil
   "Function of one arg (this BUFFER) that (re)populates the rows, or nil.")
-(defvar-local table-view--sort-key nil
-  "Column key (string) currently sorted by, or nil.")
-(defvar-local table-view--sort-asc t
-  "Non-nil when the current sort is ascending.")
+(defvar-local table-view--sort-keys nil
+  "Sort chain: list of (KEY . ASC) conses, highest priority first.
+KEY is a column key (string); ASC is non-nil for ascending.  Rows equal
+on one key are ordered by the next; an empty list renders load order.")
 (defvar-local table-view--sorted nil
   "Non-nil once an explicit sort has been applied to the current row set.
 Reset whenever the full row set is replaced (`table-view-set-rows'), so
@@ -132,23 +136,36 @@ cell matching the string (case-insensitive substring) are rendered.")
      (lambda (a b) (string< (table-view--str a) (table-view--str b))))))
 
 (defun table-view--sort-rows ()
-  "Sort `table-view--rows' in place by the current sort column.
-No-op when no sort column is selected.  Sorting is explicit: it runs
-only from the sort commands (`^' and `g' when a sort is already
-active), never from row updates, so operating on a row updates it in
-place without moving it."
-  (let ((key table-view--sort-key))
-    (when key
-      (let* ((col (table-view--column table-view--spec key))
-             (less (table-view--comparator col))
-             (sorted (sort (copy-sequence table-view--rows)
-                           (lambda (a b)
-                             (funcall less
-                                      (table-view--cell a key)
-                                      (table-view--cell b key))))))
-        (setq table-view--rows
-              (if table-view--sort-asc sorted (nreverse sorted)))
-        (setq table-view--sorted t)))))
+  "Sort `table-view--rows' in place by the current sort chain.
+No-op when the chain is empty.  Rows equal on every key keep their
+relative order (the sort is stable).  Sorting is explicit: it runs only
+from the sort commands (`^' and `g' when a sort is already active),
+never from row updates, so operating on a row updates it in place
+without moving it."
+  (when table-view--sort-keys
+    (let ((tests (mapcar
+                  (lambda (ka)
+                    (list (table-view--comparator
+                           (table-view--column table-view--spec (car ka)))
+                          (car ka)          ; column key
+                          (cdr ka)))        ; ascending?
+                  table-view--sort-keys)))
+      (setq table-view--rows
+            (sort (copy-sequence table-view--rows)
+                  (lambda (a b)
+                    (cl-loop for (less key asc) in tests
+                             for va = (table-view--cell a key)
+                             for vb = (table-view--cell b key)
+                             do (cond ((funcall less va vb) (cl-return asc))
+                                      ((funcall less vb va) (cl-return (not asc))))
+                             finally return nil))))
+      (setq table-view--sorted t))))
+
+(defun table-view--sort-description ()
+  "Render the sort chain as e.g. \"name asc -> pid desc\"."
+  (mapconcat (lambda (ka)
+               (format "%s %s" (car ka) (if (cdr ka) "asc" "desc")))
+             table-view--sort-keys " -> "))
 
 ;;; Filtering
 
@@ -215,10 +232,12 @@ key) so column navigation can locate cell boundaries."
 (defun table-view--header-string (spec widths)
   (concat "| "
           (mapconcat (lambda (col)
-                       (table-view--pad
-                        (propertize (alist-get 'header col) 'face 'bold)
-                        (alist-get (alist-get 'key col) widths nil nil #'equal)
-                        (alist-get 'align col)))
+                       (propertize
+                        (table-view--pad
+                         (propertize (alist-get 'header col) 'face 'bold)
+                         (alist-get (alist-get 'key col) widths nil nil #'equal)
+                         (alist-get 'align col))
+                        'table-view-col (alist-get 'key col)))
                      (table-view--columns spec) " | ")
           " |"))
 
@@ -235,9 +254,8 @@ key) so column navigation can locate cell boundaries."
 Shows \"unsorted\" until an explicit sort has been applied, since rows
 render in load order and only reorder on `^'."
   (format "sort: %s%s    %s"
-          (if (and table-view--sorted table-view--sort-key)
-              (format "%s %s" table-view--sort-key
-                      (if table-view--sort-asc "asc" "desc"))
+          (if (and table-view--sorted table-view--sort-keys)
+              (table-view--sort-description)
             "unsorted (^)")
           (if table-view--filter
               (format "    filter: %s (%d/%d)"
@@ -301,17 +319,11 @@ same line number."
 
 ;;; Navigation
 
-(defun table-view--on-row-p (&optional pos)
-  "Non-nil when POS (or point) lies on a rendered data row.
-Detection keys off the `table-view-row' text property the renderer
-stamps on each row line, so it ignores the title, hint, header, and
-rule lines (and any \"(no rows)\" placeholder)."
-  (get-text-property (or pos (point)) 'table-view-row))
-
 (defun table-view--cell-starts ()
   "Buffer positions where each cell begins on the current line, left to right.
 Cells are the regions the renderer tags with the `table-view-col' text
-property; the bordering \"|\" separators are not tagged."
+property; the bordering \"|\" separators are not tagged.  Both the header
+row and data rows carry these tags."
   (let* ((eol (line-end-position))
          (pos (line-beginning-position))
          (starts '()))
@@ -321,6 +333,12 @@ property; the bordering \"|\" separators are not tagged."
           (push pos starts))
         (setq pos next)))
     (nreverse starts)))
+
+(defun table-view--on-cells-p ()
+  "Non-nil when the current line has table cells to move between.
+True on the header row and on data rows (both carry `table-view-col');
+nil on the title, hint, rule, and blank lines."
+  (and (table-view--cell-starts) t))
 
 (defun table-view--goto-column (dir)
   "Move to the start of the adjacent cell in DIR (1 forward, -1 backward).
@@ -335,35 +353,36 @@ Return non-nil when point actually moves."
       t)))
 
 (defun table-view-forward-column (&optional n)
-  "Move to the start of the Nth following cell on the current row (default 1).
-With a negative N move backward.  Stops at the row's first or last cell
-instead of leaving it, and never signals."
+  "Move to the start of the Nth following cell on the current line (default 1).
+With a negative N move backward.  Works on the header row and data rows,
+stops at the line's first or last cell instead of leaving it, and never
+signals."
   (interactive "p")
   (let ((dir (if (< (or n 1) 0) -1 1)))
     (dotimes (_ (abs (or n 1)))
       (table-view--goto-column dir))))
 
 (defun table-view-backward-column (&optional n)
-  "Move to the start of the Nth preceding cell on the current row (default 1).
+  "Move to the start of the Nth preceding cell on the current line (default 1).
 See `table-view-forward-column'."
   (interactive "p")
   (table-view-forward-column (- (or n 1))))
 
 (defun table-view-forward (&optional n)
-  "Move forward N times, by table column on a row and by character elsewhere.
-On a data row this steps between cells; off the table it falls back to
-`forward-char'."
+  "Move forward N times, by column on a table line and by character elsewhere.
+On the header row or a data row this steps between cells; off the table
+it falls back to `forward-char'."
   (interactive "p")
-  (if (table-view--on-row-p)
+  (if (table-view--on-cells-p)
       (table-view-forward-column n)
     (forward-char n)))
 
 (defun table-view-backward (&optional n)
-  "Move backward N times, by table column on a row and by character elsewhere.
-On a data row this steps between cells; off the table it falls back to
-`backward-char'."
+  "Move backward N times, by column on a table line and by character elsewhere.
+On the header row or a data row this steps between cells; off the table
+it falls back to `backward-char'."
   (interactive "p")
-  (if (table-view--on-row-p)
+  (if (table-view--on-cells-p)
       (table-view-backward-column n)
     (backward-char n)))
 
@@ -448,33 +467,62 @@ Begin sorting with `^'."
       (table-view--sort-rows))
     (table-view--render))
   (message (if table-view--sorted
-               (format "Sort: %s %s" table-view--sort-key
-                       (if table-view--sort-asc "asc" "desc"))
+               (format "Sort: %s" (table-view--sort-description))
              "Unsorted")))
 
 (defun table-view--sort-advance ()
-  "Advance the sort to the next column/direction in the cycle.
+  "Collapse to a single column and advance it through the walk-through.
 The cycle visits every sortable column ascending then descending,
-wrapping around; when the table is not yet sorted it starts at the
-first column ascending."
+wrapping around; it continues from the current column when the sort is
+already a single column, else it starts at the first column ascending."
   (let ((keys (table-view--sortable-keys)))
     (when keys
       (let* ((states (mapcan (lambda (k) (list (cons k t) (cons k nil))) keys))
              (cur (and table-view--sorted
-                       (cons table-view--sort-key table-view--sort-asc)))
+                       (= 1 (length table-view--sort-keys))
+                       (car table-view--sort-keys)))
              (idx (and cur (cl-position cur states :test #'equal)))
              (next (nth (mod (1+ (or idx -1)) (length states)) states)))
-        (setq table-view--sort-key (car next)
-              table-view--sort-asc (cdr next))))))
+        (setq table-view--sort-keys (list next))))))
 
-(defun table-view-sort-cycle ()
+(defun table-view--toggle-sort-key (col)
+  "Flip COL's direction in the sort chain, re-sort, and re-render."
+  (table-view--save-point-location
+    (setq table-view--sort-keys
+          (mapcar (lambda (ka)
+                    (if (equal (car ka) col) (cons col (not (cdr ka))) ka))
+                  table-view--sort-keys))
+    (table-view--sort-rows)
+    (table-view--render))
+  (message "Sort: %s" (table-view--sort-description)))
+
+(defun table-view--secondary-toggle-map (col)
+  "A one-key transient map: `^' flips COL's direction in the sort chain."
+  (let ((map (make-sparse-keymap)))
+    (define-key map "^" (lambda () (interactive) (table-view--toggle-sort-key col)))
+    map))
+
+(defun table-view--arm-secondary-toggle (col)
+  "Arm the transient `^'-toggles-COL map after `C-u \\[table-view-sort-cycle]'.
+It stays active while `^' is pressed and ends on any other key, so a run
+of `^' keeps flipping the just-added secondary key COL's direction."
+  (set-transient-map (table-view--secondary-toggle-map col) t))
+
+(defun table-view-sort-cycle (&optional secondary)
   "Sort the table via `^'.
-With point on a sortable column's cell, sort by that column; pressing
-`^' again while still on that already-sorted column toggles
-ascending/descending.  With point off any column, walk through every
-sortable column in ascending then descending order, one step per press.
-Point keeps its on-screen location across the re-sort."
-  (interactive)
+With point on a sortable column (a data cell or its header), sort by that
+column, collapsing any multi-column chain to it; pressing `^' again on
+that already-sorted column toggles ascending/descending.  With point off
+any column, walk through every sortable column ascending then descending,
+one per press.
+
+With a prefix argument (\\[universal-argument]) and point on a sortable
+column, instead ADD that column to the sort chain as the next
+lower-priority tie-breaker (so rows equal on the earlier keys are ordered
+by it); if it is already in the chain, flip its direction in place.  A run
+of plain `^' right after such a `C-u ^' keeps toggling that key.  Point
+keeps its on-screen location across the re-sort."
+  (interactive "P")
   (let ((col (get-text-property (point) 'table-view-col))
         (sortable (table-view--sortable-keys)))
     (cond
@@ -482,22 +530,35 @@ Point keeps its on-screen location across the re-sort."
       (message "No sortable columns"))
      ((and col (not (member col sortable)))
       (message "Column %s is not sortable" col))
+     ((and secondary (not col))
+      (message "Point is not on a column"))
      (t
       (table-view--save-point-location
         (cond
-         ;; Already sorted by the column at point -> flip direction.
-         ((and col (equal col table-view--sort-key) table-view--sorted)
-          (setq table-view--sort-asc (not table-view--sort-asc)))
-         ;; On a (different) sortable column -> sort by it, ascending.
+         ;; C-u ^ on a column -> add it as a tie-breaker, or flip it in place.
+         (secondary
+          (setq table-view--sort-keys
+                (if (assoc col table-view--sort-keys)
+                    (mapcar (lambda (ka)
+                              (if (equal (car ka) col) (cons col (not (cdr ka))) ka))
+                            table-view--sort-keys)
+                  (append table-view--sort-keys (list (cons col t))))))
+         ;; ^ on a column -> single-column sort (toggle if already the sole key).
          (col
-          (setq table-view--sort-key col table-view--sort-asc t))
-         ;; Off any column -> step through the column/direction cycle.
+          (setq table-view--sort-keys
+                (if (and table-view--sorted
+                         (= 1 (length table-view--sort-keys))
+                         (equal (caar table-view--sort-keys) col))
+                    (list (cons col (not (cdar table-view--sort-keys))))
+                  (list (cons col t)))))
+         ;; ^ off any column -> step the single-column walk-through.
          (t
           (table-view--sort-advance)))
         (table-view--sort-rows)
         (table-view--render))
-      (message "Sort: %s %s" table-view--sort-key
-               (if table-view--sort-asc "asc" "desc"))))))
+      (message "Sort: %s" (table-view--sort-description))
+      ;; C-u ^ arms a run of plain `^' to keep flipping this key.
+      (when secondary (table-view--arm-secondary-toggle col))))))
 
 ;;; Public API
 
@@ -553,11 +614,14 @@ of one argument (BUFFER) that populates rows via `table-view-set-rows' /
             table-view--rows (alist-get 'rows spec)
             table-view--handlers handlers
             table-view--fill-fn fill-fn)
-      (let ((sort (alist-get 'sort spec)))
-        (setq table-view--sort-key (alist-get 'column sort)
-              table-view--sort-asc (if (assq 'ascending sort)
-                                       (and (alist-get 'ascending sort) t)
-                                     t)))
+      (let* ((sort (alist-get 'sort spec))
+             (column (alist-get 'column sort)))
+        (setq table-view--sort-keys
+              (when column
+                (list (cons column
+                            (if (assq 'ascending sort)
+                                (and (alist-get 'ascending sort) t)
+                              t))))))
       (table-view--install-action-keys spec)
       (table-view--render))
     (switch-to-buffer buf)

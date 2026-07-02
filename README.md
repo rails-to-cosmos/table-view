@@ -97,6 +97,7 @@ Runnable demos live in [`examples/`](examples/):
 | [`minimal.el`](examples/minimal.el) | inline rows from a JSON spec |
 | [`fill-function.el`](examples/fill-function.el) | populate via a fill function (Emacs subprocesses) |
 | [`upsert.el`](examples/upsert.el) | streaming row updates via a timer |
+| [`multi-sort.el`](examples/multi-sort.el) | column navigation + multi-column (`C-u ^`) sorting |
 
 Open one and `M-x eval-buffer`.
 
@@ -105,15 +106,18 @@ Open one and `M-x eval-buffer`.
 | Key | Action |
 |-----|--------|
 | `n` / `p` | next / previous line |
-| `f` / `b` | forward / backward — by **column** (cell) when point is on the table, by **char** elsewhere |
-| `^` | sort by the column at point (repeat toggles asc/desc); off a column, cycles through every column and direction |
+| `f` / `b` | forward / backward — by **column** (cell) on any table line (header or data row), by **char** elsewhere |
+| `^` | sort by the column at point — a data cell **or its header** (repeat toggles asc/desc); off a column, cycles through every column and direction |
+| `C-u ^` | add the column at point as a secondary (tie-breaker) sort key; a following run of `^` then toggles that key's direction |
 | `g` | clear filter & refresh, preserving the current sort order |
 | `/` | filter rows by substring |
 | `q` | quit window |
 | *action keys* | dispatched to your handlers (e.g. `RET`) |
 
-Tables open **unsorted** (in load order); sorting is opt-in via `^`, and `g`
-never imposes a sort it wasn't already in.
+Tables open **unsorted** (in load order); sorting is opt-in via `^` (with
+point on a data cell or its column header), and `g` never imposes a sort it
+wasn't already in.  `C-u ^` adds the column at point as a lower-priority
+tie-breaker, so you can sort within groups — e.g. by name, then by year.
 
 ## Spec format
 
