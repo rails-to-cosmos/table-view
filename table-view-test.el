@@ -763,6 +763,19 @@
     (should (equal (mapcar (lambda (r) (alist-get 'id r)) table-view--rows)
                    '("b" "c" "a")))))                        ; low, medium, high
 
+;;; Sortable defaults to true
+
+(ert-deftest tv-test-sortable-defaults-true-opt-out-false ()
+  (tv-test--with-display
+      "{ \"columns\": [ {\"key\":\"a\",\"header\":\"A\"},
+                        {\"key\":\"b\",\"header\":\"B\",\"sortable\":true},
+                        {\"key\":\"c\",\"header\":\"C\",\"sortable\":false} ],
+         \"rows\": [] }"
+    (let ((keys (table-view--sortable-keys)))
+      (should (member "a" keys))          ; omitted -> sortable by default
+      (should (member "b" keys))          ; explicit true
+      (should-not (member "c" keys)))))   ; explicit false -> opt out
+
 ;;; Row deletion
 
 (defun tv-test--has-id (id)

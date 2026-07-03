@@ -573,8 +573,13 @@ screen instead of drifting or following its row."
        (move-to-column ,col))))
 
 (defun table-view--sortable-keys ()
+  "Keys of the columns the user may sort by.
+Columns are sortable by default; a column opts out with `sortable' set
+to a false value."
   (delq nil (mapcar (lambda (c)
-                      (when (eq t (alist-get 'sortable c)) (alist-get 'key c)))
+                      (let ((s (assq 'sortable c)))
+                        (when (or (null s) (cdr s))
+                          (alist-get 'key c))))
                     (table-view--columns table-view--spec))))
 
 (defun table-view-filter (pattern)

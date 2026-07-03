@@ -8,9 +8,9 @@
 
 (defvar upsert-example--spec
   '((title . "Live Counter")
-    (columns . (((key . "label") (header . "Label") (sortable . t))
+    (columns . (((key . "label") (header . "Label"))
                 ((key . "value") (header . "Value") (type . "number")
-                 (align . "right") (sortable . t))))
+                 (align . "right"))))
     (sort . ((column . "label") (ascending . t)))
     (rows . ()))
   "Spec for the live-counter example (rows arrive via the timer).")

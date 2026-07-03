@@ -75,9 +75,9 @@ git clone https://github.com/rails-to-cosmos/table-view
 (require 'table-view)
 
 (let ((spec '((title . "Books")
-              (columns . (((key . "title") (header . "Title") (sortable . t))
+              (columns . (((key . "title") (header . "Title"))
                           ((key . "year")  (header . "Year") (type . "number")
-                           (align . "right") (sortable . t))))
+                           (align . "right"))))
               (actions . (((key . "RET") (label . "Open") (command . "open"))))
               (sort . ((column . "year") (ascending . nil)))   ; descending
               (rows . (((id . "1") (cells . ((title . "SICP") (year . 1996))))
@@ -145,7 +145,7 @@ for a column whose key is `"name"`). Booleans are `t` / omitted.
 | `header`   | header label                                                                                                                                                                                        |
 | `type`     | `"number"` (numeric sort), `"badge"` (colored from a palette), or omitted (string)                                                                                                                  |
 | `align`    | `"right"` to right-justify; omitted means left                                                                                                                                                      |
-| `sortable` | `true` to allow `^` to sort by this column                                                                                                                                                          |
+| `sortable` | whether `^` can sort by this column — **sortable by default**; set to `false` to opt out |
 | `values`   | ordered list of the column's expected values, e.g. `["low","medium","high"]`; that order becomes the sort order (categorical). Colours stay in `badges` — `values` is ordering only                 |
 | `compare`  | sort method override: `"number"`, `"string"`, or `"natural"` (number-aware, so `2 < 10`); a name registered in `table-view-comparators`; or (in an elisp spec) a `(a b) -> bool` predicate function |
 | `badges`   | for `type: "badge"`: list of `{ "value": V, "color": C }`; declared order is also the sort priority                                                                                                 |

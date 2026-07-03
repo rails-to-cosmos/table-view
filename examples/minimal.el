@@ -11,9 +11,9 @@
 (require 'table-view)
 
 (let ((spec '((title . "Books")
-              (columns . (((key . "title") (header . "Title") (sortable . t))
+              (columns . (((key . "title") (header . "Title"))
                           ((key . "year")  (header . "Year") (type . "number")
-                           (align . "right") (sortable . t))))
+                           (align . "right"))))
               (actions . (((key . "RET") (label . "Open") (command . "open"))))
               (sort . ((column . "year") (ascending . nil)))   ; descending
               (rows . (((id . "1") (cells . ((title . "SICP")               (year . 1996))))
