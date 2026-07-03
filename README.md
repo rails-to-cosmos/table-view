@@ -95,6 +95,7 @@ Runnable demos live in [`examples/`](examples/):
 | [`upsert.el`](examples/upsert.el)               | streaming row updates via a timer                  |
 | [`multi-sort.el`](examples/multi-sort.el)       | column navigation, reordering, + multi-column (`C-u ^`) sorting |
 | [`sort-methods.el`](examples/sort-methods.el)   | per-column sort methods (`values`, `compare`) + a default sort |
+| [`delete.el`](examples/delete.el)               | row deletion gated on a custom pre-delete step |
 
 Open one and `M-x eval-buffer`.
 
@@ -172,6 +173,7 @@ for a column whose key is `"name"`). Booleans are `t` / omitted.
 | `(table-view-display BUFFER SPEC HANDLERS &optional FILL-FN)` | render `SPEC` into `BUFFER`, install `HANDLERS` (alist of command-name → `(FN ID ROW)`), and run `FILL-FN` (a function of `BUFFER`) to populate; returns the buffer |
 | `(table-view-set-rows BUFFER ROWS)`                           | replace all rows                                                                                                                                                    |
 | `(table-view-upsert-row BUFFER ROW)`                          | add `ROW`, or replace the existing row with the same `id` in place                                                                                                  |
+| `(table-view-delete-row BUFFER ID)`                           | remove the row with `ID` (point moves to a neighbour). Wire deletion via an action handler that does any pre-delete work and calls this only on success             |
 | `(table-view-refresh BUFFER)`                                 | re-invoke the registered fill function                                                                                                                              |
 
 Populate up front via the spec's `rows`, in bulk via `table-view-set-rows`, or

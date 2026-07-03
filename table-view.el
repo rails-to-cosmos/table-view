@@ -39,7 +39,7 @@
 ;;   * render a spec as an aligned, org-table-styled read-only view
 ;;   * colour `badge' cells from the column's declared palette
 ;;   * build a keymap from the declared actions, dispatch by command name
-;;   * own a row store keyed by id: set-rows / upsert-row (streaming fill)
+;;   * own a row store keyed by id: set-rows / upsert-row / delete-row
 ;;   * client-side sort on sortable columns
 ;;   * interactive substring filter (/)
 ;;
@@ -52,6 +52,7 @@
 ;;   upsert.el        — streaming row updates via a timer
 ;;   multi-sort.el    — column navigation + multi-column (C-u ^) sorting
 ;;   sort-methods.el  — per-column sort methods (values / compare) + default sort
+;;   delete.el        — row deletion gated on a custom pre-delete step
 ;;
 ;; Keybindings in table-view-mode:
 ;;   g   — clear filter & refresh, preserving the current sort order
@@ -728,6 +729,32 @@ keeps its on-screen location across the re-sort."
           (unless found
             (setq table-view--rows (nconc table-view--rows (list row))))
           (table-view--render))))))
+
+(defun table-view-delete-row (buffer id)
+  "Remove the row whose id is ID from table-view BUFFER (a buffer or name).
+Re-renders and moves point to the following row, or to the previous one
+when the deleted row was last.  Returns non-nil when a row was removed.
+
+Deletion is otherwise up to the consumer: bind an action to a handler
+that does any pre-delete work (removing files, database rows, ...) and
+calls this only on success, so the row survives if that work fails."
+  (let ((buf (get-buffer buffer)))
+    (when (buffer-live-p buf)
+      (with-current-buffer buf
+        (when (cl-find id table-view--rows
+                       :key (lambda (r) (alist-get 'id r)) :test #'equal)
+          (let* ((visible (table-view--visible-rows))
+                 (vpos (cl-position id visible
+                                    :key (lambda (r) (alist-get 'id r)) :test #'equal))
+                 (target (and vpos
+                              (alist-get 'id (or (nth (1+ vpos) visible)
+                                                 (and (> vpos 0) (nth (1- vpos) visible)))))))
+            (setq table-view--rows
+                  (cl-remove id table-view--rows
+                             :key (lambda (r) (alist-get 'id r)) :test #'equal))
+            (table-view--render)
+            (when target (table-view--goto-id target))
+            t))))))
 
 (defun table-view-refresh (buffer)
   "Re-invoke the registered `fill-fn' for table-view BUFFER (a buffer or name)."

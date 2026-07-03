@@ -763,5 +763,57 @@
     (should (equal (mapcar (lambda (r) (alist-get 'id r)) table-view--rows)
                    '("b" "c" "a")))))                        ; low, medium, high
 
+;;; Row deletion
+
+(defun tv-test--has-id (id)
+  "Non-nil when a row with ID is present."
+  (cl-find id table-view--rows :key (lambda (r) (alist-get 'id r)) :test #'equal))
+
+(ert-deftest tv-test-delete-row ()
+  (tv-test--with-table
+    (should (= (length table-view--rows) 3))
+    (table-view--goto-id "b")
+    (should (table-view-delete-row (current-buffer) "b"))
+    (should (= (length table-view--rows) 2))
+    (should-not (tv-test--has-id "b"))
+    (should-not (string-match-p "bravo" (buffer-string)))
+    (should (equal (get-text-property (point) 'table-view-id) "c"))))  ; point on next row
+
+(ert-deftest tv-test-delete-row-last ()
+  (tv-test--with-table
+    (table-view--goto-id "c")
+    (table-view-delete-row (current-buffer) "c")
+    (should (= (length table-view--rows) 2))
+    (should (equal (get-text-property (point) 'table-view-id) "b"))))  ; last -> previous
+
+(ert-deftest tv-test-delete-row-only ()
+  (tv-test--with-table
+    (table-view-set-rows (current-buffer) (list (car (tv-test--rows))))
+    (should (table-view-delete-row (current-buffer) "a"))
+    (should (= (length table-view--rows) 0))
+    (should (string-match-p "(no rows)" (buffer-string)))))
+
+(ert-deftest tv-test-delete-row-missing-is-noop ()
+  (tv-test--with-table
+    (should-not (table-view-delete-row (current-buffer) "zzz"))
+    (should (= (length table-view--rows) 3))))
+
+(ert-deftest tv-test-delete-row-via-gated-handler ()
+  ;; the "proceed only after success" pattern: a handler that deletes only
+  ;; when its pre-delete step succeeds
+  (tv-test--with-table
+    (setq table-view--handlers
+          `(("delete" . ,(lambda (id _row)
+                           (when (equal id "b")           ; pretend cleanup succeeds only for b
+                             (table-view-delete-row (current-buffer) id))))))
+    (table-view--goto-id "a")
+    (table-view--dispatch "delete")                       ; gate fails -> kept
+    (should (= (length table-view--rows) 3))
+    (should (tv-test--has-id "a"))
+    (table-view--goto-id "b")
+    (table-view--dispatch "delete")                       ; gate succeeds -> removed
+    (should (= (length table-view--rows) 2))
+    (should-not (tv-test--has-id "b"))))
+
 (provide 'table-view-test)
 ;;; table-view-test.el ends here
