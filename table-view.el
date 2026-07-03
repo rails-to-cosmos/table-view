@@ -42,6 +42,7 @@
 ;;   * own a row store keyed by id: set-rows / upsert-row / delete-row
 ;;   * client-side sort on sortable columns
 ;;   * interactive substring filter (/)
+;;   * mark rows (m) and run `bulk' actions on the marked set
 ;;
 ;; A consumer provides: a parsed spec, a `fill-fn' (BUFFER -> populates via
 ;; the mutators below), and a handler alist (command-name -> FN of ID ROW).
@@ -53,14 +54,16 @@
 ;;   multi-sort.el    — column navigation + multi-column (C-u ^) sorting
 ;;   sort-methods.el  — per-column sort methods (values / compare) + default sort
 ;;   delete.el        — row deletion gated on a custom pre-delete step
+;;   bulk.el          — marking (m), narrowing (/), and bulk actions (bulk: t)
 ;;
 ;; Keybindings in table-view-mode:
-;;   g   — clear filter & refresh, preserving the current sort order
+;;   g   — clear filter/narrow & refresh, preserving the sort order
 ;;   ^   — sort by the column at point, repeat toggles asc/desc;
 ;;         off a column, cycle through every column and direction
 ;;   C-u ^ — add the column at point as a secondary (tie-breaker) sort key;
 ;;           a following run of `^' then toggles that key's direction
-;;   /   — filter rows by substring
+;;   m   — toggle mark on the current row;  U — unmark all
+;;   /   — narrow to the marked rows, or filter by substring when none marked
 ;;   n/p — next/previous line
 ;;   f/b — forward/backward: by column on a table line (header or row),
 ;;         by char elsewhere
@@ -92,6 +95,10 @@ the hint line never claims a sort the displayed rows are not actually in.")
 (defvar-local table-view--filter nil
   "Current filter string, or nil.  When set, only rows with at least one
 cell matching the string (case-insensitive substring) are rendered.")
+(defvar-local table-view--marks nil
+  "List of marked row ids.")
+(defvar-local table-view--narrowed nil
+  "Non-nil when the view is narrowed to the marked rows.")
 
 ;;; Spec accessors
 
@@ -256,13 +263,33 @@ priority first.  A missing `ascending' defaults to ascending."
                            (table-view--cell row (alist-get 'key col))))))
              (table-view--columns table-view--spec))))
 
+(defun table-view--marked-p (id)
+  "Non-nil when the row with ID is marked."
+  (and (member id table-view--marks) t))
+
+(defun table-view--marks-active-p ()
+  "Non-nil when any row is marked, so the mark column is shown."
+  (and table-view--marks t))
+
+(defun table-view--prune-marks ()
+  "Discard the mark of any row missing from `table-view--rows'.
+Also widen the view when nothing stays marked."
+  (let ((ids (mapcar (lambda (r) (alist-get 'id r)) table-view--rows)))
+    (setq table-view--marks
+          (cl-remove-if-not (lambda (m) (member m ids)) table-view--marks)))
+  (unless table-view--marks (setq table-view--narrowed nil)))
+
 (defun table-view--visible-rows ()
-  "Rows to render: all if no filter, otherwise only matching ones."
-  (if (and table-view--filter (not (string-empty-p table-view--filter)))
-      (cl-remove-if-not
-       (lambda (row) (table-view--row-matches-p row table-view--filter))
-       table-view--rows)
-    table-view--rows))
+  "Rows to render: narrowed to the marked subset (when narrowed), then
+restricted to the current filter."
+  (let ((rows table-view--rows))
+    (when table-view--narrowed
+      (setq rows (cl-remove-if-not
+                  (lambda (r) (table-view--marked-p (alist-get 'id r))) rows)))
+    (when (and table-view--filter (not (string-empty-p table-view--filter)))
+      (setq rows (cl-remove-if-not
+                  (lambda (r) (table-view--row-matches-p r table-view--filter)) rows)))
+    rows))
 
 ;;; Rendering
 
@@ -300,14 +327,18 @@ key) so column navigation can locate cell boundaries."
      'table-view-col key)))
 
 (defun table-view--row-string (spec row widths cell-fn)
-  "Build one \"| ... |\" line for ROW, each cell via CELL-FN."
+  "Build one \"| ... |\" line for ROW, each cell via CELL-FN.
+Prepends the mark-gutter column when any row is marked."
   (concat "| "
+          (and (table-view--marks-active-p)
+               (concat (if (table-view--marked-p (alist-get 'id row)) "*" " ") " | "))
           (mapconcat (lambda (col) (funcall cell-fn col row widths))
                      (table-view--columns spec) " | ")
           " |"))
 
 (defun table-view--header-string (spec widths)
   (concat "| "
+          (and (table-view--marks-active-p) "  | ")
           (mapconcat (lambda (col)
                        (propertize
                         (table-view--pad
@@ -320,6 +351,7 @@ key) so column navigation can locate cell boundaries."
 
 (defun table-view--rule-string (spec widths)
   (concat "|"
+          (and (table-view--marks-active-p) "---+")
           (mapconcat (lambda (col)
                        (make-string
                         (+ 2 (alist-get (alist-get 'key col) widths nil nil #'equal)) ?-))
@@ -330,7 +362,7 @@ key) so column navigation can locate cell boundaries."
   "A one-line status/help string: current sort + declared action keys.
 Shows \"unsorted\" until an explicit sort has been applied, since rows
 render in load order and only reorder on `^'."
-  (format "sort: %s%s    %s"
+  (format "sort: %s%s%s    %s"
           (if (and table-view--sorted table-view--sort-keys)
               (table-view--sort-description)
             "unsorted (^)")
@@ -340,6 +372,11 @@ render in load order and only reorder on `^'."
                       (length (table-view--visible-rows))
                       (length table-view--rows))
             "")
+          (cond (table-view--narrowed
+                 (format "    narrowed: %d marked" (length table-view--marks)))
+                (table-view--marks
+                 (format "    marked: %d" (length table-view--marks)))
+                (t ""))
           (mapconcat (lambda (a) (format "%s:%s"
                                          (alist-get 'key a) (alist-get 'label a)))
                      (table-view--actions table-view--spec) "  ")))
@@ -383,16 +420,36 @@ same line number."
       (goto-char (point-min))
       (forward-line (1- line)))))
 
+;;; Marks and bulk
+
+(defun table-view-marked-rows (&optional buffer)
+  "The marked rows of BUFFER (or the current buffer), in row order."
+  (with-current-buffer (or buffer (current-buffer))
+    (cl-remove-if-not (lambda (r) (table-view--marked-p (alist-get 'id r)))
+                      table-view--rows)))
+
+(defun table-view-current-or-marked-rows (&optional buffer)
+  "The marked rows of BUFFER, or the single row at point when none are marked.
+This is what a `bulk' action's handler receives."
+  (with-current-buffer (or buffer (current-buffer))
+    (or (table-view-marked-rows)
+        (let ((row (get-text-property (point) 'table-view-row)))
+          (and row (list row))))))
+
 ;;; Dispatch
 
-(defun table-view--dispatch (command)
-  "Invoke the registered handler for COMMAND on the row at point."
-  (let ((handler (cdr (assoc command table-view--handlers)))
-        (id (get-text-property (point) 'table-view-id))
-        (row (get-text-property (point) 'table-view-row)))
-    (if handler
-        (funcall handler id row)
-      (message "table-view: no handler for %s" command))))
+(defun table-view--dispatch (command &optional bulk)
+  "Invoke the registered handler for COMMAND.
+When BULK is non-nil the handler is called with the operative row list
+\(the marked rows, or the row at point when none are marked); otherwise
+it is called with the id and row at point."
+  (let ((handler (cdr (assoc command table-view--handlers))))
+    (cond
+     ((not handler) (message "table-view: no handler for %s" command))
+     (bulk (funcall handler (table-view-current-or-marked-rows)))
+     (t (funcall handler
+                 (get-text-property (point) 'table-view-id)
+                 (get-text-property (point) 'table-view-row))))))
 
 ;;; Navigation
 
@@ -530,7 +587,9 @@ See `table-view-move-column-right'."
     (define-key map "f" #'table-view-forward)
     (define-key map "b" #'table-view-backward)
     (define-key map "g" #'table-view-sort)
-    (define-key map "/" #'table-view-filter)
+    (define-key map "/" #'table-view-filter-or-narrow)
+    (define-key map "m" #'table-view-mark-toggle)
+    (define-key map "U" #'table-view-unmark-all)
     (define-key map "^" #'table-view-sort-cycle)
     (define-key map (kbd "M-<right>") #'table-view-move-column-right)
     (define-key map (kbd "M-<left>")  #'table-view-move-column-left)
@@ -548,11 +607,12 @@ See `table-view-move-column-right'."
   (let ((map (make-sparse-keymap)))
     (set-keymap-parent map table-view-mode-map)
     (dolist (action (table-view--actions spec))
-      (let ((command (alist-get 'command action)))
+      (let ((command (alist-get 'command action))
+            (bulk (and (alist-get 'bulk action) t)))
         (define-key map (kbd (alist-get 'key action))
                     (lambda ()
                       (interactive)
-                      (table-view--dispatch command)))))
+                      (table-view--dispatch command bulk)))))
     (use-local-map map)))
 
 ;;; Interactive sort commands
@@ -604,13 +664,57 @@ Point keeps its on-screen location (line and column) across the refresh.
 Begin sorting with `^'."
   (interactive)
   (table-view--save-point-location
-    (setq table-view--filter nil)
+    (setq table-view--filter nil table-view--narrowed nil)
     (when table-view--sorted
       (table-view--sort-rows))
     (table-view--render))
   (message (if table-view--sorted
                (format "Sort: %s" (table-view--sort-description))
              "Unsorted")))
+
+(defun table-view-mark-toggle ()
+  "Toggle the mark on the row at point, then move to the next row.
+Marked rows show a `*' in a gutter column and are the operand of a
+`bulk' action; see `table-view-current-or-marked-rows'."
+  (interactive)
+  (let ((id (get-text-property (point) 'table-view-id)))
+    (if (null id)
+        (message "Point is not on a row")
+      (setq table-view--marks
+            (if (member id table-view--marks)
+                (delete id table-view--marks)
+              (cons id table-view--marks)))
+      (table-view--prune-marks)         ; widen if that was the last mark
+      (table-view--render)
+      (forward-line 1))))
+
+(defun table-view-unmark-all ()
+  "Remove every mark, widening the view if it was narrowed."
+  (interactive)
+  (setq table-view--marks nil table-view--narrowed nil)
+  (table-view--render)
+  (message "Marks cleared"))
+
+(defun table-view-narrow-toggle ()
+  "Toggle narrowing the view to the marked rows."
+  (interactive)
+  (if (null table-view--marks)
+      (message "No marked rows")
+    (table-view--save-point-location
+      (setq table-view--narrowed (not table-view--narrowed))
+      (table-view--render))
+    (message (if table-view--narrowed
+                 (format "Narrowed to %d marked" (length table-view--marks))
+               "Widened"))))
+
+(defun table-view-filter-or-narrow ()
+  "Narrow to the marked rows when any are marked, else prompt for a filter.
+Bound to `/': while rows are marked it toggles the narrow-to-marked view;
+otherwise it runs the substring filter (`table-view-filter')."
+  (interactive)
+  (if table-view--marks
+      (table-view-narrow-toggle)
+    (call-interactively #'table-view-filter)))
 
 (defun table-view--sort-advance ()
   "Collapse to a single column and advance it through the walk-through.
@@ -717,6 +821,7 @@ keeps its on-screen location across the re-sort."
       (with-current-buffer buf
         (setq table-view--rows (copy-sequence rows)
               table-view--sorted nil)
+        (table-view--prune-marks)
         (table-view--render)))))
 
 (defun table-view-upsert-row (buffer row)
@@ -757,6 +862,7 @@ calls this only on success, so the row survives if that work fails."
             (setq table-view--rows
                   (cl-remove id table-view--rows
                              :key (lambda (r) (alist-get 'id r)) :test #'equal))
+            (table-view--prune-marks)
             (table-view--render)
             (when target (table-view--goto-id target))
             t))))))

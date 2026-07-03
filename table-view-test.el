@@ -828,5 +828,123 @@
     (should (= (length table-view--rows) 2))
     (should-not (tv-test--has-id "b"))))
 
+;;; Marks and bulk
+
+(ert-deftest tv-test-mark-toggle ()
+  (tv-test--with-table
+    (table-view--goto-id "b")
+    (table-view-mark-toggle)
+    (should (equal table-view--marks '("b")))
+    (should (table-view--marked-p "b"))
+    (table-view--goto-id "b")
+    (table-view-mark-toggle)                       ; toggle off
+    (should-not table-view--marks)))
+
+(ert-deftest tv-test-mark-gutter-only-when-marked ()
+  (tv-test--with-table
+    (should-not (string-match-p "| \\* |" (buffer-string)))   ; no gutter yet
+    (table-view--goto-id "a")
+    (table-view-mark-toggle)
+    (should (string-match-p "| \\* |" (buffer-string)))))     ; gutter with a `*'
+
+(ert-deftest tv-test-mark-advances-point ()
+  (tv-test--with-table
+    (table-view--goto-id "a")
+    (table-view-mark-toggle)
+    (should (equal (get-text-property (point) 'table-view-id) "b"))))
+
+(ert-deftest tv-test-mark-gutter-preserves-column-nav ()
+  (tv-test--with-table
+    (table-view--goto-id "a") (table-view-mark-toggle)   ; gutter now present
+    (table-view--goto-id "b")
+    (table-view-forward-column)
+    (should (equal (get-text-property (point) 'table-view-col) "name"))))
+
+(ert-deftest tv-test-unmark-all ()
+  (tv-test--with-table
+    (table-view--goto-id "a") (table-view-mark-toggle)
+    (table-view--goto-id "c") (table-view-mark-toggle)
+    (should (= (length table-view--marks) 2))
+    (table-view-unmark-all)
+    (should-not table-view--marks)
+    (should-not table-view--narrowed)))
+
+(ert-deftest tv-test-marked-rows-in-row-order ()
+  (tv-test--with-table
+    (table-view--goto-id "c") (table-view-mark-toggle)
+    (table-view--goto-id "a") (table-view-mark-toggle)
+    (should (equal (mapcar (lambda (r) (alist-get 'id r)) (table-view-marked-rows))
+                   '("a" "c")))))                 ; row order, not mark order
+
+(ert-deftest tv-test-narrow-to-marked ()
+  (tv-test--with-table
+    (table-view--goto-id "a") (table-view-mark-toggle)
+    (table-view--goto-id "c") (table-view-mark-toggle)
+    (table-view-narrow-toggle)
+    (should table-view--narrowed)
+    (should (equal (mapcar (lambda (r) (alist-get 'id r)) (table-view--visible-rows))
+                   '("a" "c")))
+    (should-not (string-match-p "bravo" (buffer-string)))
+    (table-view-narrow-toggle)                    ; widen
+    (should-not table-view--narrowed)
+    (should (string-match-p "bravo" (buffer-string)))))
+
+(ert-deftest tv-test-slash-narrows-when-marked ()
+  (tv-test--with-table
+    (table-view--goto-id "a") (table-view-mark-toggle)
+    (table-view-filter-or-narrow)                 ; marks present -> narrow, no prompt
+    (should table-view--narrowed)))
+
+(ert-deftest tv-test-bulk-dispatch-uses-marked ()
+  (tv-test--with-table
+    (let (got)
+      (setq table-view--handlers
+            `(("act" . ,(lambda (rows)
+                          (setq got (mapcar (lambda (r) (alist-get 'id r)) rows))))))
+      (table-view--goto-id "a") (table-view-mark-toggle)
+      (table-view--goto-id "c") (table-view-mark-toggle)
+      (table-view--dispatch "act" t)
+      (should (equal got '("a" "c"))))))
+
+(ert-deftest tv-test-bulk-dispatch-falls-back-to-current ()
+  (tv-test--with-table
+    (let (got)
+      (setq table-view--handlers
+            `(("act" . ,(lambda (rows)
+                          (setq got (mapcar (lambda (r) (alist-get 'id r)) rows))))))
+      (setq table-view--marks nil)
+      (table-view--goto-id "b")
+      (table-view--dispatch "act" t)
+      (should (equal got '("b"))))))              ; nothing marked -> current row only
+
+(ert-deftest tv-test-marks-pruned-on-delete ()
+  (tv-test--with-table
+    (table-view--goto-id "b") (table-view-mark-toggle)
+    (should (table-view--marked-p "b"))
+    (table-view-delete-row (current-buffer) "b")
+    (should-not (table-view--marked-p "b"))
+    (should-not table-view--marks)))
+
+(ert-deftest tv-test-unmark-last-while-narrowed-widens ()
+  ;; Regression: unmarking the last mark while narrowed must widen the view,
+  ;; not leave it narrowed to an empty set showing "(no rows)".
+  (tv-test--with-table
+    (table-view--goto-id "a") (table-view-mark-toggle)
+    (table-view-narrow-toggle)
+    (should table-view--narrowed)
+    (table-view--goto-id "a") (table-view-mark-toggle)   ; unmark the last mark
+    (should-not table-view--marks)
+    (should-not table-view--narrowed)                    ; widened
+    (should (= (length (table-view--visible-rows)) 3))
+    (should-not (string-match-p "(no rows)" (buffer-string)))))
+
+(ert-deftest tv-test-marks-persist-across-sort ()
+  (tv-test--with-table
+    (table-view--goto-id "a") (table-view-mark-toggle)
+    (setq table-view--sort-keys '(("count" . t)))
+    (table-view--sort-rows)
+    (table-view--render)
+    (should (table-view--marked-p "a"))))         ; mark survives the re-sort
+
 (provide 'table-view-test)
 ;;; table-view-test.el ends here

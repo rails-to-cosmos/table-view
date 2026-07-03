@@ -96,6 +96,7 @@ Runnable demos live in [`examples/`](examples/):
 | [`multi-sort.el`](examples/multi-sort.el)       | column navigation, reordering, + multi-column (`C-u ^`) sorting |
 | [`sort-methods.el`](examples/sort-methods.el)   | per-column sort methods (`values`, `compare`) + a default sort |
 | [`delete.el`](examples/delete.el)               | row deletion gated on a custom pre-delete step |
+| [`bulk.el`](examples/bulk.el)                   | marking (`m`), narrowing (`/`), and bulk actions (`bulk: t`) |
 
 Open one and `M-x eval-buffer`.
 
@@ -108,8 +109,9 @@ Open one and `M-x eval-buffer`.
 | `M-<left>` / `M-<right>` | move the column at point left / right (org-table style); point follows the column                                                              |
 | `^`                      | sort by the column at point — a data cell **or its header** (repeat toggles asc/desc); off a column, cycles through every column and direction |
 | `C-u ^`                  | add the column at point as a secondary (tie-breaker) sort key; a following run of `^` then toggles that key's direction                        |
-| `g`                      | clear filter & refresh, preserving the current sort order                                                                                      |
-| `/`                      | filter rows by substring                                                                                                                       |
+| `g`                      | clear filter/narrow & refresh, preserving the current sort order |
+| `m` / `U`                | toggle mark on the current row / unmark all (marked rows get a `*` gutter column) |
+| `/`                      | narrow to the marked rows, or — when nothing is marked — filter by substring |
 | `q`                      | quit window                                                                                                                                    |
 | *action keys*            | dispatched to your handlers (e.g. `RET`)                                                                                                       |
 
@@ -157,6 +159,7 @@ for a column whose key is `"name"`). Booleans are `t` / omitted.
 | `key`     | a `kbd` spec, e.g. `"RET"` or `"x"`                                     |
 | `label`   | shown in the hint line                                                  |
 | `command` | looked up in the handler alist; the handler is invoked as `(FN ID ROW)` |
+| `bulk` | `t` makes this a **bulk action**: its handler is invoked as `(FN ROWS)` with the marked rows (or the row at point when none are marked) |
 
 **Row**
 
@@ -174,6 +177,8 @@ for a column whose key is `"name"`). Booleans are `t` / omitted.
 | `(table-view-set-rows BUFFER ROWS)`                           | replace all rows                                                                                                                                                    |
 | `(table-view-upsert-row BUFFER ROW)`                          | add `ROW`, or replace the existing row with the same `id` in place                                                                                                  |
 | `(table-view-delete-row BUFFER ID)`                           | remove the row with `ID` (point moves to a neighbour). Wire deletion via an action handler that does any pre-delete work and calls this only on success             |
+| `(table-view-marked-rows &optional BUFFER)`                   | the marked rows, in row order |
+| `(table-view-current-or-marked-rows &optional BUFFER)`        | the marked rows, or the row at point when none are marked — what a `bulk` handler receives |
 | `(table-view-refresh BUFFER)`                                 | re-invoke the registered fill function                                                                                                                              |
 
 Populate up front via the spec's `rows`, in bulk via `table-view-set-rows`, or
