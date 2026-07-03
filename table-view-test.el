@@ -556,6 +556,70 @@
       (call-interactively #'table-view-backward)
       (should (= (point) (1- before))))))
 
+;;; Row navigation (n / p)
+
+(ert-deftest tv-test-next-line-moves-between-rows ()
+  (tv-test--with-table
+    (table-view--goto-id "a")
+    (table-view-next-line)
+    (should (equal (get-text-property (point) 'table-view-id) "b"))
+    (table-view-next-line)
+    (should (equal (get-text-property (point) 'table-view-id) "c"))))
+
+(ert-deftest tv-test-next-line-stops-at-last-row ()
+  (tv-test--with-table
+    (table-view--goto-id "c")           ; last row (load order a,b,c)
+    (table-view-next-line)
+    (should (equal (get-text-property (point) 'table-view-id) "c"))))  ; stays
+
+(ert-deftest tv-test-previous-line-moves-up ()
+  (tv-test--with-table
+    (table-view--goto-id "c")
+    (table-view-previous-line)
+    (should (equal (get-text-property (point) 'table-view-id) "b"))
+    (table-view-previous-line)
+    (should (equal (get-text-property (point) 'table-view-id) "a"))))
+
+(ert-deftest tv-test-previous-line-stops-at-first-row ()
+  (tv-test--with-table
+    (table-view--goto-id "a")           ; first row, just below the rule
+    (table-view-previous-line)
+    (should (equal (get-text-property (point) 'table-view-id) "a"))    ; stays on the row
+    (should (get-text-property (line-beginning-position) 'table-view-id))))  ; not the rule
+
+(ert-deftest tv-test-next-line-preserves-column ()
+  (tv-test--with-table
+    (table-view--goto-id "a")
+    (table-view-forward-column 2)       ; onto the "count" cell
+    (let ((col (current-column)))
+      (table-view-next-line)
+      (should (equal (get-text-property (point) 'table-view-id) "b"))
+      (should (= (current-column) col))
+      (should (equal (tv-test--col-at-point) "count")))))
+
+(ert-deftest tv-test-next-line-enters-rows-from-header ()
+  (tv-test--with-table
+    (goto-char (point-min))
+    (forward-line 3)                    ; header row (above the data rows)
+    (should-not (get-text-property (line-beginning-position) 'table-view-id))
+    (table-view-next-line)
+    (should (equal (get-text-property (point) 'table-view-id) "a"))))  ; enters first row
+
+(ert-deftest tv-test-previous-line-on-header-stays ()
+  (tv-test--with-table
+    (goto-char (point-min))
+    (forward-line 3)                    ; header row
+    (let ((line (line-number-at-pos)))
+      (table-view-previous-line)        ; up from the header would leave the table
+      (should (= (line-number-at-pos) line)))))  ; stays put, no jump into the rows
+
+(ert-deftest tv-test-next-line-noop-when-empty ()
+  (tv-test--with-table
+    (table-view-set-rows (current-buffer) nil)   ; (no rows)
+    (goto-char (point-min))
+    (table-view-next-line)                        ; must not error
+    (table-view-previous-line)))
+
 ;;; Refresh (g) preserves ordering
 
 (ert-deftest tv-test-g-preserves-unsorted-order ()
@@ -684,6 +748,123 @@
                                  (alist-get 'columns spec))
                          '("name" "count" "status"))))   ; original spec intact
       (kill-buffer buf))))
+
+;;; Column schema (add / remove columns at runtime)
+
+(ert-deftest tv-test-add-column-appends ()
+  (tv-test--with-table
+    (should (equal (table-view-add-column '((key . "x") (header . "X") (type . "text")))
+                   '((key . "x") (header . "X") (type . "text"))))
+    (should (equal (tv-test--col-order) '("name" "count" "status" "x")))
+    (should (string-match-p "X" (buffer-string)))))
+
+(ert-deftest tv-test-add-column-at-index ()
+  (tv-test--with-table
+    (table-view-add-column '((key . "x") (header . "X") (type . "text")) 1)
+    (should (equal (tv-test--col-order) '("name" "x" "count" "status")))))
+
+(ert-deftest tv-test-add-column-replaces-same-key ()
+  (tv-test--with-table
+    (table-view-add-column '((key . "x") (header . "First")  (type . "text")))
+    (table-view-add-column '((key . "x") (header . "Second") (type . "text")))
+    (should (equal (tv-test--col-order) '("name" "count" "status" "x")))   ; not duplicated
+    (should (equal (alist-get 'header (table-view--column table-view--spec "x"))
+                   "Second"))))
+
+(ert-deftest tv-test-add-column-leaves-original-spec ()
+  "Adding a column mutates only the buffer's own copy, not the shared spec."
+  (let ((buf (get-buffer-create " *tv-add*"))
+        (spec (tv-test--spec)))
+    (unwind-protect
+        (progn
+          (table-view-display buf spec nil)
+          (table-view-set-rows buf (tv-test--rows))
+          (with-current-buffer buf
+            (table-view-add-column '((key . "x") (header . "X") (type . "text")))
+            (should (member "x" (tv-test--col-order))))
+          (should (equal (mapcar (lambda (c) (alist-get 'key c))
+                                 (alist-get 'columns spec))
+                         '("name" "count" "status"))))   ; original spec untouched
+      (kill-buffer buf))))
+
+(ert-deftest tv-test-value-fn-materializes-and-sorts ()
+  "A column with a `value-fn' has its cells computed at add/set time, so it
+renders and sorts like a backend-supplied column."
+  (tv-test--with-table
+    (table-view-add-column
+     `((key . "neg") (header . "Neg") (type . "number") (align . "right")
+       (value-fn . ,(lambda (_id row)
+                      (- (alist-get 'count (alist-get 'cells row)))))))
+    (should (equal (table-view--cell (car table-view--rows) "neg") -3))   ; row "a", count 3
+    (should (string-match-p "Neg" (buffer-string)))
+    (setq table-view--sort-keys '(("neg" . t)))
+    (table-view--sort-rows)
+    (should (equal (mapcar (lambda (r) (alist-get 'id r)) table-view--rows)
+                   '("a" "c" "b")))))
+
+(ert-deftest tv-test-value-fn-recomputed-on-set-rows ()
+  "A `value-fn' column survives a full row replacement -- fresh rows get it too."
+  (tv-test--with-table
+    (table-view-add-column
+     `((key . "up") (header . "Up") (type . "text")
+       (value-fn . ,(lambda (_id row) (upcase (alist-get 'name (alist-get 'cells row)))))))
+    (should (equal (table-view--cell (car table-view--rows) "up") "ALPHA"))
+    (table-view-set-rows (current-buffer)
+                         '(((id . "d") (cells . ((name . "delta") (count . 9) (status . "ok"))))))
+    (should (equal (table-view--cell (car table-view--rows) "up") "DELTA"))))
+
+(ert-deftest tv-test-value-fn-does-not-override-supplied-cell ()
+  "A cell already present on a row wins over the column's `value-fn'."
+  (tv-test--with-table
+    (table-view-add-column
+     `((key . "count") (header . "Count")
+       (value-fn . ,(lambda (_id _row) 999))))   ; rows already carry `count'
+    (should (equal (table-view--cell (car table-view--rows) "count") 3))))
+
+(ert-deftest tv-test-remove-column ()
+  (tv-test--with-table
+    (table-view-remove-column "count")
+    (should (equal (tv-test--col-order) '("name" "status")))
+    (should-not (string-match-p "Count" (buffer-string)))))
+
+(ert-deftest tv-test-remove-column-drops-sort-key ()
+  (tv-test--with-table
+    (setq table-view--sort-keys '(("count" . t) ("name" . t)))
+    (table-view-remove-column "count")
+    (should (equal table-view--sort-keys '(("name" . t))))))
+
+(ert-deftest tv-test-remove-column-at-point ()
+  (tv-test--with-table
+    (table-view--goto-id "a")
+    (table-view-forward-column 2)               ; onto "count"
+    (should (equal (tv-test--col-at-point) "count"))
+    (call-interactively #'table-view-remove-column)
+    (should (equal (tv-test--col-order) '("name" "status")))))
+
+(ert-deftest tv-test-remove-column-refuses-last ()
+  (tv-test--with-table
+    (table-view-remove-column "name")
+    (table-view-remove-column "count")
+    (should (equal (tv-test--col-order) '("status")))
+    (table-view-remove-column "status")         ; would be the last -> refused
+    (should (equal (tv-test--col-order) '("status")))))
+
+(ert-deftest tv-test-add-column-function-used ()
+  "Interactive add builds the column via `table-view-add-column-function'."
+  (tv-test--with-table
+    (setq table-view-add-column-function
+          (lambda () '((key . "src") (header . "Src") (type . "text"))))
+    (call-interactively #'table-view-add-column)
+    (should (member "src" (tv-test--col-order)))))
+
+(ert-deftest tv-test-schema-changed-hook-fires ()
+  (tv-test--with-table
+    (let ((n 0))
+      (add-hook 'table-view-schema-changed-hook (lambda () (setq n (1+ n))) nil t)
+      (table-view-add-column '((key . "x") (header . "X") (type . "text")))
+      (should (= n 1))
+      (table-view-remove-column "x")
+      (should (= n 2)))))
 
 ;;; Comparators: compare / values / natural
 

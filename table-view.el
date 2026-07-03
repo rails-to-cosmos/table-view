@@ -69,7 +69,7 @@
 ;;           a following run of `^' then toggles that key's direction
 ;;   m   — toggle mark on the current row;  U — unmark all
 ;;   /   — narrow to the marked rows, or filter by substring when none marked
-;;   n/p — next/previous line
+;;   n/p — next/previous data row (stops on the last / first row)
 ;;   f/b — forward/backward: by column on a table line (header or row),
 ;;         by char elsewhere
 ;;   M-left/M-right — move the column at point left/right (org-table style)
@@ -193,6 +193,35 @@ buffers."
   (alist-get 'color
              (seq-find (lambda (b) (equal (alist-get 'value b) value))
                        (alist-get 'badges col))))
+
+(defun table-view--compute-cells (rows spec)
+  "Return ROWS with SPEC's computed columns' cells materialised.
+A column may declare a `value-fn': a function of (ID ROW) returning that
+column's cell value.  For every such column, each row that lacks a cell for it
+gets one filled in by calling the function; a row that already carries the cell
+is left untouched, so a backend that supplies the value directly always wins.
+The computed value is stored on the row like any other cell, so sorting,
+filtering and width computation see it -- a computed column is otherwise a
+first-class column.  Non-destructive: unchanged rows are returned as-is and
+changed rows get a fresh `cells' alist, so the caller's ROWS are never mutated."
+  (let ((vcols (seq-filter (lambda (c) (alist-get 'value-fn c))
+                           (table-view--columns spec))))
+    (if (null vcols)
+        rows
+      (mapcar
+       (lambda (row)
+         (let ((cells (alist-get 'cells row))
+               (id (alist-get 'id row))
+               (added nil))
+           (dolist (col vcols)
+             (let ((sym (intern (alist-get 'key col))))
+               (unless (assq sym cells)
+                 (push (cons sym (funcall (alist-get 'value-fn col) id row)) added))))
+           (if (null added)
+               row
+             (cons (cons 'cells (append added cells))
+                   (seq-remove (lambda (kv) (eq (car kv) 'cells)) row)))))
+       rows))))
 
 ;;; Sorting
 
@@ -534,6 +563,57 @@ it is called with the id and row at point."
 
 ;;; Navigation
 
+(defun table-view--rows-region ()
+  "Return (FIRST . LAST), the line-start positions of the first and last
+data rows, or nil when there are no rows.  Rows are the lines the renderer
+tags with `table-view-id'."
+  (let ((first (text-property-not-all (point-min) (point-max) 'table-view-id nil)))
+    (when first
+      (let ((last first) (pos first))
+        (while (setq pos (next-single-property-change pos 'table-view-id))
+          (when (get-text-property pos 'table-view-id)
+            (setq last pos)))
+        (cons first last)))))
+
+(defun table-view--move-row (dir)
+  "Move point one data row in DIR (1 down, -1 up), preserving the column.
+Point never leaves the data rows: on the last row a further `n' stays put,
+on the first row a further `p' stays just below the header separator.  From
+above the rows `n' enters the first row (and from below, `p' the last)."
+  (let ((region (table-view--rows-region)))
+    (when region
+      (let ((col (current-column))
+            (start (point))
+            (start-bol (line-beginning-position))
+            (first (car region))
+            (last (cdr region)))
+        (forward-line dir)
+        (let ((bol (line-beginning-position)))
+          (cond
+           ((get-text-property bol 'table-view-id))          ; landed on a row: keep
+           ((and (> dir 0) (< start-bol first)) (goto-char first)) ; enter from above
+           ((and (< dir 0) (> start-bol last)) (goto-char last))   ; enter from below
+           (t (goto-char start))))                            ; at a boundary: stay
+        (move-to-column col)))))
+
+(defun table-view-next-line (&optional n)
+  "Move down among the table's data rows, stopping on the last row.
+With prefix N repeat; a negative N moves up (see `table-view-previous-line')."
+  (interactive "p")
+  (let ((n (or n 1)))
+    (if (< n 0)
+        (table-view-previous-line (- n))
+      (dotimes (_ n) (table-view--move-row 1)))))
+
+(defun table-view-previous-line (&optional n)
+  "Move up among the table's data rows, stopping on the first row -- just
+below the header separator.  With prefix N repeat; a negative N moves down."
+  (interactive "p")
+  (let ((n (or n 1)))
+    (if (< n 0)
+        (table-view-next-line (- n))
+      (dotimes (_ n) (table-view--move-row -1)))))
+
 (defun table-view--cell-starts ()
   "Buffer positions where each cell begins on the current line, left to right.
 Cells are the regions the renderer tags with the `table-view-col' text
@@ -659,12 +739,110 @@ See `table-view-move-column-right'."
   (interactive "p")
   (table-view-move-column-right (- (or n 1))))
 
+;;; Column schema (add / remove columns at runtime)
+
+(defvar-local table-view-add-column-function nil
+  "Function returning a column alist to add, or nil to cancel the add.
+Called with no arguments by an interactive `table-view-add-column' so a
+consumer can prompt for a domain-specific column -- e.g. one whose cells are
+computed from a record field via a `value-fn' (see `table-view--compute-cells').
+The returned column is an alist shaped like an entry of a spec's `columns'.
+When this is nil, `table-view-add-column' falls back to prompting for a header
+and adding an empty text column.")
+
+(defvar table-view-schema-changed-hook nil
+  "Normal hook run after a column is added or removed.
+Runs in the table buffer once `table-view-add-column' or
+`table-view-remove-column' has changed the column set and re-rendered.  A
+consumer adds a buffer-local handler (`add-hook' with LOCAL non-nil) to
+persist the new schema, reading the live columns from `table-view--spec'.")
+
+(defun table-view--column-keys ()
+  "Keys of the current spec's columns, in display order."
+  (mapcar (lambda (c) (alist-get 'key c)) (table-view--columns table-view--spec)))
+
+(defun table-view--fresh-column-key (header)
+  "A column key derived from HEADER, made unique among the current columns."
+  (let* ((slug (downcase (replace-regexp-in-string "[^[:alnum:]]+" "-" header)))
+         (base (if (string-empty-p slug) "col" slug))
+         (keys (table-view--column-keys))
+         (key base) (n 1))
+    (while (member key keys)
+      (setq key (format "%s-%d" base (cl-incf n))))
+    key))
+
+(defun table-view-add-column (&optional column index)
+  "Add COLUMN to the current table-view buffer, materialise its cells, re-render.
+COLUMN is a column alist (as in a spec's `columns'); it may carry a `value-fn'
+of (ID ROW) so its cells are computed for the loaded rows (see
+`table-view--compute-cells').  It is inserted at INDEX (0-based) or, by default,
+appended; if a column with the same key already exists it is replaced in place.
+
+Called interactively (COLUMN nil) it builds the column via
+`table-view-add-column-function' when that is set, else prompts for a header and
+adds an empty text column.  After the change it runs
+`table-view-schema-changed-hook' so a consumer may persist the schema.  Returns
+the column that was added, or nil when the add was cancelled."
+  (interactive)
+  (let ((col (or column
+                 (if table-view-add-column-function
+                     (funcall table-view-add-column-function)
+                   (let ((header (string-trim (read-string "New column header: "))))
+                     (unless (string-empty-p header)
+                       `((key . ,(table-view--fresh-column-key header))
+                         (header . ,header) (type . "text") (align . "left"))))))))
+    (when col
+      (let* ((key (alist-get 'key col))
+             (cols (table-view--columns table-view--spec)))
+        (setf (alist-get 'columns table-view--spec)
+              (cond
+               ((cl-find key cols :test #'equal :key (lambda (c) (alist-get 'key c)))
+                (mapcar (lambda (c) (if (equal (alist-get 'key c) key) col c)) cols))
+               ((and index (<= 0 index (length cols)))
+                (append (seq-take cols index) (list col) (seq-drop cols index)))
+               (t (append cols (list col)))))
+        (setq table-view--rows
+              (table-view--compute-cells table-view--rows table-view--spec))
+        (table-view--render)
+        (run-hooks 'table-view-schema-changed-hook)
+        (when (called-interactively-p 'interactive)
+          (message "Added column: %s" (alist-get 'header col)))
+        col))))
+
+(defun table-view-remove-column (&optional key)
+  "Remove the column named KEY from the current table-view buffer and re-render.
+Interactively (KEY nil) target the column at point, else prompt for one.  Also
+drops the column from the active sort, then runs the buffer's
+`table-view-schema-changed-hook' so a consumer may persist the schema.  Returns
+KEY when a column was actually removed."
+  (interactive)
+  (let* ((cols (table-view--columns table-view--spec))
+         (key (or key
+                  (get-text-property (point) 'table-view-col)
+                  (and cols (completing-read "Remove column: "
+                                             (table-view--column-keys) nil t)))))
+    (cond
+     ((null key) (message "No column to remove") nil)
+     ((not (cl-find key cols :test #'equal :key (lambda (c) (alist-get 'key c))))
+      (message "No such column: %s" key) nil)
+     ((= (length cols) 1) (message "Cannot remove the last column") nil)
+     (t
+      (setf (alist-get 'columns table-view--spec)
+            (cl-remove key cols :test #'equal :key (lambda (c) (alist-get 'key c))))
+      (setq table-view--sort-keys
+            (cl-remove key table-view--sort-keys :test #'equal :key #'car))
+      (table-view--render)
+      (run-hooks 'table-view-schema-changed-hook)
+      (when (called-interactively-p 'interactive)
+        (message "Removed column: %s" key))
+      key))))
+
 ;;; Keymap
 
 (defvar table-view-mode-map
   (let ((map (make-sparse-keymap)))
-    (define-key map "n" #'next-line)
-    (define-key map "p" #'previous-line)
+    (define-key map "n" #'table-view-next-line)
+    (define-key map "p" #'table-view-previous-line)
     (define-key map "f" #'table-view-forward)
     (define-key map "b" #'table-view-backward)
     (define-key map "g" #'table-view-sort)
@@ -1136,7 +1314,8 @@ the marked rows, so it is refused there until the view is widened."
   (let ((buf (get-buffer buffer)))
     (when (buffer-live-p buf)
       (with-current-buffer buf
-        (setq table-view--rows (copy-sequence rows)
+        (setq table-view--rows (table-view--compute-cells (copy-sequence rows)
+                                                          table-view--spec)
               table-view--sorted nil)
         (table-view--prune-marks)
         (table-view--render)))))
@@ -1164,7 +1343,8 @@ ROWS, and lands point on the first row (or the requested row id)."
     (when (buffer-live-p buf)
       (with-current-buffer buf
         (let ((pending table-view--pending))
-          (setq table-view--rows (copy-sequence rows))
+          (setq table-view--rows (table-view--compute-cells (copy-sequence rows)
+                                                            table-view--spec))
           (if (table-view--offset-p)
               (setq table-view--offset (or offset (plist-get pending :offset) 0)
                     table-view--page-index
@@ -1227,6 +1407,7 @@ instead of enumerating rows it has not loaded.  This is the seam a future
   (let ((buf (get-buffer buffer)))
     (when (buffer-live-p buf)
       (with-current-buffer buf
+        (setq row (car (table-view--compute-cells (list row) table-view--spec)))
         (let ((id (alist-get 'id row)) (found nil))
           (setq table-view--rows
                 (mapcar (lambda (r)
@@ -1304,7 +1485,8 @@ first page request.  Rows arriving later via FILL-FN start unsorted."
     (with-current-buffer buf
       (table-view-mode)
       (setq table-view--spec (table-view--own-spec spec)
-            table-view--rows (alist-get 'rows spec)
+            table-view--rows (table-view--compute-cells (alist-get 'rows spec)
+                                                        table-view--spec)
             table-view--handlers handlers
             table-view--fill-fn fill-fn
             table-view--page-fn page-fn)
