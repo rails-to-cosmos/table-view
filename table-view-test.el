@@ -673,16 +673,14 @@
       (should (= (line-number-at-pos) line))          ; same on-screen line
       (should (= (current-column) col)))))            ; same column (not col 0)
 
-(ert-deftest tv-test-filter-preserves-point-location ()
+(ert-deftest tv-test-filter-moves-to-first-row ()
+  ;; after filtering, point lands on the first matching row (not preserved)
   (tv-test--with-table
-    (goto-char (point-min))
-    (forward-line 3)                    ; header line, stable across filtering
-    (forward-char 2)
-    (let ((line (line-number-at-pos))
-          (col (current-column)))
-      (table-view-filter "alpha")       ; hint grows, rows drop
-      (should (= (line-number-at-pos) line))          ; same on-screen line
-      (should (= (current-column) col)))))            ; same column (not col 0)
+    (table-view--goto-id "c")           ; start on the last row
+    (table-view-filter "l")             ; matches alpha (a) and charlie (c)
+    (should (equal (mapcar (lambda (r) (alist-get 'id r)) (table-view--visible-rows))
+                   '("a" "c")))
+    (should (equal (get-text-property (point) 'table-view-id) "a"))))  ; first match, not c
 
 ;;; Column reordering (M-left / M-right)
 
@@ -1570,15 +1568,12 @@ push-down can be tested)."
       (should (= (current-column) col))               ; same column, not col 0
       (should (equal (tv-test--col-at-point) "num")))))
 
-(ert-deftest tv-test-page-filter-preserves-point-location ()
+(ert-deftest tv-test-page-filter-moves-to-first-row ()
+  ;; after a pushed-down filter, point lands on the first matching row
   (tv-test--with-paged 12 3
-    (goto-char (point-min))
-    (forward-line 3)                    ; header row, stable across filtering
-    (table-view-forward-column 2)       ; onto the "name" header
-    (let ((line (line-number-at-pos)) (col (current-column)))
-      (table-view-filter "user")
-      (should (= (line-number-at-pos) line))
-      (should (= (current-column) col)))))
+    (table-view-next-page)              ; leave page 1 / the first row
+    (table-view-filter "user-1")        ; matches r1,r10,r11,r12
+    (should (equal (get-text-property (point) 'table-view-id) "r1"))))  ; first match
 
 (ert-deftest tv-test-page-nav-preserves-point-location ()
   ;; a page turn keeps the cursor on the same on-screen line and column, so a

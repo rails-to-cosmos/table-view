@@ -105,7 +105,7 @@ Open one and `M-x eval-buffer`.
 
 | Key                      | Action                                                                                                                                         |
 |--------------------------|------------------------------------------------------------------------------------------------------------------------------------------------|
-| `n` / `p`                | next / previous line                                                                                                                           |
+| `n` / `p`                | next / previous data row (stops on the last / first row, never leaving the table body)                                                        |
 | `f` / `b`                | forward / backward — by **column** (cell) on any table line (header or data row), by **char** elsewhere                                        |
 | `M-<left>` / `M-<right>` | move the column at point left / right (org-table style); point follows the column                                                              |
 | `^`                      | sort by the column at point — a data cell **or its header** (repeat toggles asc/desc); off a column, cycles through every column and direction |

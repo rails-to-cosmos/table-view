@@ -915,21 +915,21 @@ to a false value."
                     (table-view--columns table-view--spec))))
 
 (defun table-view-filter (pattern)
-  "Filter rows to those with any cell matching PATTERN.
-Empty PATTERN clears the filter.  In client buffers this filters the
-loaded rows and keeps point on screen.  In paged buffers the pattern is
-pushed to the server and the first matching page is fetched, so the
-filter applies across the whole dataset rather than just the loaded page."
+  "Filter rows to those with any cell matching PATTERN, landing on the first
+match.  Empty PATTERN clears the filter.  In client buffers this filters the
+loaded rows; in paged buffers the pattern is pushed to the server and the
+first matching page is fetched, so the filter applies across the whole
+dataset rather than just the loaded page."
   (interactive "sFilter: ")
   (setq table-view--filter (if (string-empty-p pattern) nil pattern))
   (if (table-view--paged-p)
       (progn
-        (table-view--refetch-first (table-view--preserve-landing))
+        (table-view--refetch-first)          ; lands on the first row
         (message (if table-view--filter
                      (format "Filter: %s" table-view--filter)
                    "Filter cleared")))
-    (table-view--save-point-location
-      (table-view--render))
+    (table-view--render)
+    (table-view--goto-first-row)
     (if table-view--filter
         (message "Filter: %s (%d/%d rows)"
                  table-view--filter
