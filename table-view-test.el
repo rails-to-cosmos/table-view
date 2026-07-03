@@ -811,13 +811,42 @@ renders and sorts like a backend-supplied column."
                          '(((id . "d") (cells . ((name . "delta") (count . 9) (status . "ok"))))))
     (should (equal (table-view--cell (car table-view--rows) "up") "DELTA"))))
 
-(ert-deftest tv-test-value-fn-does-not-override-supplied-cell ()
-  "A cell already present on a row wins over the column's `value-fn'."
+(ert-deftest tv-test-compute-cells-fills-only-missing ()
+  "`table-view--compute-cells' fills a missing cell but keeps a supplied one.
+This is the set-rows contract: a backend-delivered value wins over the `value-fn'."
+  (let* ((spec `((columns . (((key . "v") (header . "V")
+                              (value-fn . ,(lambda (_id _row) "computed")))))))
+         (rows '(((id . "a") (cells . ((v . "supplied"))))
+                 ((id . "b") (cells . nil))))
+         (out (table-view--compute-cells rows spec)))
+    (should (equal "supplied" (table-view--cell (nth 0 out) "v")))    ; supplied wins
+    (should (equal "computed" (table-view--cell (nth 1 out) "v")))))  ; missing is filled
+
+(ert-deftest tv-test-add-column-replace-recomputes-value-fn ()
+  "Replacing a same-key value-fn column recomputes its cells (new fn wins)."
   (tv-test--with-table
-    (table-view-add-column
-     `((key . "count") (header . "Count")
-       (value-fn . ,(lambda (_id _row) 999))))   ; rows already carry `count'
-    (should (equal (table-view--cell (car table-view--rows) "count") 3))))
+    (table-view-add-column `((key . "x") (header . "X") (value-fn . ,(lambda (_i _r) 1))))
+    (should (equal 1 (table-view--cell (car table-view--rows) "x")))
+    (table-view-add-column `((key . "x") (header . "X") (value-fn . ,(lambda (_i _r) 2))))
+    (should (equal 2 (table-view--cell (car table-view--rows) "x")))))
+
+(ert-deftest tv-test-remove-readd-recomputes-value-fn ()
+  "Removing then re-adding a value-fn column recomputes -- no stale cell survives."
+  (tv-test--with-table
+    (table-view-add-column `((key . "x") (header . "X") (value-fn . ,(lambda (_i _r) 1))))
+    (should (equal 1 (table-view--cell (car table-view--rows) "x")))
+    (table-view-remove-column "x")
+    (table-view-add-column `((key . "x") (header . "X") (value-fn . ,(lambda (_i _r) 2))))
+    (should (equal 2 (table-view--cell (car table-view--rows) "x")))))
+
+(ert-deftest tv-test-add-column-materialises-mark-cache ()
+  "A runtime-added value-fn column is materialised on cached marked rows too."
+  (tv-test--with-table
+    (table-view--goto-id "a")
+    (call-interactively #'table-view-mark-toggle)     ; caches row "a"
+    (table-view-add-column `((key . "x") (header . "X")
+                             (value-fn . ,(lambda (id _r) (concat "v-" id)))))
+    (should (equal "v-a" (table-view--cell (cdr (assoc "a" table-view--mark-cache)) "x")))))
 
 (ert-deftest tv-test-remove-column ()
   (tv-test--with-table

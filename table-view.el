@@ -223,6 +223,37 @@ changed rows get a fresh `cells' alist, so the caller's ROWS are never mutated."
                    (seq-remove (lambda (kv) (eq (car kv) 'cells)) row)))))
        rows))))
 
+(defun table-view--strip-cell (rows key)
+  "Return ROWS with any cell for column KEY removed.
+Non-destructive; a row without that cell is returned as-is.  Used to drop a
+stale computed cell so a (re)added `value-fn' column recomputes it instead of
+`table-view--compute-cells' finding the old value present and skipping it."
+  (let ((sym (intern key)))
+    (mapcar (lambda (row)
+              (let ((cells (alist-get 'cells row)))
+                (if (assq sym cells)
+                    (cons (cons 'cells (assq-delete-all sym (copy-alist cells)))
+                          (seq-remove (lambda (kv) (eq (car kv) 'cells)) row))
+                  row)))
+            rows)))
+
+(defun table-view--strip-cell-everywhere (key)
+  "Drop column KEY's cell from `table-view--rows' and the paged mark-cache."
+  (setq table-view--rows (table-view--strip-cell table-view--rows key)
+        table-view--mark-cache
+        (mapcar (lambda (c) (cons (car c) (car (table-view--strip-cell (list (cdr c)) key))))
+                table-view--mark-cache)))
+
+(defun table-view--materialise-cells ()
+  "Fill `value-fn' columns' cells in `table-view--rows' AND the mark-cache.
+The mark-cache holds row snapshots a paged/narrowed view renders from, so a
+column added at runtime must be materialised there too, not just in the rows."
+  (setq table-view--rows (table-view--compute-cells table-view--rows table-view--spec)
+        table-view--mark-cache
+        (mapcar (lambda (c)
+                  (cons (car c) (car (table-view--compute-cells (list (cdr c)) table-view--spec))))
+                table-view--mark-cache)))
+
 ;;; Sorting
 
 (defvar table-view-comparators nil
@@ -801,8 +832,12 @@ the column that was added, or nil when the add was cancelled."
                ((and index (<= 0 index (length cols)))
                 (append (seq-take cols index) (list col) (seq-drop cols index)))
                (t (append cols (list col)))))
-        (setq table-view--rows
-              (table-view--compute-cells table-view--rows table-view--spec))
+        ;; A (re)added `value-fn' column is authoritative: drop any stale cell for
+        ;; its key first, so `table-view--compute-cells' recomputes it instead of
+        ;; keeping the value a prior column (or a prior definition) left behind.
+        (when (alist-get 'value-fn col)
+          (table-view--strip-cell-everywhere key))
+        (table-view--materialise-cells)
         (table-view--render)
         (run-hooks 'table-view-schema-changed-hook)
         (when (called-interactively-p 'interactive)
@@ -831,6 +866,9 @@ KEY when a column was actually removed."
             (cl-remove key cols :test #'equal :key (lambda (c) (alist-get 'key c))))
       (setq table-view--sort-keys
             (cl-remove key table-view--sort-keys :test #'equal :key #'car))
+      ;; Drop the removed column's now-orphaned cell so a later same-key re-add
+      ;; recomputes from its own `value-fn' rather than resurrecting this value.
+      (table-view--strip-cell-everywhere key)
       (table-view--render)
       (run-hooks 'table-view-schema-changed-hook)
       (when (called-interactively-p 'interactive)
