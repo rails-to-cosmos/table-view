@@ -1077,6 +1077,46 @@ This is the set-rows contract: a backend-delivered value wins over the `value-fn
     (should-not table-view--marks)
     (should-not table-view--narrowed)))
 
+(ert-deftest tv-test-u-bound-to-unmark ()
+  (should (eq (lookup-key table-view-mode-map "u") #'table-view-unmark)))
+
+(ert-deftest tv-test-unmark-current ()
+  (tv-test--with-table
+    (table-view--goto-id "a") (table-view-mark-toggle)
+    (table-view--goto-id "c") (table-view-mark-toggle)
+    (should (= (length table-view--marks) 2))
+    (table-view--goto-id "a")
+    (table-view-unmark)                       ; unmark just a
+    (should-not (table-view--marked-p "a"))
+    (should (table-view--marked-p "c"))       ; c stays marked
+    (should (= (length table-view--marks) 1))))
+
+(ert-deftest tv-test-unmark-advances-point ()
+  (tv-test--with-table
+    (table-view--goto-id "a") (table-view-mark-toggle)
+    (table-view--goto-id "a")
+    (table-view-unmark)
+    (should (equal (get-text-property (point) 'table-view-id) "b"))))  ; moves down
+
+(ert-deftest tv-test-unmark-unmarked-is-noop-but-advances ()
+  (tv-test--with-table
+    (table-view--goto-id "a")
+    (table-view-unmark)                       ; a is not marked
+    (should-not table-view--marks)
+    (should (equal (get-text-property (point) 'table-view-id) "b"))))
+
+(ert-deftest tv-test-unmark-current-last-while-narrowed-widens ()
+  ;; unmarking the last mark via `u' while narrowed must widen the view
+  (tv-test--with-table
+    (table-view--goto-id "a") (table-view-mark-toggle)
+    (table-view-narrow-toggle)
+    (should table-view--narrowed)
+    (table-view--goto-id "a")
+    (table-view-unmark)
+    (should-not table-view--marks)
+    (should-not table-view--narrowed)
+    (should (= (length (table-view--visible-rows)) 3))))
+
 (ert-deftest tv-test-marked-rows-in-row-order ()
   (tv-test--with-table
     (table-view--goto-id "c") (table-view-mark-toggle)

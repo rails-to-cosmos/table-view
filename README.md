@@ -111,7 +111,7 @@ Open one and `M-x eval-buffer`.
 | `^`                      | sort by the column at point — a data cell **or its header** (repeat toggles asc/desc); off a column, cycles through every column and direction |
 | `C-u ^`                  | add the column at point as a secondary (tie-breaker) sort key; a following run of `^` then toggles that key's direction                        |
 | `g`                      | clear filter/narrow & refresh, preserving the current sort order |
-| `m` / `U`                | toggle mark on the current row / unmark all (marked rows get a `*` gutter column) |
+| `m` / `u` / `U`          | toggle mark on the current row / unmark the current row / unmark all (marked rows get a `*` gutter column) |
 | `/`                      | narrow to the marked rows, or — when nothing is marked — filter by substring |
 | `>` / `<` (or `.` / `,`) | next / previous page (server-paged buffers only)                                                                                               |
 | `M->` / `M-<`            | last / first page; `M-g` go to page N (offset paging)                                                                                          |
