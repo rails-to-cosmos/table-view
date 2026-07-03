@@ -946,5 +946,537 @@
     (table-view--render)
     (should (table-view--marked-p "a"))))         ; mark survives the re-sort
 
+;;; Pagination (server-side)
+
+(defvar tv-test--fetches nil
+  "Requests the fake backend received during a paged test (newest first).")
+
+(defun tv-test--dataset (n)
+  "N rows r1..rN with a numeric `num' cell and a `name' cell \"user-K\"."
+  (cl-loop for i from 1 to n
+           collect `((id . ,(format "r%d" i))
+                     (cells . ((num . ,i) (name . ,(format "user-%d" i)))))))
+
+(defun tv-test--numof (row) (alist-get 'num (alist-get 'cells row)))
+
+(defun tv-test--apply-query (rows req)
+  "Filter and sort ROWS per REQ, emulating what a backend would do.
+Filters `name' by substring and sorts by the FULL sort chain (so multi-key
+push-down can be tested)."
+  (let ((filter (plist-get req :filter))
+        (sort (plist-get req :sort)))
+    (when (and filter (not (string-empty-p filter)))
+      (setq rows (cl-remove-if-not
+                  (lambda (r)
+                    (string-match-p (regexp-quote (downcase filter))
+                                    (downcase (alist-get 'name (alist-get 'cells r)))))
+                  rows)))
+    (when sort
+      (setq rows (sort (copy-sequence rows)
+                       (lambda (a b)
+                         (cl-loop
+                          for ka in sort
+                          for key = (intern (car ka))
+                          for asc = (cdr ka)
+                          for va = (alist-get key (alist-get 'cells a))
+                          for vb = (alist-get key (alist-get 'cells b))
+                          do (cond
+                              ((if (numberp va) (< va vb)
+                                 (string< (format "%s" va) (format "%s" vb)))
+                               (cl-return asc))
+                              ((if (numberp va) (> va vb)
+                                 (string< (format "%s" vb) (format "%s" va)))
+                               (cl-return (not asc))))
+                          finally return nil)))))
+    rows))
+
+(defun tv-test--offset-page-fn (dataset)
+  "An OFFSET-mode page-fn serving DATASET synchronously, reporting :total."
+  (lambda (req)
+    (push req tv-test--fetches)
+    (let* ((matched (tv-test--apply-query dataset req))
+           (total (length matched))
+           (offset (plist-get req :offset))
+           (limit (plist-get req :limit))
+           (page (seq-subseq matched (min offset total) (min (+ offset limit) total))))
+      (table-view-set-page (plist-get req :buffer) page :total total))))
+
+(defun tv-test--keyset-page-fn (dataset)
+  "A KEYSET-mode page-fn serving DATASET by ascending `num' via cursors."
+  (lambda (req)
+    (push req tv-test--fetches)
+    (let* ((matched (tv-test--apply-query dataset req))
+           (cursor (plist-get req :cursor))
+           (dir (plist-get req :direction))
+           (limit (plist-get req :limit))
+           (page (cond
+                  ((null cursor) (seq-take matched limit))
+                  ((eq dir 'backward)
+                   (last (cl-remove-if-not (lambda (r) (< (tv-test--numof r) cursor)) matched)
+                         limit))
+                  (t (seq-take (cl-remove-if-not
+                                (lambda (r) (> (tv-test--numof r) cursor)) matched)
+                               limit))))
+           (first-num (and page (tv-test--numof (car page))))
+           (last-num  (and page (tv-test--numof (car (last page)))))
+           (has-next (and last-num
+                          (cl-some (lambda (r) (> (tv-test--numof r) last-num)) matched)))
+           (has-prev (and first-num
+                          (cl-some (lambda (r) (< (tv-test--numof r) first-num)) matched))))
+      (table-view-set-page (plist-get req :buffer) page
+                           :next-cursor (and has-next last-num)
+                           :prev-cursor (and has-prev first-num)))))
+
+(defun tv-test--paged-spec (page-size strategy)
+  (list (cons 'title "Paged")
+        (cons 'columns
+              (list (list (cons 'key "num") (cons 'header "Num") (cons 'type "number"))
+                    (list (cons 'key "name") (cons 'header "Name"))))
+        (cons 'pagination (list (cons 'page-size page-size) (cons 'strategy strategy)))))
+
+(defmacro tv-test--with-paged (size page-size &rest body)
+  "Display a paged OFFSET table over a fake backend of SIZE rows, run BODY."
+  (declare (indent 2))
+  `(let ((buf (get-buffer-create " *tv-paged*"))
+         (tv-test--fetches nil)
+         (data (tv-test--dataset ,size)))
+     (unwind-protect
+         (progn
+           (table-view-display buf (tv-test--paged-spec ,page-size 'offset)
+                               nil nil (tv-test--offset-page-fn data))
+           (with-current-buffer buf ,@body))
+       (kill-buffer buf))))
+
+(defmacro tv-test--with-keyset (size page-size &rest body)
+  "Display a paged KEYSET table over a fake backend of SIZE rows, run BODY."
+  (declare (indent 2))
+  `(let ((buf (get-buffer-create " *tv-keyset*"))
+         (tv-test--fetches nil)
+         (data (tv-test--dataset ,size)))
+     (unwind-protect
+         (progn
+           (table-view-display buf (tv-test--paged-spec ,page-size 'keyset)
+                               nil nil (tv-test--keyset-page-fn data))
+           (with-current-buffer buf ,@body))
+       (kill-buffer buf))))
+
+(defun tv-test--visible-ids ()
+  (mapcar (lambda (r) (alist-get 'id r)) (table-view--visible-rows)))
+
+;; -- setup / offset basics --
+
+(ert-deftest tv-test-page-enabled ()
+  (tv-test--with-paged 10 3
+    (should (table-view--paged-p))
+    (should (= table-view--page-size 3))
+    (should (eq table-view--strategy 'offset))))
+
+(ert-deftest tv-test-page-initial-fetch ()
+  (tv-test--with-paged 10 3
+    (should (equal (tv-test--visible-ids) '("r1" "r2" "r3")))   ; page 1
+    (should (= table-view--offset 0))
+    (should (= table-view--page-index 0))
+    (should (= table-view--total 10))
+    (should table-view--has-next)
+    (let ((req (car tv-test--fetches)))                         ; the page-1 request
+      (should (= (plist-get req :offset) 0))
+      (should (= (plist-get req :limit) 3)))))
+
+(ert-deftest tv-test-page-point-on-first-row ()
+  (tv-test--with-paged 10 3
+    (should (equal (get-text-property (point) 'table-view-id) "r1"))))
+
+(ert-deftest tv-test-page-next ()
+  (tv-test--with-paged 10 3
+    (table-view-next-page)
+    (should (equal (tv-test--visible-ids) '("r4" "r5" "r6")))
+    (should (= table-view--offset 3))
+    (should (= table-view--page-index 1))
+    (should (equal (get-text-property (point) 'table-view-id) "r4"))))  ; same on-screen row (was at top)
+
+(ert-deftest tv-test-page-prev ()
+  (tv-test--with-paged 10 3
+    (table-view-next-page)
+    (table-view-prev-page)
+    (should (equal (tv-test--visible-ids) '("r1" "r2" "r3")))
+    (should (= table-view--offset 0))))
+
+(ert-deftest tv-test-page-prev-at-start-is-noop ()
+  (tv-test--with-paged 10 3
+    (let ((n (length tv-test--fetches)))
+      (table-view-prev-page)                     ; already first page
+      (should (= (length tv-test--fetches) n))   ; no new fetch
+      (should (= table-view--offset 0)))))
+
+(ert-deftest tv-test-page-next-at-end-is-noop ()
+  (tv-test--with-paged 5 5
+    (should-not table-view--has-next)            ; 5 rows, page holds all
+    (let ((n (length tv-test--fetches)))
+      (table-view-next-page)
+      (should (= (length tv-test--fetches) n)))))
+
+(ert-deftest tv-test-page-last ()
+  (tv-test--with-paged 10 3
+    (table-view-last-page)
+    (should (= table-view--offset 9))            ; ceil(10/3)=4 pages -> last starts at 9
+    (should (= table-view--page-index 3))
+    (should (equal (tv-test--visible-ids) '("r10")))
+    (should-not table-view--has-next)))
+
+(ert-deftest tv-test-page-first ()
+  (tv-test--with-paged 10 3
+    (table-view-last-page)
+    (table-view-first-page)
+    (should (= table-view--offset 0))
+    (should (equal (tv-test--visible-ids) '("r1" "r2" "r3")))))
+
+(ert-deftest tv-test-page-goto ()
+  (tv-test--with-paged 10 3
+    (table-view-goto-page 3)                     ; 1-based -> index 2 -> offset 6
+    (should (= table-view--offset 6))
+    (should (equal (tv-test--visible-ids) '("r7" "r8" "r9")))))
+
+(ert-deftest tv-test-page-goto-clamps-past-end ()
+  (tv-test--with-paged 10 3
+    (table-view-goto-page 99)
+    (should (= table-view--page-index 3))))      ; clamped to the last page
+
+(ert-deftest tv-test-page-indicator ()
+  (tv-test--with-paged 10 3
+    (should (string-match-p "page 1/4 · 1-3 of 10" (table-view--hint-string)))
+    (table-view-next-page)
+    (should (string-match-p "page 2/4 · 4-6 of 10" (table-view--hint-string)))))
+
+;; -- filter push-down --
+
+(ert-deftest tv-test-page-filter-pushdown ()
+  (tv-test--with-paged 12 3
+    (table-view-filter "user-1")                 ; matches user-1,10,11,12 -> 4 rows
+    (let ((req (car tv-test--fetches)))
+      (should (equal (plist-get req :filter) "user-1"))
+      (should (= (plist-get req :offset) 0)))    ; reset to page 1
+    (should (= table-view--total 4))
+    (should (equal (tv-test--visible-ids) '("r1" "r10" "r11")))
+    (should table-view--has-next)))
+
+(ert-deftest tv-test-page-filter-then-next-pages-filtered-set ()
+  (tv-test--with-paged 12 3
+    (table-view-filter "user-1")
+    (table-view-next-page)
+    (should (equal (tv-test--visible-ids) '("r12")))   ; 4th match, page 2 of the filtered set
+    (should-not table-view--has-next)))
+
+(ert-deftest tv-test-page-filter-clear-refetches-all ()
+  (tv-test--with-paged 12 3
+    (table-view-filter "user-1")
+    (table-view-filter "")                       ; clear
+    (should-not table-view--filter)
+    (should (= table-view--total 12))
+    (should (equal (tv-test--visible-ids) '("r1" "r2" "r3")))))
+
+;; -- sort push-down --
+
+(ert-deftest tv-test-page-sort-pushdown ()
+  (tv-test--with-paged 10 3
+    (setq table-view--sort-keys '(("num")))      ; num descending
+    (table-view--commit-order)
+    (let ((req (car tv-test--fetches)))
+      (should (equal (plist-get req :sort) '(("num"))))
+      (should (= (plist-get req :offset) 0)))    ; sort change resets to page 1
+    (should (equal (tv-test--visible-ids) '("r10" "r9" "r8")))))  ; server order
+
+(ert-deftest tv-test-page-does-not-sort-loaded-page-locally ()
+  (tv-test--with-paged 10 3
+    ;; a page arrives already ordered; the client must not re-sort the slice
+    (setq table-view--sort-keys '(("num" . t)))
+    (table-view--sort-rows)                      ; no-op on the rows in paged mode
+    (should (equal (mapcar (lambda (r) (alist-get 'id r)) table-view--rows)
+                   '("r1" "r2" "r3")))
+    (should table-view--sorted)))                ; but the sort still counts as active
+
+;; -- marks & bulk across pages --
+
+(ert-deftest tv-test-page-marks-span-pages ()
+  (tv-test--with-paged 10 3
+    (table-view--goto-id "r1") (table-view-mark-toggle)   ; page 1
+    (table-view-next-page)
+    (table-view--goto-id "r4") (table-view-mark-toggle)   ; page 2
+    (should (equal (sort (copy-sequence table-view--marks) #'string<) '("r1" "r4")))
+    (should (equal (mapcar (lambda (r) (alist-get 'id r)) (table-view-marked-rows))
+                   '("r1" "r4")))))              ; cached rows from both pages
+
+(ert-deftest tv-test-page-mark-survives-page-turn ()
+  (tv-test--with-paged 10 3
+    (table-view--goto-id "r1") (table-view-mark-toggle)
+    (table-view-next-page)                       ; r1 leaves the loaded page
+    (should (table-view--marked-p "r1"))         ; mark not pruned
+    (table-view-prev-page)
+    (should (table-view--marked-p "r1"))))
+
+(ert-deftest tv-test-page-bulk-across-pages ()
+  (tv-test--with-paged 10 3
+    (let (got)
+      (setq table-view--handlers
+            `(("act" . ,(lambda (rows)
+                          (setq got (mapcar (lambda (r) (alist-get 'id r)) rows))))))
+      (table-view--goto-id "r1") (table-view-mark-toggle)
+      (table-view-next-page)
+      (table-view--goto-id "r5") (table-view-mark-toggle)
+      (table-view--dispatch "act" t)
+      (should (equal got '("r1" "r5"))))))       ; bulk sees both, across pages
+
+(ert-deftest tv-test-page-narrow-renders-cache ()
+  (tv-test--with-paged 10 3
+    (table-view--goto-id "r1") (table-view-mark-toggle)
+    (table-view-next-page)
+    (table-view--goto-id "r6") (table-view-mark-toggle)
+    (table-view-narrow-toggle)
+    (should table-view--narrowed)
+    (should (equal (tv-test--visible-ids) '("r1" "r6")))   ; cached, spanning pages
+    (should (string-match-p "user-1\\b" (buffer-string)))
+    (should (string-match-p "user-6" (buffer-string)))))
+
+(ert-deftest tv-test-page-unmark-all-clears-cache ()
+  (tv-test--with-paged 10 3
+    (table-view--goto-id "r1") (table-view-mark-toggle)
+    (table-view-next-page)
+    (table-view--goto-id "r4") (table-view-mark-toggle)
+    (table-view-unmark-all)
+    (should-not table-view--marks)
+    (should-not table-view--mark-cache)
+    (should-not (table-view-marked-rows))))
+
+;; -- set-page metadata: totals / has-next --
+
+(ert-deftest tv-test-page-unknown-total-full-page-implies-more ()
+  (let ((buf (get-buffer-create " *tv-nt*")))
+    (unwind-protect
+        (progn
+          (table-view-display
+           buf (tv-test--paged-spec 3 'offset) nil nil
+           (lambda (req)
+             (table-view-set-page (plist-get req :buffer)
+                                  (tv-test--dataset 3))))   ; a full page, no :total
+          (with-current-buffer buf
+            (should-not table-view--total)
+            (should table-view--has-next)                   ; full page -> maybe more
+            (should (string-match-p "more…" (table-view--hint-string)))))
+      (kill-buffer buf))))
+
+(ert-deftest tv-test-page-unknown-total-short-page-is-last ()
+  (let ((buf (get-buffer-create " *tv-nt2*")))
+    (unwind-protect
+        (progn
+          (table-view-display
+           buf (tv-test--paged-spec 5 'offset) nil nil
+           (lambda (req)
+             (table-view-set-page (plist-get req :buffer)
+                                  (tv-test--dataset 2))))   ; short page (2 < 5)
+          (with-current-buffer buf
+            (should-not table-view--has-next)))             ; short page -> last
+      (kill-buffer buf))))
+
+(ert-deftest tv-test-page-explicit-has-next-overrides ()
+  (let ((buf (get-buffer-create " *tv-hn*")))
+    (unwind-protect
+        (progn
+          (table-view-display
+           buf (tv-test--paged-spec 3 'offset) nil nil
+           (lambda (req)
+             (table-view-set-page (plist-get req :buffer)
+                                  (tv-test--dataset 3) :has-next nil)))  ; full page but forced
+          (with-current-buffer buf
+            (should-not table-view--has-next)))
+      (kill-buffer buf))))
+
+;; -- error handling --
+
+(ert-deftest tv-test-page-error-keeps-rows-and-shows-message ()
+  (tv-test--with-paged 10 3
+    (should (equal (tv-test--visible-ids) '("r1" "r2" "r3")))
+    (table-view-page-error (current-buffer) "boom")
+    (should (equal table-view--page-error "boom"))
+    (should-not table-view--page-loading)
+    (should (equal (tv-test--visible-ids) '("r1" "r2" "r3")))   ; old page still shown
+    (should (string-match-p "error: boom" (table-view--hint-string)))))
+
+;; -- keyset --
+
+(ert-deftest tv-test-keyset-initial-and-next ()
+  (tv-test--with-keyset 5 2
+    (should (equal (tv-test--visible-ids) '("r1" "r2")))
+    (should table-view--has-next)
+    (should (= table-view--next-cursor 2))       ; boundary num of the page
+    (table-view-next-page)
+    (let ((req (car tv-test--fetches)))
+      (should (= (plist-get req :cursor) 2))
+      (should (eq (plist-get req :direction) 'forward)))
+    (should (equal (tv-test--visible-ids) '("r3" "r4")))
+    (should (= table-view--page-index 1))))
+
+(ert-deftest tv-test-keyset-prev-uses-prev-cursor ()
+  (tv-test--with-keyset 5 2
+    (table-view-next-page)                       ; on r3,r4 now
+    (should (= table-view--prev-cursor 3))
+    (table-view-prev-page)
+    (let ((req (car tv-test--fetches)))
+      (should (= (plist-get req :cursor) 3))
+      (should (eq (plist-get req :direction) 'backward)))
+    (should (equal (tv-test--visible-ids) '("r1" "r2")))))
+
+(ert-deftest tv-test-keyset-no-goto-or-last ()
+  (tv-test--with-keyset 5 2
+    (let ((n (length tv-test--fetches)))
+      (table-view-last-page)                     ; unavailable in keyset
+      (table-view-goto-page 2)                   ; unavailable in keyset
+      (should (= (length tv-test--fetches) n)))))  ; neither fetched
+
+;; -- page-request accessor (v2 seam) --
+
+(ert-deftest tv-test-page-request-exposes-query ()
+  (tv-test--with-paged 10 3
+    (setq table-view--sort-keys '(("num")))
+    (table-view--commit-order)
+    (table-view-filter "user")
+    (let ((q (table-view-page-request)))
+      (should (equal (plist-get q :sort) '(("num"))))
+      (should (equal (plist-get q :filter) "user"))
+      (should (eq (plist-get q :strategy) 'offset))
+      (should (= (plist-get q :page-size) 3)))))
+
+;; -- backward compatibility: client buffers are untouched --
+
+(ert-deftest tv-test-client-not-paged ()
+  (tv-test--with-table
+    (should-not (table-view--paged-p))
+    (should-not (table-view-page-request))))
+
+(ert-deftest tv-test-client-keeps-buffer-motion-keys ()
+  ;; Page keys are bound only in paged buffers, so a client table keeps its
+  ;; inherited motion keys: M-< / M-> stay beginning/end-of-buffer (global),
+  ;; and < / > stay beginning/end-of-buffer (from `special-mode-map').
+  (tv-test--with-table
+    (should-not (eq (lookup-key (current-local-map) (kbd "M-<"))
+                    #'table-view-first-page))
+    (should-not (eq (lookup-key (current-local-map) ">") #'table-view-next-page))
+    (should (eq (lookup-key (current-local-map) ">") #'end-of-buffer))))
+
+(ert-deftest tv-test-paged-binds-page-keys ()
+  (tv-test--with-paged 10 3
+    (should (eq (lookup-key (current-local-map) ">") #'table-view-next-page))
+    (should (eq (lookup-key (current-local-map) (kbd "M-<")) #'table-view-first-page))))
+
+(ert-deftest tv-test-page-comma-dot-aliases ()
+  ;; `.' aliases `>' (next page) and `,' aliases `<' (previous page)
+  (tv-test--with-paged 10 3
+    (should (eq (lookup-key (current-local-map) ".") #'table-view-next-page))
+    (should (eq (lookup-key (current-local-map) ",") #'table-view-prev-page))))
+
+;; -- point preservation on sort (paged) --
+
+(ert-deftest tv-test-page-sort-preserves-point-location ()
+  ;; `^' in a paged buffer keeps the cursor on the same on-screen line and
+  ;; column (e.g. the column header just used), not the beginning of the line.
+  (tv-test--with-paged 10 3
+    (goto-char (point-min))
+    (forward-line 3)                    ; header row
+    (table-view-forward-column)         ; onto the "num" header
+    (should (equal (tv-test--col-at-point) "num"))
+    (let ((line (line-number-at-pos)) (col (current-column)))
+      (call-interactively #'table-view-sort-cycle)   ; ^ -> sort by num, re-fetch page 1
+      (should (equal (plist-get (car tv-test--fetches) :sort) '(("num" . t))))
+      (should (= (line-number-at-pos) line))          ; same on-screen line
+      (should (= (current-column) col))               ; same column, not col 0
+      (should (equal (tv-test--col-at-point) "num")))))
+
+(ert-deftest tv-test-page-filter-preserves-point-location ()
+  (tv-test--with-paged 12 3
+    (goto-char (point-min))
+    (forward-line 3)                    ; header row, stable across filtering
+    (table-view-forward-column 2)       ; onto the "name" header
+    (let ((line (line-number-at-pos)) (col (current-column)))
+      (table-view-filter "user")
+      (should (= (line-number-at-pos) line))
+      (should (= (current-column) col)))))
+
+(ert-deftest tv-test-page-nav-preserves-point-location ()
+  ;; a page turn keeps the cursor on the same on-screen line and column, so a
+  ;; column can be scanned straight across pages instead of snapping to the top.
+  (tv-test--with-paged 20 5
+    (table-view--goto-id "r3")          ; 3rd row of page 1
+    (table-view-forward-column 1)       ; onto its "num" cell
+    (should (equal (tv-test--col-at-point) "num"))
+    (let ((line (line-number-at-pos)) (col (current-column)))
+      (table-view-next-page)            ; -> page 2 (r6..r10)
+      (should (= (line-number-at-pos) line))       ; same on-screen line
+      (should (= (current-column) col))            ; same column
+      (should (equal (tv-test--col-at-point) "num"))
+      (should (equal (get-text-property (point) 'table-view-id) "r8")))))  ; 3rd row of page 2
+
+(ert-deftest tv-test-page-nav-point-clamps-on-short-last-page ()
+  ;; when the last page has fewer rows, the preserved line clamps in-buffer
+  ;; rather than erroring or landing off the table.
+  (tv-test--with-paged 7 3
+    (table-view--goto-id "r3")          ; last row of page 1
+    (table-view-next-page)              ; page 2 -> r4,r5,r6
+    (table-view-next-page)              ; page 3 -> only r7
+    (should (equal (tv-test--visible-ids) '("r7")))
+    (should (<= (point) (point-max)))))              ; no error, point valid
+
+;; -- secondary (multi-key) sort pushes the full chain down --
+
+(ert-deftest tv-test-page-multi-key-sort-pushdown ()
+  (let ((buf (get-buffer-create " *tv-multi*"))
+        (tv-test--fetches nil)
+        (data (list '((id . "x") (cells . ((num . 2) (name . "same"))))
+                    '((id . "y") (cells . ((num . 1) (name . "same"))))
+                    '((id . "z") (cells . ((num . 5) (name . "diff")))))))
+    (unwind-protect
+        (progn
+          (table-view-display buf (tv-test--paged-spec 10 'offset)
+                              nil nil (tv-test--offset-page-fn data))
+          (with-current-buffer buf
+            (setq table-view--sort-keys '(("name" . t) ("num" . t)))  ; name asc, then num asc
+            (table-view--commit-order)
+            (let ((req (car tv-test--fetches)))
+              (should (equal (plist-get req :sort) '(("name" . t) ("num" . t)))))
+            (should (equal (tv-test--visible-ids) '("z" "y" "x")))))  ; ties broken by num
+      (kill-buffer buf))))
+
+;; -- g refreshes the current page (keeps filter + position), recovers errors --
+
+(ert-deftest tv-test-page-g-refetches-current-keeps-filter ()
+  (tv-test--with-paged 12 3
+    (table-view-filter "user-1")        ; 4 matches
+    (table-view-next-page)              ; page 2 of the filtered set -> r12
+    (call-interactively #'table-view-sort)              ; g
+    (should (equal table-view--filter "user-1"))        ; filter kept, not cleared
+    (should (= table-view--offset 3))                   ; same page, not page 1
+    (should (equal (tv-test--visible-ids) '("r12")))))
+
+(ert-deftest tv-test-page-g-recovers-from-error ()
+  (tv-test--with-paged 10 3
+    (table-view-next-page)              ; page 2
+    (table-view-page-error (current-buffer) "boom")
+    (should table-view--page-error)
+    (call-interactively #'table-view-sort)              ; g re-fetches the current page
+    (should-not table-view--page-error)                 ; error cleared
+    (should (= table-view--offset 3))
+    (should (equal (tv-test--visible-ids) '("r4" "r5" "r6")))))
+
+;; -- page navigation is refused while narrowed --
+
+(ert-deftest tv-test-page-nav-blocked-while-narrowed ()
+  (tv-test--with-paged 10 3
+    (table-view--goto-id "r1") (table-view-mark-toggle)
+    (table-view-narrow-toggle)
+    (should table-view--narrowed)
+    (let ((n (length tv-test--fetches)))
+      (table-view-next-page)                 ; blocked
+      (table-view-last-page)                 ; blocked
+      (should (= (length tv-test--fetches) n))   ; no fetch fired
+      (should (= table-view--offset 0))          ; underlying page unchanged
+      (should (equal (tv-test--visible-ids) '("r1"))))))  ; still the marked set
+
 (provide 'table-view-test)
 ;;; table-view-test.el ends here

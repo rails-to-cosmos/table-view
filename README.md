@@ -97,6 +97,7 @@ Runnable demos live in [`examples/`](examples/):
 | [`sort-methods.el`](examples/sort-methods.el)   | per-column sort methods (`values`, `compare`) + a default sort |
 | [`delete.el`](examples/delete.el)               | row deletion gated on a custom pre-delete step |
 | [`bulk.el`](examples/bulk.el)                   | marking (`m`), narrowing (`/`), and bulk actions (`bulk: t`) |
+| [`paginate.el`](examples/paginate.el)           | server-side pagination over a fake backend (`page-fn`, push-down sort/filter, cross-page marks) |
 
 Open one and `M-x eval-buffer`.
 
@@ -112,6 +113,8 @@ Open one and `M-x eval-buffer`.
 | `g`                      | clear filter/narrow & refresh, preserving the current sort order |
 | `m` / `U`                | toggle mark on the current row / unmark all (marked rows get a `*` gutter column) |
 | `/`                      | narrow to the marked rows, or — when nothing is marked — filter by substring |
+| `>` / `<` (or `.` / `,`) | next / previous page (server-paged buffers only)                                                                                               |
+| `M->` / `M-<`            | last / first page; `M-g` go to page N (offset paging)                                                                                          |
 | `q`                      | quit window                                                                                                                                    |
 | *action keys*            | dispatched to your handlers (e.g. `RET`)                                                                                                       |
 
@@ -138,6 +141,7 @@ for a column whose key is `"name"`). Booleans are `t` / omitted.
 | `actions` | list of action keybindings (see below)                                                                                                                                                       |
 | `sort`    | default sort, applied on open when the spec supplies rows: a single `{ "column": KEY, "ascending": BOOL }`, or a **list** of them `[{…}, {…}]` for a multi-column default (order = priority) |
 | `rows`    | initial rows (optional; can be filled later)                                                                                                                                                 |
+| `pagination` | server-side pagination config (with a `page-fn`, see below): `page-size` (rows per page, default 50) and `strategy` (`"offset"`, the default, or `"keyset"`)                             |
 
 **Column**
 
@@ -173,17 +177,69 @@ for a column whose key is `"name"`). Booleans are `t` / omitted.
 | Function                                                      | Purpose                                                                                                                                                             |
 |---------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `(table-view-parse JSON-STRING)`                              | parse JSON into the alist shape the core expects                                                                                                                    |
-| `(table-view-display BUFFER SPEC HANDLERS &optional FILL-FN)` | render `SPEC` into `BUFFER`, install `HANDLERS` (alist of command-name → `(FN ID ROW)`), and run `FILL-FN` (a function of `BUFFER`) to populate; returns the buffer |
+| `(table-view-display BUFFER SPEC HANDLERS &optional FILL-FN PAGE-FN)` | render `SPEC` into `BUFFER`, install `HANDLERS` (alist of command-name → `(FN ID ROW)`), and populate via `FILL-FN` (all rows) **or** `PAGE-FN` (server-side pagination, see below); returns the buffer |
 | `(table-view-set-rows BUFFER ROWS)`                           | replace all rows                                                                                                                                                    |
 | `(table-view-upsert-row BUFFER ROW)`                          | add `ROW`, or replace the existing row with the same `id` in place                                                                                                  |
 | `(table-view-delete-row BUFFER ID)`                           | remove the row with `ID` (point moves to a neighbour). Wire deletion via an action handler that does any pre-delete work and calls this only on success             |
-| `(table-view-marked-rows &optional BUFFER)`                   | the marked rows, in row order |
+| `(table-view-marked-rows &optional BUFFER)`                   | the marked rows (in row order; in a paged buffer, every marked row across all visited pages) |
 | `(table-view-current-or-marked-rows &optional BUFFER)`        | the marked rows, or the row at point when none are marked — what a `bulk` handler receives |
-| `(table-view-refresh BUFFER)`                                 | re-invoke the registered fill function                                                                                                                              |
+| `(table-view-refresh BUFFER)`                                 | re-invoke the fill function, or (paged) re-fetch the current page                                                                                                   |
+| `(table-view-set-page BUFFER ROWS &rest META)`                | **paged delivery**: install `ROWS` as the current page. `META` keywords: `:total`, `:has-next`, `:next-cursor`/`:prev-cursor` (keyset), `:offset`                   |
+| `(table-view-page-error BUFFER MESSAGE)`                      | **paged delivery**: report a fetch failure — keeps the current page, shows `MESSAGE`, `g` retries                                                                    |
+| `(table-view-page-request &optional BUFFER)`                  | the live paging query (`:sort` `:filter` `:strategy` `:page-size`) — for pushing a whole-result server op from a bulk handler                                        |
 
 Populate up front via the spec's `rows`, in bulk via `table-view-set-rows`, or
 incrementally via `table-view-upsert-row` (ideal for streaming sources — rows
 with a known `id` update in place without moving).
+
+## Server-side pagination
+
+For datasets too large to hold in memory, pass a **`page-fn`** (the 5th
+argument to `table-view-display`) and a `pagination` block in the spec. The
+buffer then holds only the **current page**; sort and filter are **pushed
+down** into each request rather than run client-side.
+
+The table calls your `page-fn` with a request plist and shows `loading…`; you
+fetch (synchronously *or* asynchronously) and deliver the page with
+`table-view-set-page`, or `table-view-page-error` on failure:
+
+```elisp
+(defun my-page-fn (req)
+  ;; req: (:buffer BUF :limit N :sort ((KEY . ASC)…) :filter STR-or-nil
+  ;;       :offset M          ; offset strategy
+  ;;       :cursor C :direction 'forward|'backward)  ; keyset strategy
+  (let* ((rows  (my-query :where (plist-get req :filter)   ; filter pushes down
+                          :order (plist-get req :sort)      ; sort pushes down
+                          :offset (plist-get req :offset)
+                          :limit (plist-get req :limit)))
+         (total (my-count :where (plist-get req :filter))))
+    (table-view-set-page (plist-get req :buffer) rows :total total)))
+
+(table-view-display "*rows*"
+                    '((title . "Rows")
+                      (columns . (((key . "name") (header . "Name"))))
+                      (pagination . ((page-size . 50) (strategy . offset))))
+                    handlers
+                    nil            ; fill-fn — unused in paged mode
+                    #'my-page-fn)  ; page-fn
+```
+
+- **`>` / `<`** (or **`.` / `,`**) turn pages; **`M->` / `M-<`** jump to the
+  last / first page; **`M-g`** goes to a page number (offset paging).
+- **`/`** and **`^`** push the filter and sort to the server and re-fetch page
+  1, so they act on the whole dataset — the indicator counts the filtered
+  total, not just the loaded page.
+- **Marks span pages**: `m` caches the row, so a mark survives paging away, `/`
+  (narrow) shows your whole selection, and a `bulk` action operates on every
+  marked row across all pages — not just the ones on screen.
+- **`strategy`**: `offset` (default) gives random page access and exact totals;
+  `keyset` uses opaque forward/back cursors (`:next-cursor` / `:prev-cursor`
+  from `table-view-set-page`) — stable on large, changing datasets, but without
+  a total or random jumps. When the backend can't count, pass `:total nil` and
+  the view infers "more" from a full page.
+
+See [`examples/paginate.el`](examples/paginate.el) for a complete runnable demo
+over a fake in-memory backend.
 
 ## Development
 

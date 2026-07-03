@@ -43,9 +43,13 @@
 ;;   * client-side sort on sortable columns
 ;;   * interactive substring filter (/)
 ;;   * mark rows (m) and run `bulk' actions on the marked set
+;;   * optional server-side pagination via a `page-fn': one page in memory,
+;;     sort and filter pushed down, marks and bulk that span pages
 ;;
-;; A consumer provides: a parsed spec, a `fill-fn' (BUFFER -> populates via
-;; the mutators below), and a handler alist (command-name -> FN of ID ROW).
+;; A consumer provides: a parsed spec, a handler alist (command-name -> FN of
+;; ID ROW), and either a `fill-fn' (BUFFER -> populates all rows via the
+;; mutators below) or, for server-side pagination, a `page-fn' (REQUEST ->
+;; fetches one page and delivers it with `table-view-set-page').
 ;;
 ;; See examples/ for runnable demos:
 ;;   minimal.el       — inline rows from a JSON spec
@@ -55,6 +59,7 @@
 ;;   sort-methods.el  — per-column sort methods (values / compare) + default sort
 ;;   delete.el        — row deletion gated on a custom pre-delete step
 ;;   bulk.el          — marking (m), narrowing (/), and bulk actions (bulk: t)
+;;   paginate.el      — server-side pagination over a fake backend (page-fn)
 ;;
 ;; Keybindings in table-view-mode:
 ;;   g   — clear filter/narrow & refresh, preserving the sort order
@@ -68,6 +73,8 @@
 ;;   f/b — forward/backward: by column on a table line (header or row),
 ;;         by char elsewhere
 ;;   M-left/M-right — move the column at point left/right (org-table style)
+;;   > / . — next page, < / , — previous page (paged buffers)
+;;   M-> / M-< — last / first page;  M-g — go to page (offset paging)
 ;;   q   — quit
 
 ;;; Code:
@@ -99,6 +106,59 @@ cell matching the string (case-insensitive substring) are rendered.")
   "List of marked row ids.")
 (defvar-local table-view--narrowed nil
   "Non-nil when the view is narrowed to the marked rows.")
+(defvar-local table-view--mark-cache nil
+  "Alist of id -> ROW for every marked row.
+In paged mode a marked row leaves `table-view--rows' when you turn the
+page, so its payload is cached here; this is what lets marks, narrow,
+and bulk span pages.")
+
+;;; Pagination state
+;;
+;; When a `page-fn' is supplied, `table-view--rows' holds only the CURRENT
+;; page fetched from the consumer's backend; sort and filter are pushed down
+;; into each page request instead of running client-side.  A buffer with no
+;; page-fn leaves all of this nil/0 and behaves exactly as before.
+
+(defvar-local table-view--page-fn nil
+  "Consumer fetcher, or nil.  Called as (FN REQUEST); REQUEST is a plist
+\(see `table-view--build-request') and the fetcher delivers the page with
+`table-view-set-page' (or `table-view-page-error' on failure).")
+(defvar-local table-view--page-size nil
+  "Rows per page in paged mode.")
+(defvar-local table-view--strategy 'offset
+  "Paging strategy: `offset' (OFFSET/LIMIT, random access + totals) or
+`keyset' (opaque cursors, DB-stable, forward/back only).")
+(defvar-local table-view--offset 0
+  "Row offset of the current page (offset strategy).")
+(defvar-local table-view--page-index 0
+  "Current 0-based page number, for the indicator.")
+(defvar-local table-view--total nil
+  "Server's total matching-row count under the active filter, or nil when
+the backend does not report one.")
+(defvar-local table-view--has-next nil
+  "Non-nil when another page follows the current one.")
+(defvar-local table-view--page-cursor nil
+  "Cursor that produced the current page (keyset strategy).")
+(defvar-local table-view--next-cursor nil
+  "Cursor for the following page, or nil at the end (keyset strategy).")
+(defvar-local table-view--prev-cursor nil
+  "Cursor for the preceding page, or nil at the start (keyset strategy).")
+(defvar-local table-view--page-loading nil
+  "Non-nil while a page fetch is in flight.")
+(defvar-local table-view--page-error nil
+  "Message from the last failed fetch, or nil.")
+(defvar-local table-view--pending nil
+  "Identity of the in-flight page request (a plist), committed by
+`table-view-set-page' and discarded by `table-view-page-error', so a
+failed fetch never advances the visible page position.")
+
+(defun table-view--paged-p ()
+  "Non-nil when this buffer fetches rows a page at a time via a `page-fn'."
+  (and table-view--page-fn t))
+
+(defun table-view--offset-p ()
+  "Non-nil when the paging strategy is offset-based (not keyset)."
+  (eq table-view--strategy 'offset))
 
 ;;; Spec accessors
 
@@ -210,23 +270,27 @@ from the sort commands (`^' and `g' when a sort is already active),
 never from row updates, so operating on a row updates it in place
 without moving it."
   (when table-view--sort-keys
-    (let ((tests (mapcar
-                  (lambda (ka)
-                    (list (table-view--comparator
-                           (table-view--column table-view--spec (car ka)))
-                          (car ka)          ; column key
-                          (cdr ka)))        ; ascending?
-                  table-view--sort-keys)))
-      (setq table-view--rows
-            (sort (copy-sequence table-view--rows)
-                  (lambda (a b)
-                    (cl-loop for (less key asc) in tests
-                             for va = (table-view--cell a key)
-                             for vb = (table-view--cell b key)
-                             do (cond ((funcall less va vb) (cl-return asc))
-                                      ((funcall less vb va) (cl-return (not asc))))
-                             finally return nil))))
-      (setq table-view--sorted t))))
+    ;; In paged mode ordering is the server's job (the loaded page is only a
+    ;; slice); re-sorting it here would reorder just those rows and lie about
+    ;; the global order.  The chain still counts as an active sort.
+    (unless (table-view--paged-p)
+      (let ((tests (mapcar
+                    (lambda (ka)
+                      (list (table-view--comparator
+                             (table-view--column table-view--spec (car ka)))
+                            (car ka)          ; column key
+                            (cdr ka)))        ; ascending?
+                    table-view--sort-keys)))
+        (setq table-view--rows
+              (sort (copy-sequence table-view--rows)
+                    (lambda (a b)
+                      (cl-loop for (less key asc) in tests
+                               for va = (table-view--cell a key)
+                               for vb = (table-view--cell b key)
+                               do (cond ((funcall less va vb) (cl-return asc))
+                                        ((funcall less vb va) (cl-return (not asc))))
+                               finally return nil))))))
+    (setq table-view--sorted t)))
 
 (defun table-view--sort-description ()
   "Render the sort chain as e.g. \"name asc -> pid desc\"."
@@ -273,23 +337,33 @@ priority first.  A missing `ascending' defaults to ascending."
 
 (defun table-view--prune-marks ()
   "Discard the mark of any row missing from `table-view--rows'.
-Also widen the view when nothing stays marked."
-  (let ((ids (mapcar (lambda (r) (alist-get 'id r)) table-view--rows)))
-    (setq table-view--marks
-          (cl-remove-if-not (lambda (m) (member m ids)) table-view--marks)))
+Also widen the view when nothing stays marked.  In paged mode a marked
+row legitimately leaves the loaded page on a page turn, so marks are
+never pruned by absence there -- only cleared explicitly (`U' / `g')."
+  (unless (table-view--paged-p)
+    (let ((ids (mapcar (lambda (r) (alist-get 'id r)) table-view--rows)))
+      (setq table-view--marks
+            (cl-remove-if-not (lambda (m) (member m ids)) table-view--marks))))
   (unless table-view--marks (setq table-view--narrowed nil)))
 
 (defun table-view--visible-rows ()
-  "Rows to render: narrowed to the marked subset (when narrowed), then
-restricted to the current filter."
-  (let ((rows table-view--rows))
-    (when table-view--narrowed
-      (setq rows (cl-remove-if-not
-                  (lambda (r) (table-view--marked-p (alist-get 'id r))) rows)))
-    (when (and table-view--filter (not (string-empty-p table-view--filter)))
-      (setq rows (cl-remove-if-not
-                  (lambda (r) (table-view--row-matches-p r table-view--filter)) rows)))
-    rows))
+  "Rows to render.
+Paged, narrowed: the cached marked rows (they span pages).  Paged, not
+narrowed: the fetched page as-is (the server already sorted and filtered
+it).  Otherwise: `table-view--rows' narrowed to the marked subset (when
+narrowed), then restricted to the current filter."
+  (if (table-view--paged-p)
+      (if table-view--narrowed
+          (mapcar #'cdr (reverse table-view--mark-cache))
+        table-view--rows)
+    (let ((rows table-view--rows))
+      (when table-view--narrowed
+        (setq rows (cl-remove-if-not
+                    (lambda (r) (table-view--marked-p (alist-get 'id r))) rows)))
+      (when (and table-view--filter (not (string-empty-p table-view--filter)))
+        (setq rows (cl-remove-if-not
+                    (lambda (r) (table-view--row-matches-p r table-view--filter)) rows)))
+      rows)))
 
 ;;; Rendering
 
@@ -362,21 +436,23 @@ Prepends the mark-gutter column when any row is marked."
   "A one-line status/help string: current sort + declared action keys.
 Shows \"unsorted\" until an explicit sort has been applied, since rows
 render in load order and only reorder on `^'."
-  (format "sort: %s%s%s    %s"
+  (format "sort: %s%s%s%s    %s"
           (if (and table-view--sorted table-view--sort-keys)
               (table-view--sort-description)
             "unsorted (^)")
-          (if table-view--filter
-              (format "    filter: %s (%d/%d)"
-                      table-view--filter
-                      (length (table-view--visible-rows))
-                      (length table-view--rows))
-            "")
+          (cond ((null table-view--filter) "")
+                ;; Paged: the whole-set counts aren't known client-side.
+                ((table-view--paged-p) (format "    filter: %s" table-view--filter))
+                (t (format "    filter: %s (%d/%d)"
+                           table-view--filter
+                           (length (table-view--visible-rows))
+                           (length table-view--rows))))
           (cond (table-view--narrowed
                  (format "    narrowed: %d marked" (length table-view--marks)))
                 (table-view--marks
                  (format "    marked: %d" (length table-view--marks)))
                 (t ""))
+          (table-view--page-segment)
           (mapconcat (lambda (a) (format "%s:%s"
                                          (alist-get 'key a) (alist-get 'label a)))
                      (table-view--actions table-view--spec) "  ")))
@@ -423,10 +499,15 @@ same line number."
 ;;; Marks and bulk
 
 (defun table-view-marked-rows (&optional buffer)
-  "The marked rows of BUFFER (or the current buffer), in row order."
+  "The marked rows of BUFFER (or the current buffer).
+Client buffers return them in row order.  Paged buffers return the cached
+marked rows, which span every page visited -- so a bulk action operates on
+the whole selection, not just the rows currently on screen."
   (with-current-buffer (or buffer (current-buffer))
-    (cl-remove-if-not (lambda (r) (table-view--marked-p (alist-get 'id r)))
-                      table-view--rows)))
+    (if (table-view--paged-p)
+        (mapcar #'cdr (reverse table-view--mark-cache))
+      (cl-remove-if-not (lambda (r) (table-view--marked-p (alist-get 'id r)))
+                        table-view--rows))))
 
 (defun table-view-current-or-marked-rows (&optional buffer)
   "The marked rows of BUFFER, or the single row at point when none are marked.
@@ -603,9 +684,22 @@ See `table-view-move-column-right'."
   (setq-local cursor-type 'box))
 
 (defun table-view--install-action-keys (spec)
-  "Build a buffer-local keymap binding the declared action keys."
+  "Build a buffer-local keymap binding the declared action keys.
+In paged buffers it first binds the page-navigation keys (`>' / `.' next
+page, `<' / `,' previous page, `M->' / `M-<' last / first page, `M-g' go
+to page); these are buffer-local so ordinary tables keep `M-<' / `M->' as
+beginning / end-of-buffer.  Action keys are bound last, so a consumer key
+shadows a page key rather than the reverse."
   (let ((map (make-sparse-keymap)))
     (set-keymap-parent map table-view-mode-map)
+    (when (table-view--paged-p)
+      (define-key map ">" #'table-view-next-page)
+      (define-key map "." #'table-view-next-page)   ; alias for >
+      (define-key map "<" #'table-view-prev-page)
+      (define-key map "," #'table-view-prev-page)   ; alias for <
+      (define-key map (kbd "M->") #'table-view-last-page)
+      (define-key map (kbd "M-<") #'table-view-first-page)
+      (define-key map (kbd "M-g") #'table-view-goto-page))
     (dolist (action (table-view--actions spec))
       (let ((command (alist-get 'command action))
             (bulk (and (alist-get 'bulk action) t)))
@@ -644,54 +738,71 @@ to a false value."
 
 (defun table-view-filter (pattern)
   "Filter rows to those with any cell matching PATTERN.
-Empty PATTERN clears the filter.  Point keeps its on-screen location
-(line and column) across the re-render."
+Empty PATTERN clears the filter.  In client buffers this filters the
+loaded rows and keeps point on screen.  In paged buffers the pattern is
+pushed to the server and the first matching page is fetched, so the
+filter applies across the whole dataset rather than just the loaded page."
   (interactive "sFilter: ")
-  (table-view--save-point-location
-    (setq table-view--filter (if (string-empty-p pattern) nil pattern))
-    (table-view--render))
-  (if table-view--filter
-      (message "Filter: %s (%d/%d rows)"
-               table-view--filter
-               (length (table-view--visible-rows))
-               (length table-view--rows))
-    (message "Filter cleared")))
+  (setq table-view--filter (if (string-empty-p pattern) nil pattern))
+  (if (table-view--paged-p)
+      (progn
+        (table-view--refetch-first (table-view--preserve-landing))
+        (message (if table-view--filter
+                     (format "Filter: %s" table-view--filter)
+                   "Filter cleared")))
+    (table-view--save-point-location
+      (table-view--render))
+    (if table-view--filter
+        (message "Filter: %s (%d/%d rows)"
+                 table-view--filter
+                 (length (table-view--visible-rows))
+                 (length table-view--rows))
+      (message "Filter cleared"))))
 
 (defun table-view-sort ()
-  "Clear any filter and refresh the view, preserving the current ordering.
-An unsorted table stays in load order; a sorted table keeps its sort.
-Point keeps its on-screen location (line and column) across the refresh.
+  "Refresh the view, preserving the current ordering.
+In a client buffer this clears any filter/narrow and refreshes, keeping
+the sort order and point's on-screen location.  In a paged buffer it
+re-fetches the CURRENT page from the server -- keeping the sort, filter,
+and page position -- which doubles as recovering from a fetch error.
 Begin sorting with `^'."
   (interactive)
-  (table-view--save-point-location
-    (setq table-view--filter nil table-view--narrowed nil)
-    (when table-view--sorted
-      (table-view--sort-rows))
-    (table-view--render))
-  (message (if table-view--sorted
-               (format "Sort: %s" (table-view--sort-description))
-             "Unsorted")))
+  (if (table-view--paged-p)
+      (progn
+        (table-view--refetch-current)
+        (message "Refreshed"))
+    (table-view--save-point-location
+      (setq table-view--filter nil table-view--narrowed nil)
+      (when table-view--sorted
+        (table-view--sort-rows))
+      (table-view--render))
+    (message (if table-view--sorted
+                 (format "Sort: %s" (table-view--sort-description))
+               "Unsorted"))))
 
 (defun table-view-mark-toggle ()
   "Toggle the mark on the row at point, then move to the next row.
 Marked rows show a `*' in a gutter column and are the operand of a
 `bulk' action; see `table-view-current-or-marked-rows'."
   (interactive)
-  (let ((id (get-text-property (point) 'table-view-id)))
+  (let ((id (get-text-property (point) 'table-view-id))
+        (row (get-text-property (point) 'table-view-row)))
     (if (null id)
         (message "Point is not on a row")
-      (setq table-view--marks
-            (if (member id table-view--marks)
-                (delete id table-view--marks)
-              (cons id table-view--marks)))
+      (if (member id table-view--marks)
+          (setq table-view--marks (delete id table-view--marks)
+                table-view--mark-cache
+                (cl-remove id table-view--mark-cache :key #'car :test #'equal))
+        (setq table-view--marks (cons id table-view--marks))
+        (when row (push (cons id row) table-view--mark-cache)))
       (table-view--prune-marks)         ; widen if that was the last mark
       (table-view--render)
       (forward-line 1))))
 
 (defun table-view-unmark-all ()
-  "Remove every mark, widening the view if it was narrowed."
+  "Remove every mark (and its cached payload), widening a narrowed view."
   (interactive)
-  (setq table-view--marks nil table-view--narrowed nil)
+  (setq table-view--marks nil table-view--narrowed nil table-view--mark-cache nil)
   (table-view--render)
   (message "Marks cleared"))
 
@@ -731,15 +842,53 @@ already a single column, else it starts at the first column ascending."
              (next (nth (mod (1+ (or idx -1)) (length states)) states)))
         (setq table-view--sort-keys (list next))))))
 
-(defun table-view--toggle-sort-key (col)
-  "Flip COL's direction in the sort chain, re-sort, and re-render."
-  (table-view--save-point-location
+(defun table-view--commit-order ()
+  "Apply the current sort chain to the view.
+Client buffers re-sort the rows in place and re-render, keeping point on
+screen.  Paged buffers push the new order to the server and re-fetch the
+first page -- an old offset or cursor is meaningless under a new order --
+landing on the first row."
+  (if (table-view--paged-p)
+      (progn
+        (setq table-view--sorted (and table-view--sort-keys t))
+        ;; Sort resets to page 1, but keep the cursor where it is on screen
+        ;; (e.g. on the column header just clicked), like the client path.
+        (table-view--refetch-first (table-view--preserve-landing)))
+    (table-view--save-point-location
+      (table-view--sort-rows)
+      (table-view--render))))
+
+(defun table-view--apply-sort-selection (col secondary)
+  "Mutate `table-view--sort-keys' for a `^' press on column COL.
+With SECONDARY (a `C-u' prefix), add COL as the next lower-priority
+tie-breaker, or flip it in place when already chained.  Otherwise make
+COL the sole sort key, toggling its direction when it already is.  With
+no COL, step the single-column walk-through."
+  (cond
+   (secondary
     (setq table-view--sort-keys
-          (mapcar (lambda (ka)
-                    (if (equal (car ka) col) (cons col (not (cdr ka))) ka))
-                  table-view--sort-keys))
-    (table-view--sort-rows)
-    (table-view--render))
+          (if (assoc col table-view--sort-keys)
+              (mapcar (lambda (ka)
+                        (if (equal (car ka) col) (cons col (not (cdr ka))) ka))
+                      table-view--sort-keys)
+            (append table-view--sort-keys (list (cons col t))))))
+   (col
+    (setq table-view--sort-keys
+          (if (and table-view--sorted
+                   (= 1 (length table-view--sort-keys))
+                   (equal (caar table-view--sort-keys) col))
+              (list (cons col (not (cdar table-view--sort-keys))))
+            (list (cons col t)))))
+   (t
+    (table-view--sort-advance))))
+
+(defun table-view--toggle-sort-key (col)
+  "Flip COL's direction in the sort chain and apply it."
+  (setq table-view--sort-keys
+        (mapcar (lambda (ka)
+                  (if (equal (car ka) col) (cons col (not (cdr ka))) ka))
+                table-view--sort-keys))
+  (table-view--commit-order)
   (message "Sort: %s" (table-view--sort-description)))
 
 (defun table-view--secondary-toggle-map (col)
@@ -779,32 +928,200 @@ keeps its on-screen location across the re-sort."
      ((and secondary (not col))
       (message "Point is not on a column"))
      (t
-      (table-view--save-point-location
-        (cond
-         ;; C-u ^ on a column -> add it as a tie-breaker, or flip it in place.
-         (secondary
-          (setq table-view--sort-keys
-                (if (assoc col table-view--sort-keys)
-                    (mapcar (lambda (ka)
-                              (if (equal (car ka) col) (cons col (not (cdr ka))) ka))
-                            table-view--sort-keys)
-                  (append table-view--sort-keys (list (cons col t))))))
-         ;; ^ on a column -> single-column sort (toggle if already the sole key).
-         (col
-          (setq table-view--sort-keys
-                (if (and table-view--sorted
-                         (= 1 (length table-view--sort-keys))
-                         (equal (caar table-view--sort-keys) col))
-                    (list (cons col (not (cdar table-view--sort-keys))))
-                  (list (cons col t)))))
-         ;; ^ off any column -> step the single-column walk-through.
-         (t
-          (table-view--sort-advance)))
-        (table-view--sort-rows)
-        (table-view--render))
+      (table-view--apply-sort-selection col secondary)
+      (table-view--commit-order)
       (message "Sort: %s" (table-view--sort-description))
       ;; C-u ^ arms a run of plain `^' to keep flipping this key.
       (when secondary (table-view--arm-secondary-toggle col))))))
+
+;;; Pagination
+
+(defun table-view--page-segment ()
+  "The paging-status segment of the hint line, or \"\" when not paged."
+  (cond
+   ((not (table-view--paged-p)) "")
+   (table-view--page-loading "    loading…")
+   (table-view--page-error (format "    error: %s (g refreshes)" table-view--page-error))
+   ((zerop (length table-view--rows)) "    (empty)")
+   ((table-view--offset-p)
+    (let* ((n (length table-view--rows))
+           (start (1+ table-view--offset))
+           (end (+ table-view--offset n)))
+      (if table-view--total
+          (format "    page %d/%d · %d-%d of %d"
+                  (1+ table-view--page-index)
+                  (max 1 (ceiling table-view--total table-view--page-size))
+                  start end table-view--total)
+        (format "    page %d · %d-%d%s"
+                (1+ table-view--page-index) start end
+                (if table-view--has-next " · more…" "")))))
+   (t                                   ; keyset
+    (format "    page %d · %d rows%s"
+            (1+ table-view--page-index) (length table-view--rows)
+            (if table-view--has-next " · more…" "")))))
+
+(defun table-view--build-request ()
+  "The page-fn request plist for the pending page under the live query.
+Always carries the buffer, page size, the sort chain, and the active
+filter (nil when none); plus `:offset' for offset paging or
+`:cursor'/`:direction' for keyset paging."
+  (append
+   (list :buffer (current-buffer)
+         :limit  table-view--page-size
+         :sort   table-view--sort-keys
+         :filter (and table-view--filter
+                      (not (string-empty-p table-view--filter))
+                      table-view--filter))
+   (if (table-view--offset-p)
+       (list :offset (or (plist-get table-view--pending :offset) 0))
+     (list :cursor    (plist-get table-view--pending :cursor)
+           :direction (or (plist-get table-view--pending :direction) 'forward)))))
+
+(defun table-view--goto-first-row ()
+  "Move point to the first data row, or to point-min when there are none."
+  (goto-char (point-min))
+  (let ((pos (text-property-not-all (point-min) (point-max) 'table-view-id nil)))
+    (when pos (goto-char pos))))
+
+(defun table-view--land-point (landing)
+  "Place point after a fetch, per the LANDING plist.
+`:restore' (LINE . COL) restores an on-screen position (used by sort and
+filter, so the cursor stays put across the re-fetch); a string `:point'
+is a row id (falling back to the first row); anything else lands on the
+first row."
+  (let ((restore (plist-get landing :restore))
+        (where (plist-get landing :point)))
+    (cond
+     (restore
+      (goto-char (point-min))
+      (forward-line (1- (car restore)))
+      (move-to-column (cdr restore)))
+     ((and (stringp where) (table-view--goto-id where)))
+     (t (table-view--goto-first-row)))))
+
+(defun table-view--preserve-landing ()
+  "A landing plist keeping point on its current on-screen line and column."
+  (list :restore (cons (line-number-at-pos) (current-column))))
+
+(defun table-view--fetch-page (pending)
+  "Record PENDING as the in-flight request, show a loading state, call the page-fn.
+PENDING is a plist naming the target page (`:offset', or `:cursor' /
+`:direction' / `:index') and where point lands once it arrives (`:point',
+a row id or the symbol `first').  The position is committed only when
+`table-view-set-page' delivers, so a failed fetch never advances the page."
+  (unless (table-view--paged-p)
+    (user-error "Pagination is not enabled in this buffer"))
+  (setq table-view--pending pending
+        table-view--page-loading t
+        table-view--page-error nil)
+  (table-view--render)
+  (funcall table-view--page-fn (table-view--build-request)))
+
+(defun table-view--refetch-first (&optional landing)
+  "Fetch the first page under the current sort/filter.
+LANDING is a plist controlling where point ends up once it arrives
+\(`:restore' or `:point'); it defaults to the first row."
+  (table-view--fetch-page
+   (append (if (table-view--offset-p)
+               (list :offset 0 :index 0)
+             (list :cursor nil :direction 'forward :index 0))
+           (or landing (list :point 'first)))))
+
+(defun table-view--refetch-current ()
+  "Re-fetch the CURRENT page, keeping the sort, filter, and page position.
+Point returns to the row it is on when the page comes back, else the
+first row.  This is what `g' does in a paged buffer -- a plain refresh
+that also clears a fetch error by retrying the visible page."
+  (let ((id (get-text-property (point) 'table-view-id)))
+    (table-view--fetch-page
+     (if (table-view--offset-p)
+         (list :offset table-view--offset :point (or id 'first))
+       (list :cursor table-view--page-cursor :direction 'forward
+             :index table-view--page-index :point (or id 'first))))))
+
+(defun table-view--paging-unavailable ()
+  "Reason page navigation is currently blocked, or nil when it is allowed.
+Paging mutates the underlying page, which is invisible while narrowed to
+the marked rows, so it is refused there until the view is widened."
+  (cond ((not (table-view--paged-p)) "Pagination not enabled")
+        (table-view--narrowed "Widen with / before paging")))
+
+;; Page turns keep point on its current on-screen line and column (so a
+;; column can be scanned straight across pages); when the new page is shorter
+;; the position clamps to the last row.
+
+(defun table-view-next-page ()
+  "Fetch the next page (paged buffers), keeping point where it is on screen."
+  (interactive)
+  (let ((blocked (table-view--paging-unavailable))
+        (landing (table-view--preserve-landing)))
+    (cond
+     (blocked (message "%s" blocked))
+     ((not table-view--has-next) (message "Already on the last page"))
+     ((table-view--offset-p)
+      (table-view--fetch-page
+       (append (list :offset (+ table-view--offset table-view--page-size)) landing)))
+     (table-view--next-cursor
+      (table-view--fetch-page
+       (append (list :cursor table-view--next-cursor :direction 'forward
+                     :index (1+ table-view--page-index))
+               landing)))
+     (t (message "Already on the last page")))))
+
+(defun table-view-prev-page ()
+  "Fetch the previous page (paged buffers), keeping point where it is on screen."
+  (interactive)
+  (let ((blocked (table-view--paging-unavailable))
+        (landing (table-view--preserve-landing)))
+    (cond
+     (blocked (message "%s" blocked))
+     ((table-view--offset-p)
+      (if (<= table-view--offset 0)
+          (message "Already on the first page")
+        (table-view--fetch-page
+         (append (list :offset (max 0 (- table-view--offset table-view--page-size)))
+                 landing))))
+     (table-view--prev-cursor
+      (table-view--fetch-page
+       (append (list :cursor table-view--prev-cursor :direction 'backward
+                     :index (max 0 (1- table-view--page-index)))
+               landing)))
+     (t (message "Already on the first page")))))
+
+(defun table-view-first-page ()
+  "Fetch the first page (paged buffers), keeping point where it is on screen."
+  (interactive)
+  (let ((blocked (table-view--paging-unavailable)))
+    (if blocked (message "%s" blocked)
+      (table-view--refetch-first (table-view--preserve-landing)))))
+
+(defun table-view-last-page ()
+  "Fetch the last page (offset paging with a known total only)."
+  (interactive)
+  (let ((blocked (table-view--paging-unavailable))
+        (landing (table-view--preserve-landing)))
+    (cond
+     (blocked (message "%s" blocked))
+     ((not (table-view--offset-p)) (message "Last page is not available in keyset mode"))
+     ((not table-view--total) (message "Total is unknown; page to the end with >"))
+     (t (let ((last (* (/ (max 0 (1- table-view--total)) table-view--page-size)
+                       table-view--page-size)))
+          (table-view--fetch-page (append (list :offset last) landing)))))))
+
+(defun table-view-goto-page (n)
+  "Jump to page N (1-based; offset paging only), keeping point on screen."
+  (interactive "nGo to page: ")
+  (let ((blocked (table-view--paging-unavailable))
+        (landing (table-view--preserve-landing)))
+    (cond
+     (blocked (message "%s" blocked))
+     ((not (table-view--offset-p)) (message "Goto-page needs offset paging"))
+     (t (let* ((idx (max 0 (1- n)))
+               (idx (if table-view--total
+                        (min idx (/ (max 0 (1- table-view--total)) table-view--page-size))
+                      idx)))
+          (table-view--fetch-page
+           (append (list :offset (* idx table-view--page-size)) landing)))))))
 
 ;;; Public API
 
@@ -823,6 +1140,87 @@ keeps its on-screen location across the re-sort."
               table-view--sorted nil)
         (table-view--prune-marks)
         (table-view--render)))))
+
+(cl-defun table-view-set-page (buffer rows &key total (has-next 'unset)
+                                      next-cursor prev-cursor offset)
+  "Deliver ROWS as the current page of paged table-view BUFFER.
+Call this from a `page-fn' once a page has been fetched (synchronously or
+asynchronously).  Keyword metadata, all optional:
+
+  :total        total matching-row count under the active filter, or nil
+                when the backend does not report one -- offset paging then
+                shows \"page K/N of T\" only when it is known;
+  :has-next     force whether a page follows; when omitted it is derived
+                from :total (offset) or :next-cursor (keyset), falling back
+                to \"a full page implies there may be more\";
+  :next-cursor / :prev-cursor  opaque cursors for keyset paging;
+  :offset       the offset this page was fetched at (offset paging); the
+                pending request's offset is used when omitted.
+
+Commits the requested page position (so a page turn only takes effect on a
+successful delivery), refreshes any cached marked rows that reappear in
+ROWS, and lands point on the first row (or the requested row id)."
+  (let ((buf (get-buffer buffer)))
+    (when (buffer-live-p buf)
+      (with-current-buffer buf
+        (let ((pending table-view--pending))
+          (setq table-view--rows (copy-sequence rows))
+          (if (table-view--offset-p)
+              (setq table-view--offset (or offset (plist-get pending :offset) 0)
+                    table-view--page-index
+                    (if (and table-view--page-size (> table-view--page-size 0))
+                        (/ table-view--offset table-view--page-size)
+                      0))
+            (setq table-view--page-cursor (plist-get pending :cursor)
+                  table-view--page-index (or (plist-get pending :index) 0)
+                  table-view--next-cursor next-cursor
+                  table-view--prev-cursor prev-cursor))
+          (setq table-view--total total
+                table-view--has-next
+                (cond ((not (eq has-next 'unset)) (and has-next t))
+                      ((table-view--offset-p)
+                       (if total
+                           (< (+ table-view--offset (length table-view--rows)) total)
+                         (and table-view--page-size
+                              (= (length table-view--rows) table-view--page-size))))
+                      (t (and next-cursor t)))
+                table-view--page-loading nil
+                table-view--page-error nil)
+          ;; Keep marked-row snapshots fresh when a marked row reappears here.
+          (dolist (r table-view--rows)
+            (let ((cell (assoc (alist-get 'id r) table-view--mark-cache)))
+              (when cell (setcdr cell r))))
+          (setq table-view--pending nil)
+          (table-view--render)
+          (table-view--land-point pending))))))
+
+(defun table-view-page-error (buffer message)
+  "Report that fetching a page of table-view BUFFER failed with MESSAGE.
+Keeps the previously loaded page visible and shows MESSAGE in the hint
+line; the page position is unchanged, so `g' refreshes that page (and
+clears the error), and the navigation can be retried with the page keys."
+  (let ((buf (get-buffer buffer)))
+    (when (buffer-live-p buf)
+      (with-current-buffer buf
+        (setq table-view--page-loading nil
+              table-view--page-error (format "%s" message)
+              table-view--pending nil)
+        (table-view--render)))))
+
+(defun table-view-page-request (&optional buffer)
+  "The live paging query of paged BUFFER, or nil when it is not paged.
+A plist of :sort (the chain), :filter (or nil), :strategy, and :page-size
+-- enough for a bulk handler to push a whole-result server operation
+instead of enumerating rows it has not loaded.  This is the seam a future
+\"apply to all matching\" bulk action will build on."
+  (with-current-buffer (or buffer (current-buffer))
+    (when (table-view--paged-p)
+      (list :sort table-view--sort-keys
+            :filter (and table-view--filter
+                         (not (string-empty-p table-view--filter))
+                         table-view--filter)
+            :strategy table-view--strategy
+            :page-size table-view--page-size))))
 
 (defun table-view-upsert-row (buffer row)
   "Add ROW to table-view BUFFER (a buffer or name), or replace its id-match."
@@ -861,45 +1259,73 @@ calls this only on success, so the row survives if that work fails."
                                                  (and (> vpos 0) (nth (1- vpos) visible)))))))
             (setq table-view--rows
                   (cl-remove id table-view--rows
-                             :key (lambda (r) (alist-get 'id r)) :test #'equal))
+                             :key (lambda (r) (alist-get 'id r)) :test #'equal)
+                  table-view--marks (delete id table-view--marks)
+                  table-view--mark-cache
+                  (cl-remove id table-view--mark-cache :key #'car :test #'equal))
             (table-view--prune-marks)
             (table-view--render)
             (when target (table-view--goto-id target))
             t))))))
 
 (defun table-view-refresh (buffer)
-  "Re-invoke the registered `fill-fn' for table-view BUFFER (a buffer or name)."
+  "Refresh table-view BUFFER (a buffer or name).
+Client buffers re-invoke the registered `fill-fn'.  Paged buffers re-fetch
+the current page, keeping point on the same row when it comes back."
   (let ((buf (get-buffer buffer)))
     (when (buffer-live-p buf)
       (with-current-buffer buf
-        (when table-view--fill-fn
-          (funcall table-view--fill-fn buf))))))
+        (cond
+         ((table-view--paged-p) (table-view--refetch-current))
+         (table-view--fill-fn (funcall table-view--fill-fn buf)))))))
 
-(defun table-view-display (buffer spec handlers &optional fill-fn)
-  "Render SPEC into BUFFER, install HANDLERS, and run FILL-FN to populate.
+(defun table-view-display (buffer spec handlers &optional fill-fn page-fn)
+  "Render SPEC into BUFFER, install HANDLERS, and populate.  Returns the buffer.
 SPEC is a parsed alist (see `table-view-parse').  HANDLERS is an alist of
-command-name (string) -> (FN ID ROW).  FILL-FN, if non-nil, is a function
-of one argument (BUFFER) that populates rows via `table-view-set-rows' /
-`table-view-upsert-row'.  Returns the buffer.
+command-name (string) -> (FN ID ROW).
+
+Data source (FILL-FN and PAGE-FN are mutually exclusive; PAGE-FN wins):
+  * FILL-FN, a function of BUFFER that populates ALL rows via
+    `table-view-set-rows' / `table-view-upsert-row'; or
+  * PAGE-FN, server-side pagination: a function of a REQUEST plist that
+    fetches ONE page and delivers it with `table-view-set-page' (or
+    `table-view-page-error').  When PAGE-FN is non-nil the buffer is
+    paged: `table-view--rows' holds only the current page, sort and
+    filter are pushed into each request, and totals come from the
+    server.  SPEC's `pagination' block sets `page-size' (default 50) and
+    `strategy' (`offset', the default, for OFFSET/LIMIT with random
+    access and totals, or `keyset' for opaque forward/back cursors).
 
 SPEC's `sort' (a single {column, ascending}, or a list of them for a
-multi-column default) is applied as the default sort when SPEC itself
-supplies rows.  Rows arriving later via FILL-FN / `table-view-set-rows'
-start unsorted."
+multi-column default) seeds the sort chain: in a client buffer it is
+applied to SPEC's own rows on open; in a paged buffer it is sent with the
+first page request.  Rows arriving later via FILL-FN start unsorted."
   (let ((buf (get-buffer-create buffer)))
     (with-current-buffer buf
       (table-view-mode)
       (setq table-view--spec (table-view--own-spec spec)
             table-view--rows (alist-get 'rows spec)
             table-view--handlers handlers
-            table-view--fill-fn fill-fn)
+            table-view--fill-fn fill-fn
+            table-view--page-fn page-fn)
+      (let ((pg (alist-get 'pagination spec)))
+        (when (or page-fn pg)
+          (let ((ps (alist-get 'page-size pg)))
+            (setq table-view--page-size (if (and (integerp ps) (> ps 0)) ps 50)))
+          (setq table-view--strategy (pcase (alist-get 'strategy pg)
+                                       ((or "keyset" 'keyset) 'keyset)
+                                       (_ 'offset)))))
       (setq table-view--sort-keys (table-view--parse-sort (alist-get 'sort spec)))
-      (when (and table-view--sort-keys table-view--rows)
-        (table-view--sort-rows))          ; apply the declared default sort
+      (if (table-view--paged-p)
+          (setq table-view--sorted (and table-view--sort-keys t))
+        (when (and table-view--sort-keys table-view--rows)
+          (table-view--sort-rows)))       ; apply the declared default sort
       (table-view--install-action-keys spec)
       (table-view--render))
     (switch-to-buffer buf)
-    (when fill-fn (funcall fill-fn buf))
+    (with-current-buffer buf
+      (cond ((table-view--paged-p) (table-view--refetch-first))  ; fetch page 1
+            (fill-fn (funcall fill-fn buf))))
     buf))
 
 (provide 'table-view)
