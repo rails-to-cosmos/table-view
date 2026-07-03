@@ -7,16 +7,13 @@
 (require 'table-view)
 
 (defvar upsert-example--spec
-  (table-view-parse
-   "{ \"title\": \"Live Counter\",
-      \"columns\": [
-        { \"key\": \"label\", \"header\": \"Label\", \"sortable\": true },
-        { \"key\": \"value\", \"header\": \"Value\", \"type\": \"number\",
-          \"align\": \"right\", \"sortable\": true }
-      ],
-      \"actions\": [],
-      \"sort\": { \"column\": \"label\", \"ascending\": true },
-      \"rows\": [] }"))
+  '((title . "Live Counter")
+    (columns . (((key . "label") (header . "Label") (sortable . t))
+                ((key . "value") (header . "Value") (type . "number")
+                 (align . "right") (sortable . t))))
+    (sort . ((column . "label") (ascending . t)))
+    (rows . ()))
+  "Spec for the live-counter example (rows arrive via the timer).")
 
 (defvar upsert-example--timer nil)
 (defvar upsert-example--tick 0)

@@ -620,5 +620,148 @@
       (should (= (line-number-at-pos) line))          ; same on-screen line
       (should (= (current-column) col)))))            ; same column (not col 0)
 
+;;; Column reordering (M-left / M-right)
+
+(defun tv-test--col-order ()
+  "Current display order of column keys."
+  (mapcar (lambda (c) (alist-get 'key c))
+          (table-view--columns table-view--spec)))
+
+(ert-deftest tv-test-move-column-right ()
+  (tv-test--with-table
+    (should (equal (tv-test--col-order) '("name" "count" "status")))
+    (table-view--goto-id "a")
+    (table-view-forward-column)          ; onto "name"
+    (call-interactively #'table-view-move-column-right)
+    (should (equal (tv-test--col-order) '("count" "name" "status")))
+    (should (equal (tv-test--col-at-point) "name"))))   ; point follows the column
+
+(ert-deftest tv-test-move-column-left ()
+  (tv-test--with-table
+    (table-view--goto-id "a")
+    (table-view-forward-column 2)         ; onto "count"
+    (call-interactively #'table-view-move-column-left)
+    (should (equal (tv-test--col-order) '("count" "name" "status")))
+    (should (equal (tv-test--col-at-point) "count"))))
+
+(ert-deftest tv-test-move-column-on-header ()
+  (tv-test--with-table
+    (goto-char (point-min))
+    (forward-line 3)                      ; header row
+    (table-view-forward-column)           ; onto "name" header
+    (call-interactively #'table-view-move-column-right)
+    (should (equal (tv-test--col-order) '("count" "name" "status")))
+    (should (equal (tv-test--col-at-point) "name"))))
+
+(ert-deftest tv-test-move-column-at-edge-noop ()
+  (tv-test--with-table
+    (table-view--goto-id "a")
+    (table-view-forward-column 3)         ; onto "status" (rightmost)
+    (call-interactively #'table-view-move-column-right)
+    (should (equal (tv-test--col-order) '("name" "count" "status")))))   ; unchanged
+
+(ert-deftest tv-test-move-column-off-column-noop ()
+  (tv-test--with-table
+    (goto-char (point-min))               ; title line, not a column
+    (call-interactively #'table-view-move-column-right)
+    (should (equal (tv-test--col-order) '("name" "count" "status")))))
+
+(ert-deftest tv-test-move-column-does-not-mutate-shared-spec ()
+  ;; Reordering must touch only the buffer's private copy, not the spec
+  ;; object handed to `table-view-display' (which callers may share).
+  (let ((spec (tv-test--spec))
+        (buf (get-buffer-create " *tv-shared*")))
+    (unwind-protect
+        (progn
+          (table-view-display buf spec nil)
+          (table-view-set-rows buf (tv-test--rows))
+          (with-current-buffer buf
+            (table-view--goto-id "a")
+            (table-view-forward-column)
+            (call-interactively #'table-view-move-column-right)
+            (should (equal (tv-test--col-order) '("count" "name" "status"))))
+          (should (equal (mapcar (lambda (c) (alist-get 'key c))
+                                 (alist-get 'columns spec))
+                         '("name" "count" "status"))))   ; original spec intact
+      (kill-buffer buf))))
+
+;;; Comparators: compare / values / natural
+
+(ert-deftest tv-test-comparator-natural ()
+  (let ((less (table-view--comparator '((key . "v") (compare . "natural")))))
+    (should (funcall less "2" "10"))                         ; 2 < 10 numerically
+    (should-not (funcall less "10" "2"))
+    (should (funcall less "item2" "item10"))))
+
+(ert-deftest tv-test-comparator-number-coerces-strings ()
+  (let ((less (table-view--comparator '((key . "v") (compare . "number")))))
+    (should (funcall less "8" "80"))
+    (should (funcall less "80" "443"))))
+
+(ert-deftest tv-test-comparator-string-is-lexicographic ()
+  (let ((less (table-view--comparator '((key . "v")))))      ; default, no type
+    (should (funcall less "apple" "banana"))
+    (should (funcall less "10" "2"))))                       ; lexicographic: "10" < "2"
+
+(ert-deftest tv-test-comparator-categorical-values ()
+  (let ((less (table-view--comparator '((key . "v") (values . ("low" "medium" "high"))))))
+    (should (funcall less "low" "high"))
+    (should-not (funcall less "high" "low"))
+    (should (funcall less "high" "unknown"))))               ; unlisted sorts last
+
+(ert-deftest tv-test-comparator-values-coerce-number-cells ()
+  ;; values are strings, cells are numbers -> matched via `table-view--str'
+  (let ((less (table-view--comparator '((key . "v") (values . ("3" "1" "2"))))))
+    (should (funcall less 3 1))                              ; 3 is first in the domain
+    (should (funcall less 1 2))))
+
+(ert-deftest tv-test-comparator-compare-function ()
+  (let ((less (table-view--comparator `((key . "v") (compare . ,(lambda (a b) (> a b)))))))
+    (should (funcall less 5 3))))                            ; custom: larger first
+
+(ert-deftest tv-test-comparator-registered-name ()
+  (let* ((table-view-comparators
+          (list (cons "rev" (lambda (a b) (string> (table-view--str a)
+                                                   (table-view--str b))))))
+         (less (table-view--comparator '((key . "v") (compare . "rev")))))
+    (should (funcall less "b" "a"))
+    (should-not (funcall less "a" "b"))))
+
+(ert-deftest tv-test-comparator-badge-unchanged ()
+  ;; a badge column with no `values' still sorts by palette order
+  (let ((less (table-view--comparator
+               '((key . "s") (type . "badge")
+                 (badges . (((value . "ok")) ((value . "warn")) ((value . "err"))))))))
+    (should (funcall less "ok" "err"))
+    (should-not (funcall less "err" "ok"))))
+
+(ert-deftest tv-test-comparator-number-type-default ()
+  (let ((less (table-view--comparator '((key . "n") (type . "number")))))
+    (should (funcall less 2 10))
+    (should (funcall less nil 2))))                          ; nil coerces to 0 < 2
+
+(ert-deftest tv-test-natural-sort-end-to-end ()
+  (tv-test--with-display
+      "{ \"columns\": [ {\"key\":\"v\",\"header\":\"V\",\"compare\":\"natural\",\"sortable\":true} ],
+         \"rows\": [ {\"id\":\"a\",\"cells\":{\"v\":\"item10\"}},
+                     {\"id\":\"b\",\"cells\":{\"v\":\"item2\"}},
+                     {\"id\":\"c\",\"cells\":{\"v\":\"item1\"}} ] }"
+    (setq table-view--sort-keys '(("v" . t)))
+    (table-view--sort-rows)
+    (should (equal (mapcar (lambda (r) (alist-get 'id r)) table-view--rows)
+                   '("c" "b" "a")))))                        ; item1, item2, item10
+
+(ert-deftest tv-test-values-sort-end-to-end ()
+  (tv-test--with-display
+      "{ \"columns\": [ {\"key\":\"p\",\"header\":\"P\",\"sortable\":true,
+                         \"values\":[\"low\",\"medium\",\"high\"]} ],
+         \"rows\": [ {\"id\":\"a\",\"cells\":{\"p\":\"high\"}},
+                     {\"id\":\"b\",\"cells\":{\"p\":\"low\"}},
+                     {\"id\":\"c\",\"cells\":{\"p\":\"medium\"}} ] }"
+    (setq table-view--sort-keys '(("p" . t)))
+    (table-view--sort-rows)
+    (should (equal (mapcar (lambda (r) (alist-get 'id r)) table-view--rows)
+                   '("b" "c" "a")))))                        ; low, medium, high
+
 (provide 'table-view-test)
 ;;; table-view-test.el ends here
