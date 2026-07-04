@@ -605,6 +605,15 @@
     (table-view-next-line)
     (should (equal (get-text-property (point) 'table-view-id) "a"))))  ; enters first row
 
+(ert-deftest tv-test-next-line-from-title-lands-on-first-cell ()
+  ;; `n' from the top of the buffer enters the first row ON the first cell,
+  ;; not the leading "|" separator (which carries no `table-view-col').
+  (tv-test--with-table
+    (goto-char (point-min))             ; title line, column 0
+    (table-view-next-line)
+    (should (equal (get-text-property (point) 'table-view-id) "a"))   ; first row
+    (should (equal (tv-test--col-at-point) "name"))))                 ; first cell, not "|"
+
 (ert-deftest tv-test-previous-line-on-header-stays ()
   (tv-test--with-table
     (goto-char (point-min))
