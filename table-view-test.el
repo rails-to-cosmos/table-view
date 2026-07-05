@@ -1732,5 +1732,188 @@ push-down can be tested)."
       (should (= table-view--offset 0))          ; underlying page unchanged
       (should (equal (tv-test--visible-ids) '("r1"))))))  ; still the marked set
 
+;;; Org links
+
+(defmacro tv-test--with-links (rows &rest body)
+  "Display a two-column table (name, n) and set it to ROWS, then run BODY."
+  (declare (indent 1))
+  `(let ((buf (get-buffer-create " *tv-links*")))
+     (unwind-protect
+         (progn
+           (table-view-display
+            buf '((title . "Links")
+                  (columns . (((key . "name") (header . "Name"))
+                              ((key . "n") (header . "N") (type . "number")))))
+            nil)
+           (table-view-set-rows buf ,rows)
+           (with-current-buffer buf ,@body))
+       (kill-buffer buf))))
+
+(defun tv-test--first-link-pos ()
+  "Position of the first `table-view-link' in the buffer, or nil."
+  (text-property-not-all (point-min) (point-max) 'table-view-link nil))
+
+(ert-deftest tv-test-delink-plain ()
+  (should (equal (table-view--delink "hello") "hello")))
+
+(ert-deftest tv-test-delink-full-link ()
+  (should (equal (table-view--delink "[[https://x.com][Example]]") "Example")))
+
+(ert-deftest tv-test-delink-bare-link ()
+  (should (equal (table-view--delink "[[https://x.com]]") "https://x.com")))
+
+(ert-deftest tv-test-delink-embedded-and-multiple ()
+  (should (equal (table-view--delink "see [[a][A]] and [[b][B]] end")
+                 "see A and B end")))
+
+(ert-deftest tv-test-delink-respects-render-flag ()
+  (let ((table-view-render-links nil))
+    (should (equal (table-view--delink "[[x][Y]]") "[[x][Y]]"))))
+
+(ert-deftest tv-test-linkify-propertizes ()
+  (let ((s (table-view--linkify "[[https://x.com][Example]]")))
+    (should (equal s "Example"))                          ; text = the description
+    (should (equal (get-text-property 0 'table-view-link s) "https://x.com"))
+    (should (eq (get-text-property 0 'face s) 'table-view-link))))
+
+(ert-deftest tv-test-render-link-shows-description ()
+  (tv-test--with-links
+      '(((id . "a") (cells . ((name . "[[https://x.com][Homepage]]") (n . 1)))))
+    (should (string-match-p "Homepage" (buffer-string)))
+    (should-not (string-match-p "https://x.com" (buffer-string)))))  ; URL not in display text
+
+(ert-deftest tv-test-render-link-carries-target ()
+  (tv-test--with-links
+      '(((id . "a") (cells . ((name . "[[https://x.com][Homepage]]") (n . 1)))))
+    (let ((pos (tv-test--first-link-pos)))
+      (should pos)
+      (should (equal (get-text-property pos 'table-view-link) "https://x.com"))
+      (should (eq (get-text-property pos 'keymap) table-view--link-keymap))
+      (should (eq (get-text-property pos 'follow-link) t)))))
+
+(ert-deftest tv-test-link-width-uses-display ()
+  ;; the column is sized to the DESCRIPTION, not the raw [[...]] markup
+  (tv-test--with-links
+      '(((id . "a")
+         (cells . ((name . "[[https://very-long-url.example.com/deep/path][Hi]]") (n . 1)))))
+    (let ((widths (table-view--widths table-view--spec table-view--rows)))
+      (should (= (alist-get "name" widths nil nil #'equal)
+                 (string-width "Name"))))))            ; "Name" (4) > "Hi" (2)
+
+(ert-deftest tv-test-link-filter-matches-description ()
+  (tv-test--with-links
+      '(((id . "a") (cells . ((name . "[[https://x.com][Homepage]]") (n . 1))))
+        ((id . "b") (cells . ((name . "[[https://y.com][Docs]]") (n . 2)))))
+    (setq table-view--filter "homepage")
+    (should (equal (mapcar (lambda (r) (alist-get 'id r)) (table-view--visible-rows))
+                   '("a")))))
+
+(ert-deftest tv-test-link-sort-by-description ()
+  ;; a link column orders by the visible description, not the URL
+  (tv-test--with-links
+      '(((id . "a") (cells . ((name . "[[https://zzz.com][Apple]]") (n . 1))))
+        ((id . "b") (cells . ((name . "[[https://aaa.com][Banana]]") (n . 2)))))
+    (setq table-view--sort-keys '(("name" . t)))
+    (table-view--sort-rows)
+    (should (equal (mapcar (lambda (r) (alist-get 'id r)) table-view--rows)
+                   '("a" "b")))))                       ; Apple < Banana, though URLs reversed
+
+(ert-deftest tv-test-open-link-at-point ()
+  (tv-test--with-links
+      '(((id . "a") (cells . ((name . "[[https://x.com][Homepage]]") (n . 1)))))
+    (let* ((opened nil)
+           (table-view-open-link-function (lambda (target) (setq opened target))))
+      (goto-char (tv-test--first-link-pos))
+      (table-view-open-link)
+      (should (equal opened "https://x.com")))))
+
+(ert-deftest tv-test-open-link-no-link-is-noop ()
+  (tv-test--with-links
+      '(((id . "a") (cells . ((name . "plain") (n . 1)))))
+    (let ((called nil)
+          (table-view-open-link-function (lambda (_) (setq called t))))
+      (table-view--goto-id "a")
+      (table-view-open-link)
+      (should-not called))))
+
+(ert-deftest tv-test-c-c-c-o-bound-to-open-link ()
+  (should (eq (lookup-key table-view-mode-map (kbd "C-c C-o")) #'table-view-open-link)))
+
+(ert-deftest tv-test-render-links-disabled-shows-raw ()
+  (let ((table-view-render-links nil))
+    (tv-test--with-links
+        '(((id . "a") (cells . ((name . "[[https://x.com][Homepage]]") (n . 1)))))
+      (should (string-match-p (regexp-quote "[[https://x.com][Homepage]]")
+                              (buffer-string))))))
+
+;; -- empty description [[t][]] is not a valid Org link, so it's shown verbatim --
+
+(ert-deftest tv-test-delink-empty-desc-left-verbatim ()
+  ;; `org-link-bracket-re' does not match an empty description, so the cell
+  ;; degrades to visible raw text rather than an invisible/unfollowable blank
+  (should (equal (table-view--delink "[[https://x.com][]]") "[[https://x.com][]]"))
+  (should (equal (table-view--linkify "[[https://x.com][]]") "[[https://x.com][]]")))  ; followable
+
+;; -- sort by description for number and values (categorical) link columns --
+
+(ert-deftest tv-test-link-sort-values-column-by-description ()
+  (let ((buf (get-buffer-create " *tv-link-values*")))
+    (unwind-protect
+        (progn
+          (table-view-display
+           buf '((title . "V")
+                 (columns . (((key . "p") (header . "P") (values . ("Apple" "Zebra"))))))
+           nil)
+          (table-view-set-rows
+           buf '(((id . "z") (cells . ((p . "[[a][Zebra]]"))))
+                 ((id . "a") (cells . ((p . "[[b][Apple]]"))))))
+          (with-current-buffer buf
+            (setq table-view--sort-keys '(("p" . t)))
+            (table-view--sort-rows)
+            (should (equal (mapcar (lambda (r) (alist-get 'id r)) table-view--rows)
+                           '("a" "z")))))               ; Apple < Zebra, by description
+      (kill-buffer buf))))
+
+(ert-deftest tv-test-link-sort-number-column-by-description ()
+  (let ((buf (get-buffer-create " *tv-link-num*")))
+    (unwind-protect
+        (progn
+          (table-view-display
+           buf '((title . "N")
+                 (columns . (((key . "n") (header . "N") (type . "number")))))
+           nil)
+          (table-view-set-rows
+           buf '(((id . "big")   (cells . ((n . "[[u][100]]"))))
+                 ((id . "small") (cells . ((n . "[[u][9]]"))))))
+          (with-current-buffer buf
+            (setq table-view--sort-keys '(("n" . t)))
+            (table-view--sort-rows)
+            (should (equal (mapcar (lambda (r) (alist-get 'id r)) table-view--rows)
+                           '("small" "big")))))         ; 9 < 100 numerically, by description
+      (kill-buffer buf))))
+
+;; -- badge cells never link-render: raw everywhere, so the column stays aligned --
+
+(ert-deftest tv-test-badge-cell-with-link-markup-stays-raw ()
+  (let ((buf (get-buffer-create " *tv-badge-link*")))
+    (unwind-protect
+        (progn
+          (table-view-display
+           buf '((title . "B")
+                 (columns . (((key . "s") (header . "S") (type . "badge")
+                              (badges . (((value . "ok") (color . "green"))))))))
+           nil)
+          (table-view-set-rows buf '(((id . "a") (cells . ((s . "[[x][Y]]"))))))
+          (with-current-buffer buf
+            ;; width measured from the RAW markup, matching what's shown
+            (let ((widths (table-view--widths table-view--spec table-view--rows)))
+              (should (= (alist-get "s" widths nil nil #'equal)
+                         (string-width "[[x][Y]]"))))
+            (should (string-match-p (regexp-quote "[[x][Y]]") (buffer-string)))
+            ;; filter also sees the raw markup, matching the display
+            (setq table-view--filter "[[x")
+            (should (= (length (table-view--visible-rows)) 1))))
+      (kill-buffer buf))))
+
 (provide 'table-view-test)
 ;;; table-view-test.el ends here

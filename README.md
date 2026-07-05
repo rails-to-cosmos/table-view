@@ -98,6 +98,7 @@ Runnable demos live in [`examples/`](examples/):
 | [`delete.el`](examples/delete.el)               | row deletion gated on a custom pre-delete step |
 | [`bulk.el`](examples/bulk.el)                   | marking (`m`), narrowing (`/`), and bulk actions (`bulk: t`) |
 | [`paginate.el`](examples/paginate.el)           | server-side pagination over a fake backend (`page-fn`, push-down sort/filter, cross-page marks) |
+| [`org-links.el`](examples/org-links.el)         | Org links in cells (`[[target][desc]]`), followed by `C-c C-o` or mouse |
 
 Open one and `M-x eval-buffer`.
 
@@ -113,6 +114,7 @@ Open one and `M-x eval-buffer`.
 | `g`                      | clear filter/narrow & refresh, preserving the current sort order |
 | `m` / `u` / `U`          | toggle mark on the current row / unmark the current row / unmark all (marked rows get a `*` gutter column) |
 | `/`                      | narrow to the marked rows, or — when nothing is marked — filter by substring |
+| `C-c C-o`                | follow the Org link at point (cells may hold `[[target][desc]]`; links are also mouse-clickable)                                               |
 | `>` / `<` (or `.` / `,`) | next / previous page (server-paged buffers only)                                                                                               |
 | `M->` / `M-<`            | last / first page; `M-g` go to page N (offset paging)                                                                                          |
 | `q`                      | quit window                                                                                                                                    |
@@ -240,6 +242,25 @@ fetch (synchronously *or* asynchronously) and deliver the page with
 
 See [`examples/paginate.el`](examples/paginate.el) for a complete runnable demo
 over a fake in-memory backend.
+
+## Org links
+
+A cell whose value contains Org bracket links renders each as a followable
+link:
+
+```elisp
+(cells . ((repo . "[[https://github.com/rails-to-cosmos/table-view][table-view]]")
+          (docs . "[[file:README.md][readme]]")))
+```
+
+The cell shows the **description** (`table-view`, `readme`); `C-c C-o` or a
+mouse click follows the link. `https:` / `mailto:` / `ftp:` links open with
+`browse-url`, and every other Org link type (`file:`, `id:`, custom
+`org-link-parameters`) is handed to Org. Width, filtering, and sorting all use
+the visible description, not the raw markup, so columns stay aligned and
+`/ readme` matches. Rebind `table-view-open-link-function` (a function of the
+target string) to customise what a followed link does, or set
+`table-view-render-links` to nil to show cells verbatim.
 
 ## Development
 
