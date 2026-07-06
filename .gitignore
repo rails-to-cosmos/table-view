@@ -7,6 +7,10 @@ eln-cache/
 /dist/
 .package-lint/
 
+# Rust native backend build artifacts (native/*/target)
+target/
+*.rs.bk
+
 # Editor / OS noise
 *~
 \#*\#

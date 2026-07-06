@@ -1,0 +1,342 @@
+#+TITLE: Design — Native data backend (tvx), production spec
+#+OPTIONS: toc:2 num:nil
+
+[[file:../index.org][← Wiki index]] · related: [[file:select-all-matching.org][pagination v2]], [[file:incremental-render-o1.org][O(1) render]]
+
+* Status
+
+*Design accepted; spike built and measured; production spec below.*  A judge
+panel of 5 architectures chose *tvx*: a Rust subprocess acting as a fast local
+=page-fn= over Emacs' built-in =jsonrpc.el= (Eglot model), reusing table-view's
+paged viewport and incremental renderer.  The base needs *zero core rewrite*;
+the live layer adds *one* core function (=table-view-apply-delta=).
+
+Decided: distribution = *compile-on-install* (bundle Rust source, build with
+cargo); *warn* the user whenever the pure-elisp fallback is active.
+
+* Prototype results (100k rows, spike)
+
+Native includes the full JSON-RPC round-trip through Emacs; elisp figures are
+data-ops only (no 100k render).
+
+| Operation           | elisp (in-buffer) | tvx (native) | Speedup |
+|---------------------+-------------------+--------------+---------|
+| sort by number      | 632 ms            | 15 ms        | ~42x    |
+| sort by string      | 2209 ms           | 15 ms        | ~145x   |
+| filter "lib"        | 5450 ms           | 23 ms        | ~237x   |
+| window (cached idx) | n/a               | 0.68 ms      | --      |
+
+Crossover: worth it ~20k rows, non-negotiable past ~50k.  Below ~10k the
+pure-elisp path is the right default; native is an optional accelerator that
+degrades to elisp when the binary is absent, so MELPA still ships pure elisp.
+
+* Architecture (recap)
+
+Transport = subprocess + JSON-RPC 2.0 over stdio via =jsonrpc.el=; one shared
+process per Emacs, multiplexed by opaque =handle=, all requests async.
+Rendering = reuse the discrete paged viewport (a page IS a window).  The base
+backend is one adapter closure handed to =table-view-display='s 5th (=page-fn=)
+arg, reusing =table-view--build-request=, =table-view-set-page= / =-page-error=,
+and =table-view--render= / =-render-incremental= verbatim.
+
+* Wire protocol (JSON-RPC 2.0, Content-Length framed)
+
+Message = =Content-Length: N= + CRLFCRLF + N UTF-8 JSON bytes (=jsonrpc.el=
+native).  Every object has =jsonrpc:"2.0"=; request id = integer (jsonrpc.el
+owns it); notifications have no id.  =ID= = the echoed row id; =cellval= =
+string|number|bool|null.
+
+** Handshake (once per process)
+
+: initialize REQ {clientInfo, protocol:{min,max}, wire:["json"], capabilities}
+:            RES {serverInfo, protocol:1, wire:"json", capabilities:{delta,aggregate,patch,count,progress}}
+
+Empty =[min,max]= intersection → error =-32100 ProtocolMismatch=.  Any
+=initialize= failure → Emacs kills the process, takes the elisp path + warning.
+Protocol is negotiated *once per connection*, not per handle.
+
+** Methods (request → result)
+
+: open   {source:{kind:"rows",rows}|{kind:"file",path,format}|{kind:"gen",n},
+:         columns:[{key,type:"text"|"number"|"badge",order?}], pageSize}
+:      -> {handle, gen:0, rev:0, total}
+: window {handle, offset, limit, sort:[[key,asc]...], filter:str|null,
+:         cursor?, direction?}
+:      -> {gen, rev, offset, total, matched, hasNext, rows:[{id,cells}],
+:          nextCursor?, prevCursor?}
+: close  {handle} -> {ok:true}                       // idempotent
+: count  {handle, filter} -> {gen, rev, total, matched}    // no rows; live "N results"
+: aggregate {handle, filter, aggs:[{col,fn}]} -> {results:[{col,fn,value}]}
+: patch  {handle, baseRev, origin, ops:[set|add|delete]} -> {rev, gen, applied}
+: subscribe {handle} -> {gen, rev}   unsubscribe {handle} -> {ok}
+
+=columns= = the server-side sort/filter schema; =value-fn= columns are NOT sent
+(computed in Emacs) → sort/filter naming an unknown key errors =-32004=.
+=window= is the sole hot path and (re)binds the handle's live view
+=(sort,filter,offset,limit)=.  =patch=: server is sole writer, validates
+=baseRev==currentRev= (else =-32002 BaseRevConflict=), bumps rev, fans =$/delta=
+to subscribers.
+
+** Notifications (server → client, no id)
+
+: $/delta {handle, gen, baseRev, rev, origin, offset, matched?, total?, ops:[
+:           {op:"upsert", id, index, row},   // window-local index; insert or replace+move
+:           {op:"remove", id},
+:           {op:"move",   id, from, to},
+:           {op:"reset",  offset, matched, total, rows}]}   // full page swap
+: $/count    {handle, gen, rev, total, matched}
+: $/progress {handle, token, phase, done, total}    // no rev; drives a spinner
+: $/error    {handle?, gen?, code, message, data?}  // -> table-view-page-error
+: $/cancel   {id}   (client -> server)              // cancel a superseded window
+
+=$/delta= op indices are *window-local* (0..limit): the server translates every
+global mutation into visible-page effects, so the client applies strictly O(k).
+=reset= is the bailout when a mutation is too big to diff.
+
+** Error codes
+
+Standard =-32700..-32603=.  Server: =-32000 NoSuchHandle=, =-32002
+BaseRevConflict=, =-32003 SourceUnavailable=, =-32004 ColumnUnknown=, =-32005
+NotSubscribed=, =-32006 Busy {retryAfterMs}=, =-32007 Cancelled=; handshake
+=-32100 ProtocolMismatch=, =-32101 UnsupportedWireFormat=.
+
+** generation / rev semantics — SERVER owns and stamps both
+
+Resolves the earlier open question.  A single writer + one ordered stdio
+connection = airtight per-handle FIFO, so Emacs only compares/echoes.
+- =gen= (per handle): identity of a =(normalizedSort, filter)= view; an
+  identical query reuses its gen (matches the LRU view cache), a new query
+  allocates the next.  "Which sort/filter are we talking about."
+- =rev= (per handle): the data-mutation counter, independent of gen; every
+  patch/source change bumps it; every window reply and =$/delta= reports its rev.
+Ordering guarantees a =window(sortB)= reply (=genB=) arrives before any =genB=
+=$/delta=.
+
+** Client staleness + gap self-heal (the live layer)
+
+Buffer-local mirrors =tvx--handle/--gen/--rev= set from each window reply.  On
+=$/delta=: (1) wrong handle → route away; (2) =gen != tvx--gen= → *drop* (stale
+sort/filter); (3) =baseRev != tvx--rev= → *gap* → discard the coalesce buffer
+and re-=window= at the current view (its reply is the reset baseline; don't
+apply this delta); (4) =origin== own token → *skip* (own echo); (5) else apply
+ops, set =tvx--rev = delta.rev=.  A sort/filter change self-heals for free.
+*Resync-window is the single recovery primitive.*
+
+** Delta coalescing (≤1 apply per redisplay)
+
+Client folds incoming =$/delta= ops into a per-handle pending batch and arms one
+=(run-with-timer 0 nil #'flush)=; =flush= validates gen/baseRev of the first
+buffered delta, applies the folded batch via *one* =table-view-apply-delta=, sets
+=tvx--rev= to the last delta's rev.  Fold rules (id-keyed): later =upsert(id)=
+supersedes earlier; =reset= clears and wins; net ≤1 final op per id.  Server
+self-throttles (~1 frame) and, on its pending-queue overflow, collapses to a
+single =reset=.
+
+** Field mapping to existing seams
+
+CRITICAL: =table-view--total= means "post-filter count" (drives "page K/N of
+T"), so the closure maps =reply.matched → :total=, not =reply.total=:
+: (table-view-set-page BUF rows :total reply.matched :has-next reply.hasNext
+:                      :offset reply.offset :next-cursor … :prev-cursor …)
+Error branch → =(table-view-page-error BUF message)=.  =value-fn= cells are
+re-materialised by =set-page='s own =compute-cells=; the wire never carries them.
+
+* Rust backend (=native/tvx/=)
+
+Crate layout evolving the spike (minimal default deps =serde/serde_json/memchr/
+smallvec=; =rayon= behind default =parallel=; =memmap2=/=csv= opt-in — every
+extra crate is compile-on-install fragility):
+
+: main.rs   rpc/{framing,message,router}  protocol.rs
+: store/{table,column,dict,collate}  view/{cache,sort,filter}
+: patch.rs  subscribe.rs  source/{inline,csv,ndjson,mmap}  exec/{actor,writer}
+
+** Columnar store (struct-of-arrays)
+
+- =Table{ gen, rev, nrows, live:BitVec, dead, ids:Vec<Box<str>>, id_index, cols,
+  schema, cache, sub }=.  Deletes = tombstones in =live= (keep =RowIx= stable so
+  a subscribed view's inverse-perm survives); compact + bump gen when
+  =dead*2 > nrows=.
+- =ColumnData = Str(StrColumn) | Int(Vec<i64>) | Float(Vec<f64>) | Bool(BitVec)=.
+- =StrColumn= dictionary-encoded: =codes:Vec<u32>= + =StringDict{ values, lookup,
+  rank:Vec<u32>, lower_off, lower_buf, dirty }=.  =rank[code]= = sorted position
+  under the column's collation ⇒ *string compare is u32 compare*, collation runs
+  only U times (uniques ≪ N).  =finalize()= is lazy (=dirty= after ingest/patch).
+
+** View cache (materialized index)
+
+=ViewKey{ sort:SmallVec<[(ColId,bool);4]>, filter:Option<Box<str>> }= →
+=View{ perm:Vec<u32>, inv:Vec<u32>, rev }=.  LRU cap 8; identity view (no
+sort/filter) computed on the fly, never stored.  Hit (same rev) → slice
+O(limit); miss/stale → =build_view=.  =inv[]= built only for the subscribed key.
+
+** Sort / filter engines
+
+- =sort_multi=: one =sort_unstable_by= over per-key order-key =u64= arrays
+  (str→=rank[code]=; i64→=(v as u64)^(1<<63)=; f64 total-order; bool→0/1) with a
+  final =RowIx= tiebreak (load-order stable + deterministic).  desc = reversed
+  per-key compare (NOT =Vec::reverse=, which broke the spike's stability).  One
+  O(N log N) pass vs the spike's O(K·N log N).
+- =filter=: one =memchr::Finder= over the dictionary's =lower_buf= (U scans, not
+  N); a per-code hit bitset; numeric columns skipped unless the needle looks
+  numeric (a non-numeric needle can't match a decimal string — correct vs elisp).
+
+** Incremental patch + subscription
+
+=apply(ops)= writes cells / tombstones, bumps =rev=, keeps only the *subscribed*
+view coherent and drops all other cached views (patch cost bounded by
+subscriptions, not cache size), then =rediff= produces window-local =DeltaOp=s
+(=Replace|Insert|Delete= over the visible slice, diffing id lists vs
+=sub.sent_ids=).
+
+** Threading
+
+1 stdin *router* thread → parse, route per-handle methods to that handle's actor
+mailbox; 1 *writer* thread owns stdout (workers never lock it; replies may be
+out of order — ids correlate).  *N actor threads, one per handle*, each OWNS its
+=Table= (no global lock), draining a 2-lane priority mailbox (interactive
+window/filter/sort before background count/aggregate/load).  Different handles
+run truly in parallel ⇒ a runaway sort on buffer A never starves buffer B.
+Large sorts use =rayon=.  =$/cancel= sets an =AtomicBool= checked every ~64k
+rows.  =catch_unwind= per handler ⇒ one bad handle can't kill the shared process.
+
+* Emacs glue (=table-view-native.el=; needs only built-in =jsonrpc.el=)
+
+** Connection singleton + page-fn closure
+
+- =table-view-native-connection= subclass of =jsonrpc-process-connection= holding
+  =handles= (handle→buffer, for respawn replay), =crash-times=, =disabled=.  One
+  =table-view-native--connection= per Emacs; =--ensure-connection= lazily starts
+  it via =--ensure= (below).
+- =table-view-native-open (source spec)= sends =open=, stashes buffer-local
+  =tvx--handle/--source/--gen/--rev=, and *returns a closure = the page-fn*.  The
+  closure reads =(:buffer :offset :limit :sort :filter)= from the request plist,
+  encodes the =(KEY . ASC)= chain as =[[key,asc]…]=, =jsonrpc-async-request=
+  =window=; success → =table-view-set-page= (=:total= = reply.matched); error →
+  =table-view-page-error=.  Always async — never =jsonrpc-request= (blocks Emacs);
+  the core's =table-view--pending= guard already drops superseded pages.
+
+** The one new core function (in =table-view.el=)
+
+=table-view-apply-delta (buffer ops &key gen rev)= — walk =ops= through a
+buffer-local =id→cons= pool: =upsert= mutates the pooled cons's cells *in place*
+(preserve =eq=) and repositions it; =insert= splices a fresh cons; =remove=/=move=
+splice; =reset= re-pulls the window.  Then invalidate widths only per changed
+cell (=table-view--upsert-keeps-widths-p=) and call =table-view--render= — every
+untouched row stays the same object, so render takes the incremental branch and
+rewrites only changed lines (O(k)).
+
+** Reused verbatim / value-fn
+
+=build-request=, =refetch-first=, =set-page=/=page-error=, the =--pending= guard,
+paged nav, =render=/=-render-incremental=.  =value-fn= columns are excluded from
+push-down (not declared to the backend) and re-materialised by =set-page='s
+=compute-cells= on every pull; =apply-delta= re-runs =compute-cells= for inserted
+rows.
+
+* Distribution, lifecycle, fallback (compile-on-install)
+
+** MELPA shape
+
+Rust source shipped as package DATA; =target/= excluded.  Recipe =:files
+("*.el" "native/tvx/Cargo.toml" "native/tvx/Cargo.lock" "native/tvx/src")= +
+=.elpaignore= with =native/tvx/target/=.  All cargo/shell work is lazy (nothing
+at load or byte-compile) ⇒ passes MELPA's no-binaries rule.  Commit =Cargo.lock=;
+bump =Cargo.toml= version in lock-step with the elisp =Version:= header.
+
+** Resolution + version pin
+
+=table-view-native-protocol= (int) must equal the binary's =open= =:protocol=
+AND the =tvx --version= trailer.  =--resolve= tries, each version-validated:
+custom =table-view-native-program= → cached build =~/.emacs.d/table-view/tvx/
+tvx-VER-pN= → =tvx= on PATH → =~/.cargo/bin/tvx=.  A wrong-protocol binary is
+rejected (reason =version-mismatch=; rebuild offered if it was our cache).
+
+** Build flow
+
+=M-x table-view-native-compile= (Eglot-style, async via =make-process=, never
+=call-process=): idempotent (skip if =--resolve= already valid), needs cargo,
+runs =cargo build --release --manifest-path native/tvx/Cargo.toml= in
+=*tvx-compile*=, atomically installs =target/release/tvx= → cached path, then
+=--validate=.  =--ensure= gates first native use: =auto-compile= = ='prompt=
+(y-or-n) | =t= (silent) | =nil= (never).  The triggering display uses the elisp
+path this session; a post-build hook re-=refresh=es open native buffers to
+upgrade transparently.
+
+** Fallback + user-visible warning (the decided behavior)
+
+=table-view-native--fallback (reason)= sets the reason and, when
+=table-view-native-warn= (default t) and not yet warned this session, emits
+=display-warning='table-view=.  Reasons + text: =no-cargo= (install rustup, then
+compile), =no-binary= (compile to enable), =building= (elisp until it finishes),
+=build-failed= (see =*tvx-compile*=), =version-mismatch=, =crash-loop= (disabled
+this session; =M-x table-view-native-reset=), =disabled= (no warning; user opted
+out).  Each ends "Silence: =(setq table-view-native-warn nil)=".
+
+** Crash lifecycle
+
+Sentinel respawns with exponential backoff =(0.5 1 2 4 8)=; ≥3 crashes in 60s →
+=crash-loop=, disable for the session, degrade every buffer to elisp.  Respawn
+replays =open= from each buffer's =tvx--source= (new handle) and re-=refresh=es.
+
+* Testing & correctness
+
+- *Rust unit*: sort (multi-key, asc/desc, stability), filter (numeric-skip,
+  dict hit), view cache hit/miss/evict, patch (upsert/delete/tombstone/compact),
+  =rediff= (window-local ops).  *criterion*: index build / filter / window at
+  100k AND 1M (confirm window flatlines O(page), sort stays tens-of-ms at 1M).
+- *elisp↔native differential* (ERT): for the same synthetic set and a matrix of
+  =(sort,filter)=, assert the native =window= row-id order EQUALS what
+  =table-view--sort-rows= + the elisp filter produce.  The correctness oracle.
+- *apply-delta oracle*: extend =tv-test-incremental-render-matches-full= — after
+  a =$/delta= batch the buffer must equal a full render (byte + text-property).
+- *protocol conformance*: malformed frame, unknown method/handle, version
+  mismatch, =BaseRevConflict=, =$/cancel= of an in-flight window.
+- *fallback*: binary absent / cargo absent / build fail / version mismatch →
+  elisp path taken AND the warning emitted (assert =display-warning= fired once).
+- *CI*: linux+macos × Emacs 28/29/30 × rust stable; =batch-byte-compile= clean;
+  =cargo test= + =cargo clippy=.
+
+* Build order (phased, each verifiable)
+
+1. *Base window path*.  Spike → spec-driven columns from =open.columns= (drop
+   the hardcoded schema); =initialize= handshake + protocol pin; the =open/
+   window/close= actor+writer threading; =table-view-native.el= connection
+   singleton + page-fn closure + compile-on-install + fallback warning.
+   /Verify/: differential ERT (native==elisp order) + the 100k bench, UI never
+   blocks, fallback warning on a missing binary.
+2. *Backend data model*.  Dictionary-encoded strings + =rank[]= collation,
+   =memchr= dict-unique filter, LRU view cache, numeric-skip.  /Verify/: string
+   sort/filter drop toward the 15ms/23ms targets; differential still holds;
+   criterion at 1M.
+3. *Live layer*.  =patch= + =subscribe= + =$/delta= (server rediff, window-local
+   ops) + client coalescing; =table-view-apply-delta= + id→cons pool + the
+   gen/rev staleness/self-heal.  /Verify/: apply-delta oracle; a streaming-feed
+   demo re-renders O(k).
+4. *Deferred, opt-in*: =count=/=aggregate= footer; =$/progress= spinner seam;
+   =table-view-vscroll-mode=; =msgpack= wire; mmap/out-of-core source.
+
+* Resolved decisions
+
+- Transport subprocess+jsonrpc, rendering reuse-paged, distribution
+  compile-on-install, non-native warning — all *fixed*.
+- =gen= and =rev= are *server-owned*; resync-window is the sole recovery.
+- =$/delta= indices are *window-local*; coalescing is *client-enforced*.
+- =reply.matched → :total= (post-filter count).
+- Protocol negotiated *once per connection*.
+- Thread-per-handle gives cross-buffer isolation (no shared-process starvation).
+
+* Open questions (for the maintainer)
+
+- Categorical/=values= and =natural= compare: replicate in the backend
+  (=CompareKind=) or leave those columns elisp-side (non-pushdown)?
+- =$/delta= op vocabulary vs the exact =apply-delta= pool — freeze =move= or fold
+  it into upsert?  Keyset + =$/delta= has no stable window-local index → restrict
+  keyset to =reset= ops?
+- =value-fn= on an inserted delta row: =apply-delta= re-run =compute-cells= (chosen)
+  — confirm reconciliation.
+- CSV/NDJSON id assignment when the source has no id column (row index vs a key
+  field) — a config field in =open.source=.
+- =$/progress= into the hint line via a new tiny seam, or a message/spinner?
+- Offline builds: =cargo vendor= committed (repo size) vs network on first build?
+- Auto-build at package install (a =:config= hook) vs strictly lazy-on-first-use?

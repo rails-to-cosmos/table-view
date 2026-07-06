@@ -285,20 +285,22 @@ off or S has no link."
 (defconst table-view--link-cache-cap 65536
   "Per-cache entry cap; a cache is cleared wholesale once it grows past this.")
 
-;; Forward declaration: `table-view--link-cache-check' resets the
-;; incremental-render record, whose defvar-local is further down.
+;; Forward declarations: `table-view--link-cache-check' resets render/filter
+;; state whose defvar-locals are further down.
 (defvar table-view--rendered-rows)
+(defvar table-view--filter-text-cache)
 
 (defun table-view--link-cache-check ()
   "Re-sync caches derived from `table-view-render-links' when it has changed.
 The flag alters a cell's display text, width, AND text properties without
-changing any row object, so a change must drop the link memo caches, the width
-cache, and the incremental-render record -- otherwise `eq'-unchanged rows keep
-their pre-toggle rendering and columns misalign."
+changing any row object, so a change must drop the link/filter memo caches, the
+width cache, and the incremental-render record -- otherwise `eq'-unchanged rows
+keep their pre-toggle rendering and columns misalign."
   (unless (eq table-view--links-cache-flag table-view-render-links)
     (setq table-view--links-cache-flag table-view-render-links
           table-view--linkify-cache nil
           table-view--delink-cache nil
+          table-view--filter-text-cache nil
           table-view--rendered-rows nil)      ; force a full redraw
     (table-view--invalidate-widths)))
 
@@ -471,35 +473,75 @@ Resolution order:
      ((equal (alist-get 'type col) "number") #'table-view--number-lessp)
      (t #'table-view--string-lessp))))
 
+(defun table-view--sort-key-spec (col)
+  "Return (KEYFN . KLESS) for column COL, mirroring `table-view--comparator'.
+KEYFN maps a raw cell value to a comparison key; KLESS is a primitive less-than
+over keys.  Splitting the comparator this way lets the key be computed once per
+row (decorate-sort-undecorate) instead of per comparison."
+  (let* ((compare (alist-get 'compare col))
+         (order (table-view--value-order col))
+         (sv (lambda (v) (table-view--sort-value col v)))
+         (num (lambda (v) (table-view--as-number (funcall sv v))))
+         (txt (lambda (v) (table-view--str (funcall sv v)))))
+    (cond
+     ((functionp compare) (cons sv compare))
+     ((member compare '("number" "numeric")) (cons num #'<))
+     ((member compare '("string" "lexicographic")) (cons txt #'string<))
+     ((member compare '("natural" "version")) (cons txt #'string-version-lessp))
+     ((and (stringp compare) (cdr (assoc compare table-view-comparators)))
+      (cons sv (cdr (assoc compare table-view-comparators))))
+     (order
+      (let* ((keys (mapcar #'table-view--str order)) (n (length keys)))
+        (cons (lambda (v) (or (cl-position (table-view--str (funcall sv v))
+                                           keys :test #'equal)
+                              n))
+              #'<)))
+     ((equal (alist-get 'type col) "number") (cons num #'<))
+     (t (cons txt #'string<)))))
+
+(defun table-view--sort-rows-multi ()
+  "Sort `table-view--rows' by a multi-key chain (comparator run per comparison)."
+  (let ((tests (mapcar
+                (lambda (ka)
+                  (let ((col (table-view--column table-view--spec (car ka))))
+                    (list (table-view--comparator col) (car ka) (cdr ka) col)))
+                table-view--sort-keys)))
+    (setq table-view--rows
+          (sort (copy-sequence table-view--rows)
+                (lambda (a b)
+                  (cl-loop for (less key asc col) in tests
+                           for va = (table-view--sort-value col (table-view--cell a key))
+                           for vb = (table-view--sort-value col (table-view--cell b key))
+                           do (cond ((funcall less va vb) (cl-return asc))
+                                    ((funcall less vb va) (cl-return (not asc))))
+                           finally return nil))))))
+
 (defun table-view--sort-rows ()
-  "Sort `table-view--rows' in place by the current sort chain.
-No-op when the chain is empty.  Rows equal on every key keep their
-relative order (the sort is stable).  Sorting is explicit: it runs only
-from the sort commands (`^' and `g' when a sort is already active),
-never from row updates, so operating on a row updates it in place
-without moving it."
+  "Sort `table-view--rows' by the current sort chain.
+No-op when the chain is empty.  Rows equal on every key keep their relative
+order (the sort is stable).  Sorting is explicit: it runs only from the sort
+commands, never from row updates, so operating on a row leaves it in place.
+The common single-key case decorates each row with its comparison key once,
+then sorts; multi-key chains use `table-view--sort-rows-multi'."
   (when table-view--sort-keys
-    ;; In paged mode ordering is the server's job (the loaded page is only a
-    ;; slice); re-sorting it here would reorder just those rows and lie about
-    ;; the global order.  The chain still counts as an active sort.
+    ;; In paged mode ordering is the server's job (the loaded page is a slice);
+    ;; re-sorting here would reorder just those rows.  The chain still counts.
     (unless (table-view--paged-p)
-      (let ((tests (mapcar
-                    (lambda (ka)
-                      (let ((col (table-view--column table-view--spec (car ka))))
-                        (list (table-view--comparator col)
-                              (car ka)          ; column key
-                              (cdr ka)          ; ascending?
-                              col)))            ; column (for link-aware value prep)
-                    table-view--sort-keys)))
-        (setq table-view--rows
-              (sort (copy-sequence table-view--rows)
-                    (lambda (a b)
-                      (cl-loop for (less key asc col) in tests
-                               for va = (table-view--sort-value col (table-view--cell a key))
-                               for vb = (table-view--sort-value col (table-view--cell b key))
-                               do (cond ((funcall less va vb) (cl-return asc))
-                                        ((funcall less vb va) (cl-return (not asc))))
-                               finally return nil))))))
+      (if (cdr table-view--sort-keys)
+          (table-view--sort-rows-multi)
+        (let* ((ka (car table-view--sort-keys))
+               (key (car ka)) (asc (cdr ka))
+               (spec (table-view--sort-key-spec
+                      (table-view--column table-view--spec key)))
+               (keyfn (car spec)) (kless (cdr spec))
+               (decorated (mapcar (lambda (r)
+                                    (cons (funcall keyfn (table-view--cell r key)) r))
+                                  table-view--rows)))
+          (setq decorated
+                (sort decorated (if asc
+                                    (lambda (a b) (funcall kless (car a) (car b)))
+                                  (lambda (a b) (funcall kless (car b) (car a)))))
+                table-view--rows (mapcar #'cdr decorated)))))
     (setq table-view--sorted t)))
 
 (defun table-view--sort-description ()
@@ -526,17 +568,31 @@ priority first.  A missing `ascending' defaults to ascending."
 
 ;;; Filtering
 
+(defvar-local table-view--filter-text-cache nil
+  "Buffer-local eq hash: row object -> its lowered, newline-joined cell text.")
+
+(defun table-view--row-filter-text (row)
+  "ROW's lowered, newline-joined cell display text, memoized by row identity.
+Cells are materialised non-destructively (a changed row is a fresh object), so
+an `eq' hit always has current text.  Seams that keep a row `eq' while its text
+changes -- a render-links flip, a column add/remove -- clear the cache."
+  (let ((cache (or table-view--filter-text-cache
+                   (setq table-view--filter-text-cache (make-hash-table :test 'eq)))))
+    (when (> (hash-table-count cache) table-view--link-cache-cap) (clrhash cache))
+    (or (gethash row cache)
+        (puthash row
+                 (downcase
+                  (mapconcat (lambda (col)
+                               (table-view--cell-text
+                                col (table-view--cell row (alist-get 'key col))))
+                             (table-view--columns table-view--spec) "\n"))
+                 cache))))
+
 (defun table-view--row-matches-p (row filter)
-  "Non-nil if any cell in ROW contains FILTER (case-insensitive substring)."
-  (let ((pat (downcase filter)))
-    (cl-some (lambda (col)
-               ;; `string-search' is a literal substring test -- no per-cell
-               ;; regexp compilation, same case-insensitive semantics.
-               (string-search
-                pat
-                (downcase (table-view--cell-text
-                           col (table-view--cell row (alist-get 'key col))))))
-             (table-view--columns table-view--spec))))
+  "Non-nil if ROW's text contains FILTER (case-insensitive substring).
+The newline cell separator makes column order irrelevant and blocks
+cross-column false matches for any (newline-free) typed pattern."
+  (string-search (downcase filter) (table-view--row-filter-text row)))
 
 (defun table-view--marked-p (id)
   "Non-nil when the row with ID is marked."
@@ -572,8 +628,10 @@ narrowed), then restricted to the current filter."
         (setq rows (cl-remove-if-not
                     (lambda (r) (table-view--marked-p (alist-get 'id r))) rows)))
       (when (and table-view--filter (not (string-empty-p table-view--filter)))
-        (setq rows (cl-remove-if-not
-                    (lambda (r) (table-view--row-matches-p r table-view--filter)) rows)))
+        (let ((pat (downcase table-view--filter)))     ; downcase once, not per row
+          (setq rows (cl-remove-if-not
+                      (lambda (r) (string-search pat (table-view--row-filter-text r)))
+                      rows))))
       rows)))
 
 ;;; Rendering
@@ -623,13 +681,23 @@ Conservative: if OLD sat at a column's max, the width is recomputed."
         (table-view--columns table-view--spec))))
 
 (defun table-view--widths (spec rows)
-  "Return alist of column-key -> display width for SPEC over ROWS."
+  "Return alist of column-key -> display width for SPEC over ROWS.
+Per-column constants (cell symbol, link flag, header width) are hoisted out of
+the row loop, and `table-view--delink' is probed only for a cell containing
+\"[[\" (its result is identity otherwise), so a link-free cell costs just
+`table-view--str' + `string-width'."
   (mapcar
    (lambda (col)
-     (let ((w (string-width (alist-get 'header col))))
+     (let* ((key (alist-get 'key col))
+            (sym (intern key))
+            (links (table-view--links-p col))
+            (w (string-width (alist-get 'header col))))
        (dolist (row rows)
-         (setq w (max w (table-view--cell-width col row))))
-       (cons (alist-get 'key col) w)))
+         (let* ((s (table-view--str (alist-get sym (alist-get 'cells row))))
+                (cw (string-width (if (and links (string-search "[[" s))
+                                      (table-view--delink s) s))))
+           (when (> cw w) (setq w cw))))
+       (cons key w)))
    (table-view--columns spec)))
 
 (defun table-view--pad (s width align)
@@ -1133,6 +1201,7 @@ cancelled."
           (table-view--strip-cell-everywhere key))
         (table-view--materialise-cells)
         (table-view--invalidate-widths)
+        (setq table-view--filter-text-cache nil)   ; column set changed
         (table-view--render)
         (run-hooks 'table-view-schema-changed-hook)
         (when (called-interactively-p 'interactive)
@@ -1165,6 +1234,7 @@ KEY when a column was actually removed."
       ;; recomputes from its own `value-fn' rather than resurrecting this value.
       (table-view--strip-cell-everywhere key)
       (table-view--invalidate-widths)
+      (setq table-view--filter-text-cache nil)   ; column set changed
       (table-view--render)
       (run-hooks 'table-view-schema-changed-hook)
       (when (called-interactively-p 'interactive)

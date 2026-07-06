@@ -16,6 +16,8 @@ up later.
   recompute when a max-holding row changes.
 - [[file:proposals/select-all-matching.org][Bulk “select all matching” (server pagination v2)]] :: act on the
   whole filtered result set without loading it.
+- [[file:proposals/native-backend.org][Native data backend (tvx)]] :: a Rust background process as a fast
+  local =page-fn= over =jsonrpc.el= for 100k–1M rows.
 
 * Reviews
 
