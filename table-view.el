@@ -1249,7 +1249,8 @@ KEY when a column was actually removed."
     (define-key map "p" #'table-view-previous-line)
     (define-key map "f" #'table-view-forward)
     (define-key map "b" #'table-view-backward)
-    (define-key map "g" #'table-view-sort)
+    ;; `g' is intentionally left unbound; consumers bind it (e.g. to
+    ;; `table-view-revert', or a per-view refresh) via the spec's action keys.
     (define-key map "/" #'table-view-filter-or-narrow)
     (define-key map "m" #'table-view-mark-toggle)
     (define-key map "u" #'table-view-unmark)
@@ -1265,7 +1266,10 @@ KEY when a column was actually removed."
 (define-derived-mode table-view-mode special-mode "Table"
   "Generic, read-only declarative table view."
   (setq truncate-lines t)
-  (setq-local cursor-type 'box))
+  (setq-local cursor-type 'box)
+  ;; `g' is not bound here; it stays `special-mode's `revert-buffer', which we
+  ;; route to `table-view-revert' -- the standard Emacs refresh, not a sort.
+  (setq-local revert-buffer-function (lambda (&rest _) (table-view-revert))))
 
 (defun table-view--install-action-keys (spec)
   "Build a buffer-local keymap binding the declared action keys.
@@ -1344,13 +1348,13 @@ dataset rather than just the loaded page."
                  (length table-view--rows))
       (message "Filter cleared"))))
 
-(defun table-view-sort ()
-  "Refresh the view, preserving the current ordering.
+(defun table-view-revert ()
+  "Revert the view, preserving the current ordering.
 In a client buffer this clears any filter/narrow and refreshes, keeping
 the sort order and point's on-screen location.  In a paged buffer it
 re-fetches the CURRENT page from the server -- keeping the sort, filter,
 and page position -- which doubles as recovering from a fetch error.
-Begin sorting with `^'."
+Not bound by default; sorting is on `^' (`table-view-sort-cycle')."
   (interactive)
   (if (table-view--paged-p)
       (progn

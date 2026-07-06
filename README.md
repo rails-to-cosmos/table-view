@@ -119,7 +119,7 @@ Open one and `M-x eval-buffer`.
 | `M-<left>` / `M-<right>` | move the column at point left / right (org-table style); point follows the column                                                              |
 | `^`                      | sort by the column at point — a data cell **or its header** (repeat toggles asc/desc); off a column, cycles through every column and direction |
 | `C-u ^`                  | add the column at point as a secondary (tie-breaker) sort key; a following run of `^` then toggles that key's direction                        |
-| `g`                      | clear filter/narrow & refresh, preserving the current sort order |
+| `g`                      | revert: `revert-buffer` (`special-mode`) runs `table-view-revert` — clear filter/narrow & refresh (client) or re-fetch the current page (paged), preserving the sort |
 | `m` / `u` / `U`          | toggle mark on the current row / unmark the current row / unmark all (marked rows get a `*` gutter column) |
 | `/`                      | narrow to the marked rows, or — when nothing is marked — filter by substring |
 | `C-c C-o`                | follow the Org link at point (cells may hold `[[target][desc]]`; links are also mouse-clickable)                                               |
@@ -130,10 +130,14 @@ Open one and `M-x eval-buffer`.
 
 Unless the spec declares a `sort`, tables open **unsorted** (in load order);
 sorting is otherwise opt-in via `^` (with point on a data cell or its column
-header), and `g` never imposes a sort it wasn't already in.  `C-u ^` adds the
-column at point as a lower-priority tie-breaker, so you can sort within groups
-— e.g. by name, then by year.  A spec `sort` may itself be a list for a
-multi-column default.
+header).  `C-u ^` adds the column at point as a lower-priority tie-breaker, so
+you can sort within groups — e.g. by name, then by year.  A spec `sort` may
+itself be a list for a multi-column default.
+
+Refresh is `table-view-revert` (clears a filter/narrow in client buffers,
+re-fetches the current page in paged ones) without imposing a sort it wasn't
+already in.  It is not bound in table-view's own map; it runs through the
+standard `revert-buffer` (`g`) that `special-mode` provides.
 
 ## Spec format
 

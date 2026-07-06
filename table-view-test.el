@@ -392,7 +392,7 @@
 (ert-deftest tv-test-sort-clears-filter ()
   (tv-test--with-table
     (setq table-view--filter "alpha")
-    (call-interactively #'table-view-sort)
+    (call-interactively #'table-view-revert)
     (should-not table-view--filter)))
 
 ;;; Hint string
@@ -635,7 +635,7 @@
   (tv-test--with-table
     (should-not table-view--sorted)
     (let ((before (mapcar (lambda (r) (alist-get 'id r)) table-view--rows)))
-      (call-interactively #'table-view-sort)
+      (call-interactively #'table-view-revert)
       (should-not table-view--sorted)
       (should (equal (mapcar (lambda (r) (alist-get 'id r)) table-view--rows)
                      before)))))
@@ -643,7 +643,7 @@
 (ert-deftest tv-test-g-clears-filter-keeps-unsorted ()
   (tv-test--with-table
     (setq table-view--filter "alpha")
-    (call-interactively #'table-view-sort)
+    (call-interactively #'table-view-revert)
     (should-not table-view--filter)
     (should-not table-view--sorted)))
 
@@ -652,7 +652,7 @@
     (setq table-view--sort-keys '(("count" . t)))
     (table-view--sort-rows)             ; ascending by count -> b,c,a
     (should table-view--sorted)
-    (call-interactively #'table-view-sort)
+    (call-interactively #'table-view-revert)
     (should table-view--sorted)
     (should (equal (mapcar (lambda (r) (alist-get 'id r)) table-view--rows)
                    '("b" "c" "a")))))
@@ -678,7 +678,7 @@
     (forward-char 4)
     (let ((line (line-number-at-pos))
           (col (current-column)))
-      (call-interactively #'table-view-sort)          ; g (refresh)
+      (call-interactively #'table-view-revert)          ; g (refresh)
       (should (= (line-number-at-pos) line))          ; same on-screen line
       (should (= (current-column) col)))))            ; same column (not col 0)
 
@@ -1731,7 +1731,7 @@ push-down can be tested)."
   (tv-test--with-paged 12 3
     (table-view-filter "user-1")        ; 4 matches
     (table-view-next-page)              ; page 2 of the filtered set -> r12
-    (call-interactively #'table-view-sort)              ; g
+    (call-interactively #'table-view-revert)              ; g
     (should (equal table-view--filter "user-1"))        ; filter kept, not cleared
     (should (= table-view--offset 3))                   ; same page, not page 1
     (should (equal (tv-test--visible-ids) '("r12")))))
@@ -1741,7 +1741,7 @@ push-down can be tested)."
     (table-view-next-page)              ; page 2
     (table-view-page-error (current-buffer) "boom")
     (should table-view--page-error)
-    (call-interactively #'table-view-sort)              ; g re-fetches the current page
+    (call-interactively #'table-view-revert)              ; g re-fetches the current page
     (should-not table-view--page-error)                 ; error cleared
     (should (= table-view--offset 3))
     (should (equal (tv-test--visible-ids) '("r4" "r5" "r6")))))
@@ -1963,7 +1963,7 @@ push-down can be tested)."
       (chk)                                          ; delete shrank it back
       (table-view-filter "alpha")
       (chk)                                          ; filter changed the visible set
-      (call-interactively #'table-view-sort)         ; g clears the filter
+      (call-interactively #'table-view-revert)         ; g clears the filter
       (chk)
       (setq table-view--sort-keys '(("count" . t)))
       (call-interactively #'table-view-sort-cycle)   ; sort reuses the cache
@@ -2065,7 +2065,7 @@ this proves that output is byte- and text-property-identical to a full redraw."
     (tv-test--render-equals-full)
     (table-view-filter "a")                       ; filter (visible set shrinks)
     (tv-test--render-equals-full)
-    (call-interactively #'table-view-sort)        ; g clears filter
+    (call-interactively #'table-view-revert)        ; g clears filter
     (tv-test--render-equals-full)
     (table-view--goto-id "a") (table-view-mark-toggle)   ; gutter appears
     (tv-test--render-equals-full)
