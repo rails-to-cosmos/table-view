@@ -5,14 +5,43 @@
 
 * Status
 
-*Design accepted; spike built and measured; production spec below.*  A judge
-panel of 5 architectures chose *tvx*: a Rust subprocess acting as a fast local
-=page-fn= over Emacs' built-in =jsonrpc.el= (Eglot model), reusing table-view's
-paged viewport and incremental renderer.  The base needs *zero core rewrite*;
-the live layer adds *one* core function (=table-view-apply-delta=).
+*Phases 1–3 implemented and tested; production spec below.*  A judge panel of
+5 architectures chose *tvx*: a Rust subprocess acting as a fast local =page-fn=
+over Emacs' built-in =jsonrpc.el= (Eglot model), reusing table-view's paged
+viewport and incremental renderer.  The base needs *zero core rewrite*; the
+live layer adds *one* core function (=table-view-apply-delta=).
 
 Decided: distribution = *compile-on-install* (bundle Rust source, build with
 cargo); *warn* the user whenever the pure-elisp fallback is active.
+
+Shipped (=native/tvx/= as modules =wire/column/delta/table/main=, plus
+=table-view-native.el=):
+
+- Phase 1 :: =initialize= handshake + protocol pin, =open=/=window=/=close=,
+  compile-on-install, version-validated resolution, pure-elisp fallback + warning.
+- Phase 2 :: dictionary-encoded string columns with a =rank[]= array, one-pass
+  stable multi-key sort (desc = reversed compare, RowIx tiebreak), dict-unique
+  substring filter with numeric-skip.  Matches the elisp comparators exactly
+  (differential ERT oracle).
+- Phase 3 :: live layer — =patch= (upsert/delete, tombstones), =count=,
+  =aggregate=, window =subscribe=, and =$/delta= notifications diffed
+  prefix/suffix into insert/delete ops; =table-view-apply-delta= applies them
+  with an id→cons pool that preserves =eq= (line reuse) and one render per batch.
+
+Adversarial review (4 lenses) hardened the live layer:
+
+- A subscription carries a *=gen=* bumped on every (re)subscribe; a =$/delta= is
+  applied only when *both* =baseRev= and =gen= match, so a delta computed for a
+  newer window whose fetch reply was lost cannot splice into the old window.
+- A patch that changes =matched=/=total= outside the visible window still emits a
+  (possibly empty-ops) =$/delta= so the row counts never go stale.
+- =table-view-apply-delta= refreshes the marked-row cache; the dispatcher sets
+  =total= before rendering and recomputes =has-next= after.
+- Handles are =close='d and unregistered on =kill-buffer= and on respawn re-open
+  (no handle/table leak).
+
+Known deferred: a backend respawn re-opens the source from scratch, so patches
+applied since =open= are lost until an upstream event-log/replay is added.
 
 * Prototype results (100k rows, spike)
 

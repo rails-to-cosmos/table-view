@@ -10,17 +10,24 @@
 
 (defconst tvn-test--words ["core" "lib" "utils" "http" "json" "async" "test" "cli"])
 
+(defun tvn-test--mtime (f)
+  (and (file-exists-p f)
+       (float-time (file-attribute-modification-time (file-attributes f)))))
+
 (defun tvn-test--binary ()
-  "Path to a valid tvx, building it once if cargo is available; else nil."
-  (let ((built (expand-file-name "native/tvx/target/release/tvx"
-                                 (locate-dominating-file default-directory "table-view.el"))))
-    (or (table-view-native--validate built)
-        (when (table-view-native--cargo)
-          (call-process (table-view-native--cargo) nil nil nil "build" "--release"
-                        "--manifest-path"
-                        (expand-file-name "native/tvx/Cargo.toml"
-                                          (locate-dominating-file default-directory "table-view.el")))
-          (table-view-native--validate built)))))
+  "Path to a valid tvx, (re)building it when the Rust source is newer.
+Returns nil when cargo is unavailable and no valid binary exists."
+  (let* ((root (locate-dominating-file default-directory "table-view.el"))
+         (built (expand-file-name "native/tvx/target/release/tvx" root))
+         (src (directory-files (expand-file-name "native/tvx/src" root) t "\\.rs\\'"))
+         (newest (apply #'max 0 (delq nil (mapcar #'tvn-test--mtime src))))
+         (bin (tvn-test--mtime built)))
+    ;; Rebuild if the binary is missing or older than any source file, so tests
+    ;; never silently run against a stale backend.
+    (when (and (table-view-native--cargo) (or (not bin) (> newest bin)))
+      (call-process (table-view-native--cargo) nil nil nil "build" "--release"
+                    "--manifest-path" (expand-file-name "native/tvx/Cargo.toml" root)))
+    (table-view-native--validate built)))
 
 (defmacro tvn-test--skip-unless-binary (&rest body)
   `(let ((bin (tvn-test--binary)))
@@ -126,6 +133,176 @@
           (should warned)
           (with-current-buffer buf (should (string-match-p "core-00000" (buffer-string)))))
       (kill-buffer buf))))
+
+;;; Live layer: core `table-view-apply-delta' (pure, no backend needed)
+
+(defconst tvn-test--client-spec
+  '((title . "x") (columns . (((key . "name") (header . "N"))))))
+(defun tvn-test--client-rows ()
+  (mapcar (lambda (id) (list (cons 'id id) (cons 'cells (list (cons 'name (upcase id))))))
+          '("a" "b" "c")))
+
+(ert-deftest tvn-test-apply-delta-insert-delete ()
+  "insert/delete ops splice the window and keep the right row order."
+  (let ((buf (get-buffer-create " *tvn-ad*")))
+    (unwind-protect
+        (progn
+          (table-view-display buf tvn-test--client-spec nil)
+          (table-view-set-rows buf (tvn-test--client-rows))
+          (with-current-buffer buf
+            (table-view-apply-delta
+             buf (list (list :op "insert" :index 1
+                             :row '((id . "x") (cells . ((name . "X")))))))
+            (should (equal (mapcar (lambda (r) (alist-get 'id r)) table-view--rows) '("a" "x" "b" "c")))
+            (table-view-apply-delta buf (list (list :op "delete" :index 0)))
+            (should (equal (mapcar (lambda (r) (alist-get 'id r)) table-view--rows) '("x" "b" "c")))))
+      (kill-buffer buf))))
+
+(ert-deftest tvn-test-apply-delta-reuses-eq ()
+  "A row unchanged by a delta keeps its object identity (so its line is reused)."
+  (let ((buf (get-buffer-create " *tvn-eq*")))
+    (unwind-protect
+        (progn
+          (table-view-display buf tvn-test--client-spec nil)
+          (table-view-set-rows buf (tvn-test--client-rows))
+          (with-current-buffer buf
+            (let ((b-cons (cl-find "b" table-view--rows :key (lambda (r) (alist-get 'id r)) :test #'equal)))
+              (table-view-apply-delta
+               buf (list (list :op "insert" :index 0
+                               :row '((id . "z") (cells . ((name . "Z")))))))
+              (should (eq b-cons (cl-find "b" table-view--rows
+                                          :key (lambda (r) (alist-get 'id r)) :test #'equal))))))
+      (kill-buffer buf))))
+
+(ert-deftest tvn-test-apply-delta-reset ()
+  "A reset op replaces the whole window, reusing objects for unchanged rows."
+  (let ((buf (get-buffer-create " *tvn-rst*")))
+    (unwind-protect
+        (progn
+          (table-view-display buf tvn-test--client-spec nil)
+          (table-view-set-rows buf (tvn-test--client-rows))
+          (with-current-buffer buf
+            (let ((c-cons (cl-find "c" table-view--rows :key (lambda (r) (alist-get 'id r)) :test #'equal)))
+              (table-view-apply-delta
+               buf (list (list :op "reset"
+                               :rows (vector '((id . "c") (cells . ((name . "C"))))
+                                             '((id . "a") (cells . ((name . "A"))))))))
+              (should (equal (mapcar (lambda (r) (alist-get 'id r)) table-view--rows) '("c" "a")))
+              (should (eq c-cons (cl-find "c" table-view--rows
+                                          :key (lambda (r) (alist-get 'id r)) :test #'equal))))))
+      (kill-buffer buf))))
+
+;;; Live layer end-to-end (backend): patch -> $/delta -> apply-delta
+
+(defun tvn-test--settle ()
+  "Pump process output so pending $/delta notifications are dispatched."
+  (dotimes (_ 10) (accept-process-output nil 0.05)))
+
+(defconst tvn-test--live-spec
+  '((title . "x")
+    (columns . (((key . "name") (header . "Name"))
+                ((key . "num") (header . "Num") (type . "number"))))
+    (sort . ((column . "name") (ascending . t)))
+    (pagination . ((page-size . 100) (strategy . offset)))))
+
+(ert-deftest tvn-test-live-delta-matches-rewindow ()
+  "After each patch, the buffer's rows equal a fresh full re-window (the oracle)."
+  (tvn-test--skip-unless-binary
+   (let ((buf (get-buffer-create " *tvn-live*")))
+     (unwind-protect
+         (progn
+           (table-view-native-display buf (list :kind "rows" :rows (tvn-test--wire (tvn-test--rows 30)))
+                                      tvn-test--live-spec)
+           (tvn-test--settle)
+           (let* ((ch (buffer-local-value 'table-view-native--conn-handle buf))
+                  (conn (car ch)) (handle (cdr ch)))
+             (cl-flet ((truth ()
+                         (mapcar (lambda (r) (plist-get r :id))
+                                 (append (plist-get (jsonrpc-request conn 'window
+                                          (list :handle handle :offset 0 :limit 200
+                                                :sort [["name" t]] :filter "")) :rows) nil)))
+                       (shown () (with-current-buffer buf
+                                   (mapcar (lambda (r) (alist-get 'id r)) table-view--rows))))
+               (table-view-native-patch buf :upserts (list '((id . "z9") (cells . ((name . "aaa") (num . 1))))))
+               (tvn-test--settle) (should (equal (shown) (truth)))
+               (table-view-native-patch buf :deletes '("r5"))
+               (tvn-test--settle) (should (equal (shown) (truth)))
+               (table-view-native-patch buf :upserts (list '((id . "r10") (cells . ((name . "zzz") (num . 9))))))
+               (tvn-test--settle) (should (equal (shown) (truth)))
+               (table-view-native-patch buf
+                 :upserts (list '((id . "z9") (cells . ((name . "mmm") (num . 5)))))
+                 :deletes '("r0" "r1"))
+               (tvn-test--settle) (should (equal (shown) (truth))))))
+       (kill-buffer buf)))))
+
+(ert-deftest tvn-test-count-and-aggregate ()
+  "count / aggregate match a direct elisp computation over the same rows."
+  (tvn-test--skip-unless-binary
+   (let ((buf (get-buffer-create " *tvn-agg*")) (rows (tvn-test--rows 30)))
+     (unwind-protect
+         (progn
+           (table-view-native-display buf (list :kind "rows" :rows (tvn-test--wire rows)) tvn-test--live-spec)
+           (tvn-test--settle)
+           (let ((lib (cl-count-if (lambda (r) (string-search "lib" (alist-get 'name (alist-get 'cells r)))) rows))
+                 (sum (cl-reduce #'+ rows :key (lambda (r) (alist-get 'num (alist-get 'cells r))) :initial-value 0)))
+             (should (= (table-view-native-count buf "lib") lib))
+             (should (= (table-view-native-aggregate buf "num" "sum" "") sum))
+             (should (= (table-view-native-aggregate buf "num" "count" "") 30))))
+       (kill-buffer buf)))))
+
+(ert-deftest tvn-test-respawn-replays ()
+  "Killing the backend process; the next refresh respawns, re-opens, re-renders."
+  (tvn-test--skip-unless-binary
+   (let ((buf (get-buffer-create " *tvn-respawn*")))
+     (unwind-protect
+         (progn
+           (table-view-native-display buf (list :kind "rows" :rows (tvn-test--wire (tvn-test--rows 12)))
+                                      tvn-test--live-spec)
+           (tvn-test--settle)
+           (dolist (p (process-list))
+             (when (string-prefix-p "tvx" (process-name p)) (delete-process p)))
+           (table-view-refresh buf)     ; triggers respawn + re-open + re-window
+           (tvn-test--settle)
+           (with-current-buffer buf
+             (should (= (length table-view--rows) 12))
+             (should (string-match-p "core-00000" (buffer-string)))))
+       (kill-buffer buf)))))
+
+(ert-deftest tvn-test-out-of-window-patch-refreshes-total ()
+  "A patch outside the visible window still refreshes the total-row count."
+  (tvn-test--skip-unless-binary
+   (let ((buf (get-buffer-create " *tvn-total*"))
+         (spec '((title . "x")
+                 (columns . (((key . "name") (header . "Name"))
+                             ((key . "num") (header . "Num") (type . "number"))))
+                 (sort . ((column . "name") (ascending . t)))
+                 (pagination . ((page-size . 2) (strategy . offset)))))
+         (rows (cl-loop for i from 0 below 6 collect
+                        (list (cons 'id (format "r%d" i))
+                              (cons 'cells (list (cons 'name (format "n%02d" i)) (cons 'num i)))))))
+     (unwind-protect
+         (progn
+           (table-view-native-display buf (list :kind "rows" :rows (tvn-test--wire rows)) spec)
+           (tvn-test--settle)
+           (should (= (buffer-local-value 'table-view--total buf) 6))
+           (should (= (length (buffer-local-value 'table-view--rows buf)) 2)) ; 2-row window
+           (table-view-native-patch buf :deletes '("r5"))                     ; outside the window
+           (tvn-test--settle)
+           (should (= (buffer-local-value 'table-view--total buf) 5))         ; count refreshed
+           (should (= (length (buffer-local-value 'table-view--rows buf)) 2)))
+       (kill-buffer buf)))))
+
+(ert-deftest tvn-test-close-removes-handle-on-kill ()
+  "Killing the buffer closes its backend handle and unregisters it."
+  (tvn-test--skip-unless-binary
+   (let ((buf (get-buffer-create " *tvn-close*")))
+     (table-view-native-display buf (list :kind "rows" :rows (tvn-test--wire (tvn-test--rows 5)))
+                                tvn-test--live-spec)
+     (tvn-test--settle)
+     (let ((handle (cdr (buffer-local-value 'table-view-native--conn-handle buf))))
+       (should (gethash handle table-view-native--handles))
+       (kill-buffer buf)
+       (should-not (gethash handle table-view-native--handles))))))
 
 (provide 'table-view-native-test)
 ;;; table-view-native-test.el ends here

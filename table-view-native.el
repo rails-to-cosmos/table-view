@@ -179,6 +179,25 @@ exists.  CALLBACK, if given, is called with the resulting path (or nil)."
 (defvar table-view-native--connection nil "Shared jsonrpc connection, or nil.")
 (defvar table-view-native--handles (make-hash-table) "Handle -> buffer, for respawn.")
 
+(defvar-local table-view-native--source nil "This buffer's backend source plist.")
+(defvar-local table-view-native--conn-handle nil "Cons (CONNECTION . HANDLE) for this buffer.")
+(defvar-local table-view-native--rev 0 "Server rev this buffer is consistent at.")
+(defvar-local table-view-native--gen 0 "Subscription generation this buffer is bound to.")
+
+(defun table-view-native--close (conn handle)
+  "Close HANDLE on CONN (when live) and drop it from the handle registry.
+Idempotent; safe to call for an already-dead connection."
+  (when handle
+    (when (and conn (jsonrpc-connection-p conn) (jsonrpc-running-p conn))
+      (ignore-errors (jsonrpc-notify conn 'close (list :handle handle))))
+    (remhash handle table-view-native--handles)))
+
+(defun table-view-native--on-kill ()
+  "Close this buffer's backend handle when the buffer is killed."
+  (when table-view-native--conn-handle
+    (table-view-native--close (car table-view-native--conn-handle)
+                              (cdr table-view-native--conn-handle))))
+
 (defun table-view-native--make-connection (prog)
   (let ((conn (make-instance 'jsonrpc-process-connection
                 :name "tvx"
@@ -200,16 +219,50 @@ exists.  CALLBACK, if given, is called with the resulting path (or nil)."
       (when-let ((prog (table-view-native--ensure)))
         (setq table-view-native--connection (table-view-native--make-connection prog)))))
 
-(defun table-view-native--dispatch (_conn _method _params)
-  "Notification dispatcher (phase 1: no live layer; ignored)." nil)
+(defun table-view-native--dispatch (_conn method params)
+  "Route a server notification.  Handles $/delta (a subscribed window changed).
+A delta is applied only when it both continues this client's rev (:baseRev
+equals the local rev) and targets the current subscription (:gen equals the
+local gen); otherwise -- an out-of-order/missed delta, or one computed for a
+newer window whose fetch reply was lost -- the window is refetched, which
+re-subscribes and re-bases, so the view self-heals instead of corrupting."
+  (when (eq method '$/delta)
+    (let ((buf (gethash (plist-get params :handle) table-view-native--handles)))
+      (when (buffer-live-p buf)
+        (with-current-buffer buf
+          (if (and (eql (plist-get params :baseRev) table-view-native--rev)
+                   (eql (plist-get params :gen) table-view-native--gen))
+              (progn
+                (setq table-view--total (plist-get params :matched))  ; before the render
+                (table-view-apply-delta buf (table-view-native--delta-ops (plist-get params :ops)))
+                (setq table-view-native--rev (plist-get params :rev)
+                      table-view--has-next
+                      (and table-view--page-size
+                           (< (+ (or table-view--offset 0) (length table-view--rows))
+                              (or table-view--total 0)))))
+            (table-view--refetch-current)))))))
 
-;;; Row conversion (jsonrpc plist -> table-view alist)
+;;; Row conversion (jsonrpc plist <-> table-view alist)
 
 (defun table-view-native--row (r)
   "Convert a reply row plist R to table-view's ((id . ID) (cells . ALIST)) shape."
   (list (cons 'id (plist-get r :id))
         (cons 'cells (cl-loop for (k v) on (plist-get r :cells) by #'cddr
                               collect (cons (intern (substring (symbol-name k) 1)) v)))))
+
+(defun table-view-native--row->wire (row)
+  "Convert a table-view ROW alist to the backend's (:id ID :cells PLIST) shape."
+  (list :id (alist-get 'id row)
+        :cells (cl-loop for (k . v) in (alist-get 'cells row)
+                        append (list (intern (concat ":" (symbol-name k))) v))))
+
+(defun table-view-native--delta-ops (ops)
+  "Convert $/delta OPS (a vector of plists) to `table-view-apply-delta' ops."
+  (mapcar (lambda (op)
+            (if (plist-member op :row)
+                (plist-put (copy-sequence op) :row (table-view-native--row (plist-get op :row)))
+              op))
+          (append ops nil)))
 
 ;;; The page-fn closure
 
@@ -225,29 +278,72 @@ A vector of (:key K :type T); `value-fn' columns are excluded (Emacs-side only).
                                    ("number" "number") ("badge" "badge") (_ "text")))))
                  (table-view--columns spec)))))
 
-(defun table-view-native--page-fn (conn handle)
-  "Return a `page-fn' closure fetching windows from CONN for HANDLE."
+(defun table-view-native--open (conn)
+  "Open the current buffer's source on CONN; return the new handle.
+Registers the handle and re-bases rev.  Called on first display and again,
+transparently, after a respawn re-opens the source on a fresh connection."
+  (let* ((open (jsonrpc-request
+                conn 'open
+                (list :source table-view-native--source
+                      :columns (table-view-native--columns table-view--spec)
+                      :pageSize (or table-view--page-size 50)
+                      :protocol table-view-native-protocol)))
+         (handle (plist-get open :handle)))
+    ;; Drop the previous handle (dead after a respawn) so its registry entry and
+    ;; backend table do not leak.
+    (when table-view-native--conn-handle
+      (table-view-native--close (car table-view-native--conn-handle)
+                                (cdr table-view-native--conn-handle)))
+    (setq table-view-native--conn-handle (cons conn handle)
+          table-view-native--rev (or (plist-get open :rev) 0))
+    (puthash handle (current-buffer) table-view-native--handles)
+    handle))
+
+(defun table-view-native--live-handle (buf conn conn0 handle0)
+  "The handle for BUF valid on CONN, re-opening the source if CONN is new.
+This is the respawn seam: a crashed backend yields a fresh CONN, and the
+next window re-opens and re-subscribes without the caller noticing.  CONN0
+and HANDLE0 are the open captured at display time -- used for the very first
+fetch, which fires from `table-view-display' before the buffer-local handle
+is stored."
+  (with-current-buffer buf
+    (cond ((eq (car table-view-native--conn-handle) conn) (cdr table-view-native--conn-handle))
+          ((eq conn0 conn) handle0)
+          (t (table-view-native--open conn)))))
+
+(defun table-view-native--page-fn (buffer conn0 handle0)
+  "Return a `page-fn' closure fetching subscribed windows for BUFFER.
+The closure resolves the live connection and handle at call time, so it
+survives a backend respawn; CONN0/HANDLE0 bootstrap the first fetch."
   (lambda (req)
-    (let ((buf (plist-get req :buffer)))
-      (jsonrpc-async-request
-       conn 'window
-       (list :handle handle
-             :offset (or (plist-get req :offset) 0)
-             :limit (plist-get req :limit)
-             :sort (vconcat (mapcar (lambda (ka) (vector (car ka) (and (cdr ka) t)))
-                                    (plist-get req :sort)))
-             :filter (or (plist-get req :filter) ""))
-       :success-fn
-       (lambda (reply)
-         (table-view-set-page
-          buf (mapcar #'table-view-native--row (append (plist-get reply :rows) nil))
-          :total (plist-get reply :matched)
-          :offset (plist-get reply :offset)
-          :has-next (eq (plist-get reply :hasNext) t)))
-       :error-fn
-       (lambda (err) (table-view-page-error buf (plist-get err :message)))
-       :timeout-fn
-       (lambda () (table-view-page-error buf "native backend timeout"))))))
+    (let* ((buf (plist-get req :buffer))
+           (conn (table-view-native--ensure-connection)))
+      (ignore buffer)
+      (if (not conn)
+          (table-view-page-error buf "native backend unavailable")
+        (jsonrpc-async-request
+         conn 'window
+         (list :handle (table-view-native--live-handle buf conn conn0 handle0)
+               :offset (or (plist-get req :offset) 0)
+               :limit (plist-get req :limit)
+               :sort (vconcat (mapcar (lambda (ka) (vector (car ka) (and (cdr ka) t)))
+                                      (plist-get req :sort)))
+               :filter (or (plist-get req :filter) "")
+               :subscribe t)
+         :success-fn
+         (lambda (reply)
+           (with-current-buffer buf
+             (setq table-view-native--rev (plist-get reply :rev)
+                   table-view-native--gen (plist-get reply :gen)))
+           (table-view-set-page
+            buf (mapcar #'table-view-native--row (append (plist-get reply :rows) nil))
+            :total (plist-get reply :matched)
+            :offset (plist-get reply :offset)
+            :has-next (eq (plist-get reply :hasNext) t)))
+         :error-fn
+         (lambda (err) (table-view-page-error buf (plist-get err :message)))
+         :timeout-fn
+         (lambda () (table-view-page-error buf "native backend timeout")))))))
 
 ;;; Public entry
 
@@ -258,24 +354,33 @@ SOURCE is a plist, e.g. (:kind \"rows\" :rows [...]) or (:kind \"file\"
 :path P :format \"csv\").  Falls back to the pure-elisp path -- with a
 warning -- when the backend is unavailable.  Returns the buffer."
   (if-let ((conn (table-view-native--ensure-connection)))
-      (let* ((pg (alist-get 'pagination spec))
+      (let* ((buf (get-buffer-create buffer))
+             ;; Capture any prior handle before `table-view-mode' wipes the
+             ;; buffer-locals, so re-displaying can close it (no leak).
+             (prior (buffer-local-value 'table-view-native--conn-handle buf))
+             (pg (alist-get 'pagination spec))
+             (page-size (or (alist-get 'page-size pg) 50))
              (open (jsonrpc-request
                     conn 'open
                     (list :source source
-                          :columns (table-view-native--columns spec)
-                          :pageSize (or (alist-get 'page-size pg) 50)
+                          :columns (table-view-native--columns (table-view--own-spec spec))
+                          :pageSize page-size
                           :protocol table-view-native-protocol)))
              (handle (plist-get open :handle))
              ;; force a paged buffer even if the spec omitted `pagination'
              (spec (if pg spec (append spec (list (cons 'pagination
-                                                        (list (cons 'page-size (or (alist-get 'page-size pg) 50))
+                                                        (list (cons 'page-size page-size)
                                                               (cons 'strategy 'offset))))))))
-        (table-view-display buffer spec handlers nil (table-view-native--page-fn conn handle))
-        (with-current-buffer (get-buffer buffer)
-          (setq-local table-view-native--handle handle
-                      table-view-native--source source)
-          (puthash handle (current-buffer) table-view-native--handles))
-        (get-buffer buffer))
+        (table-view-display buffer spec handlers nil
+                            (table-view-native--page-fn buf conn handle))
+        (with-current-buffer buf
+          (setq-local table-view-native--source source
+                      table-view-native--conn-handle (cons conn handle)
+                      table-view-native--rev (or (plist-get open :rev) 0))
+          (puthash handle buf table-view-native--handles)
+          (add-hook 'kill-buffer-hook #'table-view-native--on-kill nil t))
+        (when prior (table-view-native--close (car prior) (cdr prior)))
+        buf)
     ;; Fallback: render inline rows in pure elisp; other sources need the backend.
     (if (equal (plist-get source :kind) "rows")
         (let ((rows (mapcar #'table-view-native--row (append (plist-get source :rows) nil))))
@@ -285,8 +390,41 @@ warning -- when the backend is unavailable.  Returns the buffer."
       (table-view-native--fallback 'unsupported-source)
       (table-view-display buffer spec handlers))))
 
-(defvar-local table-view-native--handle nil)
-(defvar-local table-view-native--source nil)
+;;; Live mutation + queries
+
+(defun table-view-native-patch (buffer &rest args)
+  "Upsert and delete rows in native table-view BUFFER.
+ARGS is a plist: :upserts ROWS (table-view ((id . ID) (cells . ALIST)) rows)
+and :deletes IDS.  The backend applies them, bumps its rev, and pushes a
+$/delta that updates the subscribed window."
+  (let ((buf (get-buffer buffer)))
+    (when (buffer-live-p buf)
+      (with-current-buffer buf
+        (let ((conn (car table-view-native--conn-handle))
+              (handle (cdr table-view-native--conn-handle)))
+          (when (and conn (jsonrpc-running-p conn))
+            (jsonrpc-async-request
+             conn 'patch
+             (list :handle handle
+                   :upserts (vconcat (mapcar #'table-view-native--row->wire (plist-get args :upserts)))
+                   :deletes (vconcat (plist-get args :deletes))))))))))
+
+(defun table-view-native-count (buffer &optional filter)
+  "Return the number of rows in native table-view BUFFER matching FILTER."
+  (with-current-buffer (get-buffer buffer)
+    (plist-get (jsonrpc-request (car table-view-native--conn-handle) 'count
+                                (list :handle (cdr table-view-native--conn-handle)
+                                      :filter (or filter "")))
+               :matched)))
+
+(defun table-view-native-aggregate (buffer column op &optional filter)
+  "Aggregate COLUMN of native table-view BUFFER with OP under FILTER.
+OP is one of \"sum\", \"min\", \"max\", \"avg\", \"count\" (a string)."
+  (with-current-buffer (get-buffer buffer)
+    (plist-get (jsonrpc-request (car table-view-native--conn-handle) 'aggregate
+                                (list :handle (cdr table-view-native--conn-handle)
+                                      :column column :op op :filter (or filter "")))
+               :value)))
 
 (defun table-view-native-reset ()
   "Clear native fallback/crash state and rebuild the backend."
