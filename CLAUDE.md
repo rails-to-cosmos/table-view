@@ -17,6 +17,17 @@ Write all project documents as **Org-mode files** (`.org`), not Markdown.
 - Exception: the package `README.md` stays Markdown — it is the package's
   public, GitHub-rendered face and follows Emacs-package convention.
 
+## Docstrings & comments
+
+Cut genuine bloat — over-explanation, redundancy, three sentences where one
+works. Keep docstrings proper English and checkdoc-valid (they are public API,
+shown by `C-h f`): a complete imperative first line, arg names in CAPS, facts
+intact. Terse, but complete.
+
+Never use the "negation-reveal" pattern ("not X, but Y" / "it's not just A,
+it's B" / "this isn't about A, it's about B") in any generated text — docs,
+comments, commit messages, prose. State the point directly.
+
 ## Build / test
 
 - `make test` — run the ERT suite in batch mode.

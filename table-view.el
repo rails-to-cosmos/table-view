@@ -207,12 +207,11 @@ column layout and the one-line-per-row assumption of incremental rendering."
 
 ;;; Org links
 ;;
-;; A cell whose display string contains Org bracket links -- [[TARGET][DESC]]
-;; or [[TARGET]] -- renders each link as its DESC (or TARGET), followable by
-;; mouse or `C-c C-o'.  Parsing and following reuse Org's own `ol.el' (the
-;; `org-link-bracket-re' regexp and `org-link-open-from-string'), rather than
-;; redefining them.  Width, filtering, and sorting see the DESC, so a link
-;; column lines up and searches by what is on screen, not the raw markup.
+;; A cell with Org bracket links -- [[TARGET][DESC]] or [[TARGET]] -- renders
+;; each as its DESC (or TARGET), followable by mouse or `C-c C-o'.  Parsing and
+;; following reuse Org's `ol.el' (`org-link-bracket-re', `org-link-open-from-
+;; string').  Width, filter, and sort see the DESC, so a link column lines up
+;; and searches by its displayed description.
 
 (defface table-view-link '((t :inherit link))
   "Face for Org links rendered in table cells.")
@@ -348,15 +347,12 @@ comparator, so every comparator kind agrees with the display."
   (if (stringp val) (table-view--cell-text col val) val))
 
 (defun table-view--compute-cells (rows spec)
-  "Return ROWS with SPEC's computed columns' cells materialised.
-A column may declare a `value-fn': a function of (ID ROW) returning that
-column's cell value.  For every such column, each row that lacks a cell for it
-gets one filled in by calling the function; a row that already carries the cell
-is left untouched, so a backend that supplies the value directly always wins.
-The computed value is stored on the row like any other cell, so sorting,
-filtering and width computation see it -- a computed column is otherwise a
-first-class column.  Non-destructive: unchanged rows are returned as-is and
-changed rows get a fresh `cells' alist, so the caller's ROWS are never mutated."
+  "Return ROWS with SPEC's `value-fn' columns' cells materialised.
+A `value-fn' column declares a function of (ID ROW).  Each row lacking that
+cell gets it filled by the function; a row that already carries the cell keeps
+it, so a backend-supplied value wins.  The computed value is stored like any
+other cell, so sort/filter/width see it.  Non-destructive: changed rows get a
+fresh `cells' alist, so the caller's ROWS are never mutated."
   (let ((vcols (seq-filter (lambda (c) (alist-get 'value-fn c))
                            (table-view--columns spec))))
     (if (null vcols)
@@ -399,8 +395,8 @@ stale computed cell so a (re)added `value-fn' column recomputes it instead of
 
 (defun table-view--materialise-cells ()
   "Fill `value-fn' columns' cells in `table-view--rows' AND the mark-cache.
-The mark-cache holds row snapshots a paged/narrowed view renders from, so a
-column added at runtime must be materialised there too, not just in the rows."
+The mark-cache holds the row snapshots a paged/narrowed view renders from, so a
+runtime-added column must be materialised there as well."
   (setq table-view--rows (table-view--compute-cells table-view--rows table-view--spec)
         table-view--mark-cache
         (mapcar (lambda (c)
@@ -582,11 +578,11 @@ narrowed), then restricted to the current filter."
 
 ;;; Rendering
 
-;; Column widths scan every visible cell -- the most expensive part of a
-;; render.  They change only when the visible row SET or cell VALUES or the
-;; columns change, never on a sort (same cells, reordered), a mark toggle (the
-;; gutter is a fixed prefix, not a column), or a point-restoration render -- so
-;; cache the result and invalidate it explicitly at those mutation seams.
+;; Column widths scan every visible cell -- the priciest part of a render.
+;; They change only with the visible row SET, cell VALUES, or columns; a sort
+;; (same cells reordered), mark toggle (the gutter is a fixed prefix), and
+;; point-restoration render leave them intact.  So cache them and invalidate
+;; explicitly at the mutation seams.
 (defvar-local table-view--widths-cache nil
   "Cached column-width alist, reused across renders that cannot change it.")
 
@@ -857,8 +853,8 @@ visible set changed) fall back to `table-view--render'."
 (defun table-view-marked-rows (&optional buffer)
   "The marked rows of BUFFER (or the current buffer).
 Client buffers return them in row order.  Paged buffers return the cached
-marked rows, which span every page visited -- so a bulk action operates on
-the whole selection, not just the rows currently on screen."
+marked rows spanning every page visited, so a bulk action operates on the
+whole selection across pages."
   (with-current-buffer (or buffer (current-buffer))
     (if (table-view--paged-p)
         (mapcar #'cdr (reverse table-view--mark-cache))
@@ -1104,16 +1100,14 @@ persist the new schema, reading the live columns from `table-view--spec'.")
 
 (defun table-view-add-column (&optional column index)
   "Add COLUMN to the current table-view buffer, materialise its cells, re-render.
-COLUMN is a column alist (as in a spec's `columns'); it may carry a `value-fn'
-of (ID ROW) so its cells are computed for the loaded rows (see
-`table-view--compute-cells').  It is inserted at INDEX (0-based) or, by default,
-appended; if a column with the same key already exists it is replaced in place.
+COLUMN is a column alist (as in a spec's `columns'); a `value-fn' of (ID ROW)
+computes its cells (see `table-view--compute-cells').  Inserted at INDEX
+(0-based) or appended; a same-key column is replaced in place.
 
-Called interactively (COLUMN nil) it builds the column via
-`table-view-add-column-function' when that is set, else prompts for a header and
-adds an empty text column.  After the change it runs
-`table-view-schema-changed-hook' so a consumer may persist the schema.  Returns
-the column that was added, or nil when the add was cancelled."
+Interactively (COLUMN nil) build it via `table-view-add-column-function' if set,
+else prompt for a header and add an empty text column.  Runs
+`table-view-schema-changed-hook' after.  Return the added column, or nil if
+cancelled."
   (interactive)
   (let ((col (or column
                  (if table-view-add-column-function
@@ -1205,11 +1199,11 @@ KEY when a column was actually removed."
 
 (defun table-view--install-action-keys (spec)
   "Build a buffer-local keymap binding the declared action keys.
-In paged buffers it first binds the page-navigation keys (`>' / `.' next
-page, `<' / `,' previous page, `M->' / `M-<' last / first page, `M-g' go
-to page); these are buffer-local so ordinary tables keep `M-<' / `M->' as
-beginning / end-of-buffer.  Action keys are bound last, so a consumer key
-shadows a page key rather than the reverse."
+In paged buffers it first binds the page-navigation keys (`>' / `.' next page,
+`<' / `,' previous page, `M->' / `M-<' last / first page, `M-g' go to page);
+these are buffer-local, so ordinary tables keep `M-<' / `M->' as beginning /
+end-of-buffer.  Action keys are bound last, so a consumer key shadows a page
+key on conflict."
   (let ((map (make-sparse-keymap)))
     (set-keymap-parent map table-view-mode-map)
     (when (table-view--paged-p)
@@ -1453,18 +1447,13 @@ of `^' keeps flipping the just-added secondary key COL's direction."
 
 (defun table-view-sort-cycle (&optional secondary)
   "Sort the table via `^'.
-With point on a sortable column (a data cell or its header), sort by that
-column, collapsing any multi-column chain to it; pressing `^' again on
-that already-sorted column toggles ascending/descending.  With point off
-any column, walk through every sortable column ascending then descending,
-one per press.
+On a sortable column (data cell or header), sort by it, collapsing any
+multi-column chain; `^' again on that column toggles asc/desc.  Off any
+column, cycle every sortable column asc then desc, one per press.
 
-With a prefix argument (\\[universal-argument]) and point on a sortable
-column, instead ADD that column to the sort chain as the next
-lower-priority tie-breaker (so rows equal on the earlier keys are ordered
-by it); if it is already in the chain, flip its direction in place.  A run
-of plain `^' right after such a `C-u ^' keeps toggling that key.  Point
-keeps its on-screen location across the re-sort."
+With \\[universal-argument] on a sortable column, instead ADD it as the next
+lower-priority tie-breaker (or flip it if already chained); a following run of
+plain `^' keeps toggling that key.  Point keeps its on-screen location."
   (interactive "P")
   (let ((col (get-text-property (point) 'table-view-col))
         (sortable (table-view--sortable-keys)))
@@ -1838,26 +1827,22 @@ the current page, keeping point on the same row when it comes back."
          (table-view--fill-fn (funcall table-view--fill-fn buf)))))))
 
 (defun table-view-display (buffer spec handlers &optional fill-fn page-fn)
-  "Render SPEC into BUFFER, install HANDLERS, and populate.  Returns the buffer.
-SPEC is a parsed alist (see `table-view-parse').  HANDLERS is an alist of
-command-name (string) -> (FN ID ROW).
+  "Render SPEC into BUFFER, install HANDLERS, populate; return the buffer.
+SPEC is a parsed alist (see `table-view-parse'); HANDLERS maps a command-name
+string to (FN ID ROW).
 
-Data source (FILL-FN and PAGE-FN are mutually exclusive; PAGE-FN wins):
-  * FILL-FN, a function of BUFFER that populates ALL rows via
-    `table-view-set-rows' / `table-view-upsert-row'; or
-  * PAGE-FN, server-side pagination: a function of a REQUEST plist that
-    fetches ONE page and delivers it with `table-view-set-page' (or
-    `table-view-page-error').  When PAGE-FN is non-nil the buffer is
-    paged: `table-view--rows' holds only the current page, sort and
-    filter are pushed into each request, and totals come from the
-    server.  SPEC's `pagination' block sets `page-size' (default 50) and
-    `strategy' (`offset', the default, for OFFSET/LIMIT with random
-    access and totals, or `keyset' for opaque forward/back cursors).
+Populate via FILL-FN or PAGE-FN (mutually exclusive; PAGE-FN wins):
+  * FILL-FN, of BUFFER, fills all rows via `table-view-set-rows' /
+    `table-view-upsert-row'.
+  * PAGE-FN enables server-side pagination: it fetches one page per REQUEST
+    plist and delivers via `table-view-set-page' (or `table-view-page-error');
+    the buffer then holds only the current page and pushes sort/filter into
+    each request.  SPEC's `pagination' block sets `page-size' (default 50) and
+    `strategy' (`offset', the default, or `keyset').
 
-SPEC's `sort' (a single {column, ascending}, or a list of them for a
-multi-column default) seeds the sort chain: in a client buffer it is
-applied to SPEC's own rows on open; in a paged buffer it is sent with the
-first page request.  Rows arriving later via FILL-FN start unsorted."
+SPEC's `sort' (one {column, ascending}, or a list for multi-column) seeds the
+sort chain: applied to SPEC's rows on open (client), or sent with the first
+page request (paged)."
   (let ((buf (get-buffer-create buffer)))
     (with-current-buffer buf
       (table-view-mode)
