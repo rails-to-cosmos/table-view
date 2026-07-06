@@ -1370,6 +1370,8 @@ Not bound by default; sorting is on `^' (`table-view-sort-cycle')."
                  (format "Sort: %s" (table-view--sort-description))
                "Unsorted"))))
 
+(define-obsolete-function-alias 'table-view-sort 'table-view-revert "0.1.0")
+
 (defun table-view-mark-toggle ()
   "Toggle the mark on the row at point, then move to the next row.
 Marked rows show a `*' in a gutter column and are the operand of a
