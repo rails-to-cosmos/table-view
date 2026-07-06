@@ -10,8 +10,10 @@
 ;; The echo area updates via `table-view-native-count' and
 ;; `table-view-native-aggregate' -- both computed in Rust under the live filter.
 ;;
-;; Falls back to a static pure-elisp table (with a warning) when the backend is
-;; unbuilt; the live timer still runs but the patches have nowhere to go.
+;; First run offers to build the backend (cargo, ~30s): accept and the buffer
+;; shows build progress, then loads.  Decline and this "rows" source still
+;; renders in pure elisp (with a warning) -- but the live timer's patches then
+;; have no backend to reach.
 ;;
 ;;   ^ / /   sort / filter -- pushed down; live updates keep flowing under them
 ;;   g       refresh

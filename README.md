@@ -104,9 +104,10 @@ Runnable demos live in [`examples/`](examples/):
 
 Open one and `M-x eval-buffer`.
 
-> The two `native*` demos use the optional Rust backend (`tvx`).  First run
-> needs `M-x table-view-native-compile` (requires [cargo](https://rustup.rs));
-> without it, table-view runs pure elisp and warns.  See
+> The two `native*` demos use the optional Rust backend (`tvx`).  On first run
+> table-view offers to build it (needs [cargo](https://rustup.rs)); accept and
+> the buffer shows build progress, then loads once the build finishes.  Decline
+> and it runs pure elisp with a warning.  See
 > [`docs/proposals/native-backend.org`](docs/proposals/native-backend.org).
 
 ## Keybindings

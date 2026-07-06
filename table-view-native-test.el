@@ -127,7 +127,9 @@ Returns nil when cargo is unavailable and no valid binary exists."
         (warned nil)
         (buf (get-buffer-create " *tvn-fb*")))
     (unwind-protect
-        (cl-letf (((symbol-function 'display-warning) (lambda (&rest _) (setq warned t))))
+        ;; Force "no backend" regardless of any binary cached in this user's env.
+        (cl-letf (((symbol-function 'display-warning) (lambda (&rest _) (setq warned t)))
+                  ((symbol-function 'table-view-native--resolve) (lambda () nil)))
           (table-view-native-display buf (list :kind "rows" :rows (tvn-test--rows 5))
                                      tvn-test--spec)
           (should warned)
@@ -303,6 +305,39 @@ Returns nil when cargo is unavailable and no valid binary exists."
        (should (gethash handle table-view-native--handles))
        (kill-buffer buf)
        (should-not (gethash handle table-view-native--handles))))))
+
+;;; Deferred build path (accept build -> wait -> load or error)
+
+(ert-deftest tvn-test-deferred-build-then-load ()
+  "A deferred display shows a placeholder, then loads the table once built."
+  (tvn-test--skip-unless-binary
+   (let ((buf (get-buffer-create " *tvn-defer*")))
+     (unwind-protect
+         (cl-letf (((symbol-function 'display-buffer) #'ignore)
+                   ;; Simulate a build that completes successfully with BIN.
+                   ((symbol-function 'table-view-native-compile)
+                    (lambda (_force cb) (funcall cb bin))))
+           (table-view-native--display-deferred
+            buf (list :kind "rows" :rows (tvn-test--rows 8)) tvn-test--live-spec nil)
+           (tvn-test--settle)
+           (with-current-buffer buf
+             (should (table-view--paged-p))
+             (should (string-match-p "core-00000" (buffer-string)))))
+       (kill-buffer buf)))))
+
+(ert-deftest tvn-test-deferred-build-failure-shows-error ()
+  "A failed deferred build shows an error placeholder, not the table."
+  (let ((buf (get-buffer-create " *tvn-defer-fail*")))
+    (unwind-protect
+        (cl-letf (((symbol-function 'display-buffer) #'ignore)
+                  ((symbol-function 'table-view-native-compile)
+                   (lambda (_force cb) (funcall cb nil))))   ; build failed
+          (table-view-native--display-deferred
+           buf (list :kind "rows" :rows (tvn-test--rows 3)) tvn-test--live-spec nil)
+          (with-current-buffer buf
+            (should (string-match-p "build failed" (buffer-string)))
+            (should-not (string-match-p "core-00000" (buffer-string)))))
+      (kill-buffer buf))))
 
 (provide 'table-view-native-test)
 ;;; table-view-native-test.el ends here

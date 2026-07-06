@@ -10,8 +10,11 @@
 ;; screen do.  Sorting a string column across 1M rows is ~170 ms in Rust; the
 ;; equivalent in-buffer elisp sort is ~2 s of blocked Emacs.
 ;;
-;; First run needs the binary.  A "gen" source needs the backend, so if it is
-;; not built the table stays empty and Emacs warns you to run
+;; First run: if the backend is not built, table-view offers to build it (cargo,
+;; ~30s).  Accept and the buffer shows a "Building…" placeholder with live output
+;; in *tvx-compile*, then loads the table once the build finishes.  Decline (or
+;; set `table-view-native-auto-compile' to nil) and a "gen" source cannot render;
+;; build later with
 ;;   M-x table-view-native-compile       (needs cargo -- https://rustup.rs)
 ;; A big inline "rows" source would instead fall back to a (slower) pure-elisp
 ;; render; see examples/native-live.el for a "rows" source.

@@ -19,6 +19,9 @@ Shipped (=native/tvx/= as modules =wire/column/delta/table/main=, plus
 
 - Phase 1 :: =initialize= handshake + protocol pin, =open=/=window=/=close=,
   compile-on-install, version-validated resolution, pure-elisp fallback + warning.
+  When a build is needed, =table-view-native-display= *defers*: it shows a
+  build placeholder in the buffer, runs cargo asynchronously (live log in
+  =*tvx-compile*=), and loads the table on success or shows the error on failure.
 - Phase 2 :: dictionary-encoded string columns with a =rank[]= array, one-pass
   stable multi-key sort (desc = reversed compare, RowIx tiebreak), dict-unique
   substring filter with numeric-skip.  Matches the elisp comparators exactly

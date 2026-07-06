@@ -119,60 +119,60 @@ Must equal the binary's `open' reply :protocol and the N in
   (or (executable-find table-view-native-cargo-program)
       (let ((c (expand-file-name "~/.cargo/bin/cargo"))) (and (file-executable-p c) c))))
 
+(defvar table-view-native--build-callbacks nil
+  "Callbacks awaiting the in-progress build; each is called with the path or nil.")
+
 (defun table-view-native-compile (&optional force callback)
   "Build the native backend with cargo and cache the binary.
 With FORCE (interactively, or non-nil), rebuild even when a valid binary
-exists.  CALLBACK, if given, is called with the resulting path (or nil)."
+exists.  CALLBACK, if given, runs with the resulting path (or nil) when the
+build finishes; callbacks queued while a build is already running all fire."
   (interactive (list t nil))
   (let ((have (and (not force) (table-view-native--resolve))))
     (cond
      (have (when callback (funcall callback have)) have)
      ((not (table-view-native--cargo))
       (table-view-native--fallback 'no-cargo) (when callback (funcall callback nil)) nil)
-     (table-view-native--build-in-progress
-      (table-view-native--fallback 'building) nil)
      ((not table-view-native--source-dir)
       (when callback (funcall callback nil)) nil)
      (t
-      (setq table-view-native--build-in-progress t)
-      (make-directory table-view-native--cache-dir t)
-      (let* ((manifest (expand-file-name "Cargo.toml" table-view-native--source-dir))
-             (buf (get-buffer-create "*tvx-compile*")))
-        (with-current-buffer buf (erase-buffer))
-        (make-process
-         :name "tvx-compile" :buffer buf :noquery t
-         :command (list (table-view-native--cargo) "build" "--release" "--manifest-path" manifest)
-         :sentinel
-         (lambda (proc _event)
-           (when (memq (process-status proc) '(exit signal))
-             (setq table-view-native--build-in-progress nil)
-             (let ((ok (eq 0 (process-exit-status proc)))
-                   (built (expand-file-name (format "target/release/%s" (table-view-native--exe))
-                                            table-view-native--source-dir))
-                   (dest (table-view-native--cached-binary)))
-               (if (and ok (file-executable-p built))
-                   (progn (copy-file built dest t) (set-file-modes dest #o755)
-                          (let ((valid (table-view-native--validate dest)))
-                            (unless valid (table-view-native--fallback 'version-mismatch))
-                            (when callback (funcall callback valid))))
-                 (table-view-native--fallback 'build-failed)
-                 (when callback (funcall callback nil)))))))
-        (message "Building the table-view native backend in *tvx-compile*...")
-        nil)))))
+      (when callback (push callback table-view-native--build-callbacks))
+      (if table-view-native--build-in-progress
+          nil                               ; join the running build; callback queued
+        (setq table-view-native--build-in-progress t)
+        (make-directory table-view-native--cache-dir t)
+        (let* ((manifest (expand-file-name "Cargo.toml" table-view-native--source-dir))
+               (buf (get-buffer-create "*tvx-compile*")))
+          (with-current-buffer buf (erase-buffer))
+          (make-process
+           :name "tvx-compile" :buffer buf :noquery t
+           :command (list (table-view-native--cargo) "build" "--release" "--manifest-path" manifest)
+           :sentinel
+           (lambda (proc _event)
+             (when (memq (process-status proc) '(exit signal))
+               (setq table-view-native--build-in-progress nil)
+               (let* ((ok (eq 0 (process-exit-status proc)))
+                      (built (expand-file-name (format "target/release/%s" (table-view-native--exe))
+                                               table-view-native--source-dir))
+                      (dest (table-view-native--cached-binary))
+                      (result (if (and ok (file-executable-p built))
+                                  (progn (copy-file built dest t) (set-file-modes dest #o755)
+                                         (let ((valid (table-view-native--validate dest)))
+                                           (unless valid (table-view-native--fallback 'version-mismatch))
+                                           valid))
+                                (table-view-native--fallback 'build-failed)
+                                nil))
+                      (cbs (nreverse table-view-native--build-callbacks)))
+                 (setq table-view-native--build-callbacks nil)
+                 (dolist (cb cbs) (funcall cb result))))))
+          (message "Building the table-view native backend in *tvx-compile*...")
+          nil))))))
 
 (defun table-view-native--ensure ()
-  "Return a validated backend path, building if policy allows; else nil + warn."
-  (cond
-   ((not table-view-native-enabled) nil)
-   ((table-view-native--resolve))
-   (table-view-native--build-in-progress (table-view-native--fallback 'building))
-   ((not (table-view-native--cargo)) (table-view-native--fallback 'no-cargo))
-   (t (pcase table-view-native-auto-compile
-        ('nil (table-view-native--fallback 'no-binary))
-        ('t (table-view-native-compile) (table-view-native--fallback 'building))
-        (_ (if (y-or-n-p "Build the table-view native backend now (~30s)? ")
-               (progn (table-view-native-compile) (table-view-native--fallback 'building))
-             (table-view-native--fallback 'no-binary)))))))
+  "Return a validated backend path if ready, else nil.
+Does not prompt or build -- `table-view-native-display' owns the build
+decision; this is the best-effort resolver for the connection/respawn path."
+  (and table-view-native-enabled (table-view-native--resolve)))
 
 ;;; Connection
 
@@ -347,7 +347,6 @@ survives a backend respawn; CONN0/HANDLE0 bootstrap the first fetch."
 
 ;;; Public entry
 
-;;;###autoload
 (defun table-view-native--wire-source (source)
   "SOURCE with a `rows' payload converted from table-view rows to wire shape.
 Other source kinds (e.g. \"gen\", \"file\") pass through untouched."
@@ -357,14 +356,8 @@ Other source kinds (e.g. \"gen\", \"file\") pass through untouched."
                                   (append (plist-get source :rows) nil))))
     source))
 
-(defun table-view-native-display (buffer source spec &optional handlers)
-  "Display SPEC in BUFFER backed by the native tvx over SOURCE.
-SOURCE is a plist naming the data the backend should own:
-  (:kind \"rows\" :rows ROWS)  inline table-view ((id . ID) (cells . ALIST)) rows;
-  (:kind \"gen\"  :n N)        N synthetic rows generated in the backend.
-Falls back to the pure-elisp path -- with a warning -- when the backend is
-unavailable (a \"rows\" source still renders; others need the backend).
-Returns the buffer."
+(defun table-view-native--display-now (buffer source spec handlers)
+  "Open SOURCE on the backend and display SPEC in BUFFER (the native path)."
   (if-let ((conn (table-view-native--ensure-connection)))
       (let* ((buf (get-buffer-create buffer))
              ;; Capture any prior handle before `table-view-mode' wipes the
@@ -394,14 +387,87 @@ Returns the buffer."
           (add-hook 'kill-buffer-hook #'table-view-native--on-kill nil t))
         (when prior (table-view-native--close (car prior) (cdr prior)))
         buf)
-    ;; Fallback: render inline rows in pure elisp; other sources need the backend.
-    (if (equal (plist-get source :kind) "rows")
-        (progn
-          (table-view-display buffer spec handlers)
-          (table-view-set-rows buffer (append (plist-get source :rows) nil))
-          (get-buffer buffer))
-      (table-view-native--fallback 'unsupported-source)
-      (table-view-display buffer spec handlers))))
+    (table-view-native--display-fallback buffer source spec handlers)))
+
+(defun table-view-native--display-fallback (buffer source spec handlers)
+  "Render SOURCE in pure elisp: inline rows directly, other kinds need the backend."
+  (if (equal (plist-get source :kind) "rows")
+      (progn
+        (table-view-display buffer spec handlers)
+        (table-view-set-rows buffer (append (plist-get source :rows) nil))
+        (get-buffer buffer))
+    (table-view-native--fallback 'unsupported-source)
+    (table-view-display buffer spec handlers)))
+
+(defun table-view-native--render-status (buf spec head sub)
+  "Show a HEAD/SUB status placeholder for SPEC's title in BUF (before the table)."
+  (with-current-buffer buf
+    (let ((inhibit-read-only t))
+      (fundamental-mode)
+      (erase-buffer)
+      (insert (propertize (or (alist-get 'title spec) "Table") 'face '(:weight bold :height 1.1)) "\n\n")
+      (insert (propertize head 'face 'warning) "\n")
+      (insert (propertize sub 'face 'shadow) "\n"))
+    (setq buffer-read-only t)
+    (goto-char (point-min))))
+
+(defun table-view-native--display-deferred (buffer source spec handlers)
+  "Show a build placeholder in BUFFER, build the backend, then load it or show
+the error.  The compile runs asynchronously (Emacs stays responsive) with live
+output in *tvx-compile*; the real table replaces the placeholder on success."
+  (let ((buf (get-buffer-create buffer)))
+    (table-view-native--render-status
+     buf spec "Building native backend (tvx)…"
+     "Compiling with cargo — live output in *tvx-compile*.  The table loads when it finishes.")
+    (display-buffer buf)
+    (display-buffer (get-buffer-create "*tvx-compile*"))   ; watch progress/logs
+    (table-view-native-compile
+     nil
+     (lambda (path)
+       (cond
+        ((not (buffer-live-p buf)) nil)          ; user gave up and killed it
+        (path (table-view-native--display-now buffer source spec handlers))
+        (t (table-view-native--render-status
+            buf spec "Native backend build failed"
+            "cargo build failed — see *tvx-compile*.  Fix it, then M-x table-view-native-compile and re-open.")))))
+    buf))
+
+;;;###autoload
+(defun table-view-native-display (buffer source spec &optional handlers)
+  "Display SPEC in BUFFER backed by the native tvx over SOURCE.
+SOURCE is a plist naming the data the backend should own:
+  (:kind \"rows\" :rows ROWS)  inline table-view ((id . ID) (cells . ALIST)) rows;
+  (:kind \"gen\"  :n N)        N synthetic rows generated in the backend.
+
+When the backend must first be built (`table-view-native-auto-compile'), the
+display is *deferred*: BUFFER shows a build placeholder, cargo runs
+asynchronously with live output in *tvx-compile*, and the table loads once the
+build succeeds (or shows the error if it fails).  When the backend is
+unavailable and no build happens, falls back to the pure-elisp path with a
+warning (a \"rows\" source still renders; others need the backend).  Returns
+the buffer."
+  (cond
+   ;; Ready now: a live connection, or a validated binary to connect to.
+   ((or (and table-view-native--connection (jsonrpc-running-p table-view-native--connection))
+        (and table-view-native-enabled (table-view-native--resolve)))
+    (table-view-native--display-now buffer source spec handlers))
+   ((not table-view-native-enabled)
+    (table-view-native--display-fallback buffer source spec handlers))
+   ;; A build is already running (e.g. a second table): join it, then load.
+   (table-view-native--build-in-progress
+    (table-view-native--display-deferred buffer source spec handlers))
+   ((not (table-view-native--cargo))
+    (table-view-native--fallback 'no-cargo)
+    (table-view-native--display-fallback buffer source spec handlers))
+   ;; Buildable: decide per policy, and on a build defer the display.
+   (t (pcase table-view-native-auto-compile
+        ('nil (table-view-native--fallback 'no-binary)
+              (table-view-native--display-fallback buffer source spec handlers))
+        ('t (table-view-native--display-deferred buffer source spec handlers))
+        (_ (if (y-or-n-p "Build the table-view native backend now (~30s)? ")
+               (table-view-native--display-deferred buffer source spec handlers)
+             (table-view-native--fallback 'no-binary)
+             (table-view-native--display-fallback buffer source spec handlers)))))))
 
 ;;; Live mutation + queries
 
