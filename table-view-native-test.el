@@ -108,7 +108,7 @@ Returns nil when cargo is unavailable and no valid binary exists."
    (let ((buf (get-buffer-create " *tvn-e2e*")))
      (unwind-protect
          (progn
-           (table-view-native-display buf (list :kind "rows" :rows (tvn-test--wire (tvn-test--rows 20)))
+           (table-view-native-display buf (list :kind "rows" :rows (tvn-test--rows 20))
                                       tvn-test--spec)
            (sit-for 0.3)
            (with-current-buffer buf
@@ -128,7 +128,7 @@ Returns nil when cargo is unavailable and no valid binary exists."
         (buf (get-buffer-create " *tvn-fb*")))
     (unwind-protect
         (cl-letf (((symbol-function 'display-warning) (lambda (&rest _) (setq warned t))))
-          (table-view-native-display buf (list :kind "rows" :rows (tvn-test--wire (tvn-test--rows 5)))
+          (table-view-native-display buf (list :kind "rows" :rows (tvn-test--rows 5))
                                      tvn-test--spec)
           (should warned)
           (with-current-buffer buf (should (string-match-p "core-00000" (buffer-string)))))
@@ -211,7 +211,7 @@ Returns nil when cargo is unavailable and no valid binary exists."
    (let ((buf (get-buffer-create " *tvn-live*")))
      (unwind-protect
          (progn
-           (table-view-native-display buf (list :kind "rows" :rows (tvn-test--wire (tvn-test--rows 30)))
+           (table-view-native-display buf (list :kind "rows" :rows (tvn-test--rows 30))
                                       tvn-test--live-spec)
            (tvn-test--settle)
            (let* ((ch (buffer-local-value 'table-view-native--conn-handle buf))
@@ -241,7 +241,7 @@ Returns nil when cargo is unavailable and no valid binary exists."
    (let ((buf (get-buffer-create " *tvn-agg*")) (rows (tvn-test--rows 30)))
      (unwind-protect
          (progn
-           (table-view-native-display buf (list :kind "rows" :rows (tvn-test--wire rows)) tvn-test--live-spec)
+           (table-view-native-display buf (list :kind "rows" :rows rows) tvn-test--live-spec)
            (tvn-test--settle)
            (let ((lib (cl-count-if (lambda (r) (string-search "lib" (alist-get 'name (alist-get 'cells r)))) rows))
                  (sum (cl-reduce #'+ rows :key (lambda (r) (alist-get 'num (alist-get 'cells r))) :initial-value 0)))
@@ -256,7 +256,7 @@ Returns nil when cargo is unavailable and no valid binary exists."
    (let ((buf (get-buffer-create " *tvn-respawn*")))
      (unwind-protect
          (progn
-           (table-view-native-display buf (list :kind "rows" :rows (tvn-test--wire (tvn-test--rows 12)))
+           (table-view-native-display buf (list :kind "rows" :rows (tvn-test--rows 12))
                                       tvn-test--live-spec)
            (tvn-test--settle)
            (dolist (p (process-list))
@@ -282,7 +282,7 @@ Returns nil when cargo is unavailable and no valid binary exists."
                               (cons 'cells (list (cons 'name (format "n%02d" i)) (cons 'num i)))))))
      (unwind-protect
          (progn
-           (table-view-native-display buf (list :kind "rows" :rows (tvn-test--wire rows)) spec)
+           (table-view-native-display buf (list :kind "rows" :rows rows) spec)
            (tvn-test--settle)
            (should (= (buffer-local-value 'table-view--total buf) 6))
            (should (= (length (buffer-local-value 'table-view--rows buf)) 2)) ; 2-row window
@@ -296,7 +296,7 @@ Returns nil when cargo is unavailable and no valid binary exists."
   "Killing the buffer closes its backend handle and unregisters it."
   (tvn-test--skip-unless-binary
    (let ((buf (get-buffer-create " *tvn-close*")))
-     (table-view-native-display buf (list :kind "rows" :rows (tvn-test--wire (tvn-test--rows 5)))
+     (table-view-native-display buf (list :kind "rows" :rows (tvn-test--rows 5))
                                 tvn-test--live-spec)
      (tvn-test--settle)
      (let ((handle (cdr (buffer-local-value 'table-view-native--conn-handle buf))))

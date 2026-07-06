@@ -348,21 +348,34 @@ survives a backend respawn; CONN0/HANDLE0 bootstrap the first fetch."
 ;;; Public entry
 
 ;;;###autoload
+(defun table-view-native--wire-source (source)
+  "SOURCE with a `rows' payload converted from table-view rows to wire shape.
+Other source kinds (e.g. \"gen\", \"file\") pass through untouched."
+  (if (equal (plist-get source :kind) "rows")
+      (plist-put (copy-sequence source) :rows
+                 (vconcat (mapcar #'table-view-native--row->wire
+                                  (append (plist-get source :rows) nil))))
+    source))
+
 (defun table-view-native-display (buffer source spec &optional handlers)
   "Display SPEC in BUFFER backed by the native tvx over SOURCE.
-SOURCE is a plist, e.g. (:kind \"rows\" :rows [...]) or (:kind \"file\"
-:path P :format \"csv\").  Falls back to the pure-elisp path -- with a
-warning -- when the backend is unavailable.  Returns the buffer."
+SOURCE is a plist naming the data the backend should own:
+  (:kind \"rows\" :rows ROWS)  inline table-view ((id . ID) (cells . ALIST)) rows;
+  (:kind \"gen\"  :n N)        N synthetic rows generated in the backend.
+Falls back to the pure-elisp path -- with a warning -- when the backend is
+unavailable (a \"rows\" source still renders; others need the backend).
+Returns the buffer."
   (if-let ((conn (table-view-native--ensure-connection)))
       (let* ((buf (get-buffer-create buffer))
              ;; Capture any prior handle before `table-view-mode' wipes the
              ;; buffer-locals, so re-displaying can close it (no leak).
              (prior (buffer-local-value 'table-view-native--conn-handle buf))
+             (wire (table-view-native--wire-source source))
              (pg (alist-get 'pagination spec))
              (page-size (or (alist-get 'page-size pg) 50))
              (open (jsonrpc-request
                     conn 'open
-                    (list :source source
+                    (list :source wire
                           :columns (table-view-native--columns (table-view--own-spec spec))
                           :pageSize page-size
                           :protocol table-view-native-protocol)))
@@ -374,7 +387,7 @@ warning -- when the backend is unavailable.  Returns the buffer."
         (table-view-display buffer spec handlers nil
                             (table-view-native--page-fn buf conn handle))
         (with-current-buffer buf
-          (setq-local table-view-native--source source
+          (setq-local table-view-native--source wire  ; wire-ready, for respawn re-open
                       table-view-native--conn-handle (cons conn handle)
                       table-view-native--rev (or (plist-get open :rev) 0))
           (puthash handle buf table-view-native--handles)
@@ -383,9 +396,9 @@ warning -- when the backend is unavailable.  Returns the buffer."
         buf)
     ;; Fallback: render inline rows in pure elisp; other sources need the backend.
     (if (equal (plist-get source :kind) "rows")
-        (let ((rows (mapcar #'table-view-native--row (append (plist-get source :rows) nil))))
+        (progn
           (table-view-display buffer spec handlers)
-          (table-view-set-rows buffer rows)
+          (table-view-set-rows buffer (append (plist-get source :rows) nil))
           (get-buffer buffer))
       (table-view-native--fallback 'unsupported-source)
       (table-view-display buffer spec handlers))))

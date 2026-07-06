@@ -99,8 +99,15 @@ Runnable demos live in [`examples/`](examples/):
 | [`bulk.el`](examples/bulk.el)                   | marking (`m`), narrowing (`/`), and bulk actions (`bulk: t`) |
 | [`paginate.el`](examples/paginate.el)           | server-side pagination over a fake backend (`page-fn`, push-down sort/filter, cross-page marks) |
 | [`org-links.el`](examples/org-links.el)         | Org links in cells (`[[target][desc]]`), followed by `C-c C-o` or mouse |
+| [`native.el`](examples/native.el)               | **1,000,000 rows** sorted/filtered in a Rust backend (`table-view-native-display`) |
+| [`native-live.el`](examples/native-live.el)     | live updates through the backend (`table-view-native-patch` → `$/delta`), plus Rust `count`/`aggregate` |
 
 Open one and `M-x eval-buffer`.
+
+> The two `native*` demos use the optional Rust backend (`tvx`).  First run
+> needs `M-x table-view-native-compile` (requires [cargo](https://rustup.rs));
+> without it, table-view runs pure elisp and warns.  See
+> [`docs/proposals/native-backend.org`](docs/proposals/native-backend.org).
 
 ## Keybindings
 
