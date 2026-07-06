@@ -1372,6 +1372,19 @@ Not bound by default; sorting is on `^' (`table-view-sort-cycle')."
 
 (define-obsolete-function-alias 'table-view-sort 'table-view-revert "0.1.0")
 
+(defun table-view-apply-sort ()
+  "Apply the seeded sort (`table-view--sort-keys') to the current rows, then
+re-render.  For buffers that fill rows AFTER `table-view-display' -- via a
+`fill-fn' or a later `table-view-set-rows' -- where the spec's declared default
+sort would not otherwise take effect: the core seeds the keys on display but
+sorts only rows that arrive with the spec.  A no-op when no sort keys are set;
+leaves any active filter or narrowing untouched."
+  (interactive)
+  (when table-view--sort-keys
+    (setq table-view--sorted t)
+    (table-view--sort-rows)
+    (table-view--render)))
+
 (defun table-view-mark-toggle ()
   "Toggle the mark on the row at point, then move to the next row.
 Marked rows show a `*' in a gutter column and are the operand of a

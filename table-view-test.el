@@ -2144,5 +2144,44 @@ this proves that output is byte- and text-property-identical to a full redraw."
         (should (equal (line-of "a") a-before))       ; unchanged row untouched
         (should-not (equal (line-of "b") b-before)))))) ; changed row rewritten
 
+(ert-deftest tv-test-apply-sort-applies-seeded-sort ()
+  "`table-view-apply-sort' orders fill-fn/set-rows rows by the spec's sort."
+  (let ((buf (get-buffer-create " *tv-apply-sort*"))
+        (spec '((title . "x")
+                (columns . (((key . "name") (header . "N"))
+                            ((key . "count") (header . "C") (type . "number"))))
+                (sort . ((column . "count") (ascending . t))))))
+    (unwind-protect
+        (progn
+          (table-view-display buf spec nil)           ; client buffer, seeds --sort-keys
+          (table-view-set-rows buf (list '((id . "a") (cells . ((name . "a") (count . 30))))
+                                         '((id . "b") (cells . ((name . "b") (count . 10))))
+                                         '((id . "c") (cells . ((name . "c") (count . 20))))))
+          (with-current-buffer buf
+            ;; set-rows keeps insertion order -- the seeded sort has not applied
+            (should (equal (mapcar (lambda (r) (alist-get 'id r)) table-view--rows) '("a" "b" "c")))
+            (table-view-apply-sort)
+            (should (equal (mapcar (lambda (r) (alist-get 'id r)) table-view--rows) '("b" "c" "a")))))
+      (kill-buffer buf))))
+
+(ert-deftest tv-test-apply-sort-preserves-filter ()
+  "`table-view-apply-sort' sorts without clearing an active filter."
+  (let ((buf (get-buffer-create " *tv-apply-sort-f*"))
+        (spec '((title . "x")
+                (columns . (((key . "name") (header . "N"))
+                            ((key . "count") (header . "C") (type . "number"))))
+                (sort . ((column . "count") (ascending . t))))))
+    (unwind-protect
+        (progn
+          (table-view-display buf spec nil)
+          (table-view-set-rows buf (list '((id . "a") (cells . ((name . "alpha") (count . 30))))
+                                         '((id . "b") (cells . ((name . "bravo") (count . 10))))))
+          (with-current-buffer buf
+            (setq table-view--filter "alpha")
+            (table-view-apply-sort)
+            (should (equal table-view--filter "alpha"))          ; filter untouched
+            (should (= 1 (length (table-view--visible-rows)))))) ; still filtered
+      (kill-buffer buf))))
+
 (provide 'table-view-test)
 ;;; table-view-test.el ends here
