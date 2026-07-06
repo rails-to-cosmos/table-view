@@ -1915,5 +1915,50 @@ push-down can be tested)."
             (should (= (length (table-view--visible-rows)) 1))))
       (kill-buffer buf))))
 
+;;; Width cache (perf)
+
+(ert-deftest tv-test-width-cache-stays-consistent ()
+  ;; The cached widths must always equal a fresh computation over the visible
+  ;; rows -- if any mutation seam forgot to invalidate, the cache would be
+  ;; stale here and the columns would render misaligned.
+  (tv-test--with-table
+    (cl-flet ((chk () (should (equal table-view--widths-cache
+                                     (table-view--widths table-view--spec
+                                                         (table-view--visible-rows))))))
+      (chk)                                          ; after the initial render
+      (should table-view--widths-cache)              ; cache is populated
+      (table-view-upsert-row (current-buffer)
+        '((id . "w") (cells . ((name . "a-really-really-wide-name") (count . 1) (status . "ok")))))
+      (chk)                                          ; upsert widened the column
+      (should (>= (alist-get "name" table-view--widths-cache nil nil #'equal) 25))
+      (table-view-delete-row (current-buffer) "w")
+      (chk)                                          ; delete shrank it back
+      (table-view-filter "alpha")
+      (chk)                                          ; filter changed the visible set
+      (call-interactively #'table-view-sort)         ; g clears the filter
+      (chk)
+      (setq table-view--sort-keys '(("count" . t)))
+      (call-interactively #'table-view-sort-cycle)   ; sort reuses the cache
+      (chk)
+      (table-view--goto-id "a") (table-view-mark-toggle)
+      (table-view--goto-id "c") (table-view-mark-toggle)
+      (table-view-narrow-toggle)
+      (chk)                                          ; narrowed to the marked subset
+      (table-view-narrow-toggle)
+      (chk)                                          ; widened back
+      (table-view-add-column '((key . "extra") (header . "Extra-Wide-Header") (type . "text")))
+      (chk)                                          ; new column
+      (table-view-remove-column "extra")
+      (chk))))                                       ; column removed
+
+(ert-deftest tv-test-width-cache-reused-on-sort ()
+  ;; sorting must NOT recompute widths (same cells) -- the cache object persists
+  (tv-test--with-table
+    (let ((cache table-view--widths-cache))
+      (should cache)
+      (setq table-view--sort-keys '(("count" . t)))
+      (call-interactively #'table-view-sort-cycle)
+      (should (eq table-view--widths-cache cache)))))  ; identical object, not recomputed
+
 (provide 'table-view-test)
 ;;; table-view-test.el ends here
