@@ -19,6 +19,23 @@ up later.
 - [[file:proposals/native-backend.org][Native data backend (tvx)]] :: a Rust background process as a fast
   local =page-fn= over =jsonrpc.el= for 100k–1M rows.
 
+* Bugs
+
+Concrete defects to fix, each with the fix sketched.
+
+None open.
+
+** Fixed
+
+- *Mark/unmark moves point to column 0 (loses cell column, walks off last row).*
+  ~table-view-mark-toggle~ and ~table-view-unmark~ both ended with a raw
+  ~(forward-line 1)~, which dropped to column 0 (no cell-snap) and, on the last
+  data row, left the rows region onto the hint/blank line.  *Fixed:* both now
+  end with ~(table-view--move-row 1)~, the module's own row mover (preserves the
+  column, snaps to a cell, clamps at the last row).  Regression tests:
+  ~tv-test-mark-move-preserves-column~, ~tv-test-mark-last-row-stays-on-row~,
+  ~tv-test-unmark-last-row-stays-on-row~.  Surfaced from org-glance table use.
+
 * Reviews
 
 Findings from adversarial reviews of shipped work.

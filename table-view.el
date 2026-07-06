@@ -1388,7 +1388,7 @@ Marked rows show a `*' in a gutter column and are the operand of a
       ;; resizes it; otherwise the gutter is a fixed prefix and widths hold.
       (when was-narrowed (table-view--invalidate-widths))
       (table-view--rerender-after-mark was-active)
-      (forward-line 1))))
+      (table-view--move-row 1))))
 
 (defun table-view-unmark ()
   "Unmark the row at point (a no-op when it is not marked), then move down.
@@ -1407,7 +1407,7 @@ Complements `m' (mark/unmark toggle) and `U' (unmark all); mirrors dired's
         (table-view--prune-marks))      ; widen if that was the last mark
       (when was-narrowed (table-view--invalidate-widths))
       (table-view--rerender-after-mark was-active)
-      (forward-line 1))))
+      (table-view--move-row 1))))
 
 (defun table-view-unmark-all ()
   "Remove every mark (and its cached payload), widening a narrowed view."
@@ -1804,6 +1804,48 @@ ROWS, and lands point on the first row (or the requested row id)."
           (table-view--invalidate-widths)
           (table-view--render)
           (table-view--land-point pending))))))
+
+(defun table-view-apply-delta (buffer ops)
+  "Apply live-update OPS to the current rows of table-view BUFFER.
+OPS is a list of plists describing how the visible window changed, applied
+in order:
+
+  (:op \"insert\" :index I :row ROW)  splice ROW in at window index I;
+  (:op \"delete\" :index I)           drop the row at window index I;
+  (:op \"reset\"  :rows ROWS)         replace the whole window with ROWS.
+
+Each ROW is a raw ((id . ID) (cells . ALIST)) row (computed columns are
+filled in here).  A row whose id and content match one already shown reuses
+that row object, so `eq'-based incremental rendering leaves its line -- and
+any that only moved -- untouched.  Re-renders once for the whole batch."
+  (let ((buf (get-buffer buffer)))
+    (when (buffer-live-p buf)
+      (with-current-buffer buf
+        (let ((pool (make-hash-table :test 'equal)))
+          (dolist (r table-view--rows)
+            (puthash (alist-get 'id r) r pool))
+          (cl-flet ((reuse (raw)
+                      ;; Keep the existing row object when nothing changed.
+                      (let* ((new (car (table-view--compute-cells (list raw) table-view--spec)))
+                             (old (gethash (alist-get 'id new) pool)))
+                        (if (and old (equal old new)) old new))))
+            (let ((rows (copy-sequence table-view--rows)))
+              (dolist (op ops)
+                (pcase (plist-get op :op)
+                  ("delete" (let ((i (plist-get op :index)))
+                              (setq rows (append (seq-take rows i) (seq-drop rows (1+ i))))))
+                  ("insert" (let ((i (plist-get op :index)) (row (reuse (plist-get op :row))))
+                              (setq rows (append (seq-take rows i) (list row) (seq-drop rows i)))))
+                  ("reset" (setq rows (mapcar #'reuse (append (plist-get op :rows) nil))))))
+              (setq table-view--rows rows))))
+        ;; Keep marked-row snapshots fresh when a marked row is still visible, so
+        ;; bulk actions and the narrowed render see post-delta data (as in
+        ;; `table-view-set-page').
+        (dolist (r table-view--rows)
+          (let ((cell (assoc (alist-get 'id r) table-view--mark-cache)))
+            (when cell (setcdr cell r))))
+        (table-view--invalidate-widths)
+        (table-view--render)))))
 
 (defun table-view-page-error (buffer message)
   "Report that fetching a page of table-view BUFFER failed with MESSAGE.

@@ -1070,6 +1070,34 @@ This is the set-rows contract: a backend-delivered value wins over the `value-fn
     (table-view-mark-toggle)
     (should (equal (get-text-property (point) 'table-view-id) "b"))))
 
+(ert-deftest tv-test-mark-move-preserves-column ()
+  ;; The post-mark advance must keep the cell column (not drop to column 0).
+  (tv-test--with-table
+    (table-view--goto-id "a") (table-view-mark-toggle)   ; gutter active, "a" marked
+    (table-view--goto-id "b")
+    (table-view-forward-column 2)                        ; onto a data cell
+    (let ((col (current-column)) (cell (tv-test--col-at-point)))
+      (table-view-mark-toggle)                           ; marks "b", advances to "c"
+      (should (equal (get-text-property (point) 'table-view-id) "c"))
+      (should (= (current-column) col))
+      (should (equal (tv-test--col-at-point) cell)))))
+
+(ert-deftest tv-test-mark-last-row-stays-on-row ()
+  ;; Marking the last row must not walk point off the data rows.
+  (tv-test--with-table
+    (table-view--goto-id "c")
+    (table-view-mark-toggle)
+    (should (get-text-property (line-beginning-position) 'table-view-id))
+    (should (equal (get-text-property (point) 'table-view-id) "c"))))
+
+(ert-deftest tv-test-unmark-last-row-stays-on-row ()
+  (tv-test--with-table
+    (table-view--goto-id "c") (table-view-mark-toggle)
+    (table-view--goto-id "c")
+    (table-view-unmark)
+    (should (get-text-property (line-beginning-position) 'table-view-id))
+    (should (equal (get-text-property (point) 'table-view-id) "c"))))
+
 (ert-deftest tv-test-mark-gutter-preserves-column-nav ()
   (tv-test--with-table
     (table-view--goto-id "a") (table-view-mark-toggle)   ; gutter now present
