@@ -1,0 +1,37 @@
+#+TITLE: table-view — Design Wiki
+#+OPTIONS: toc:nil num:nil
+
+Design notes, proposals, and reviews for =table-view=.  All documents here are
+Org-mode and cross-link each other (see [[file:../CLAUDE.md][CLAUDE.md]] for the convention).  Start
+here and follow the links.
+
+* Proposals (deferred work)
+
+Ideas surfaced but intentionally not built yet, each with enough design to pick
+up later.
+
+- [[file:proposals/incremental-render-o1.org][Incremental render → O(1) via mutator hints]] :: make streaming
+  edits O(changed) instead of O(rows).
+- [[file:proposals/incremental-width-maintenance.org][Incremental column-width maintenance]] :: avoid the full width
+  recompute when a max-holding row changes.
+- [[file:proposals/select-all-matching.org][Bulk “select all matching” (server pagination v2)]] :: act on the
+  whole filtered result set without loading it.
+
+* Reviews
+
+Findings from adversarial reviews of shipped work.
+
+- [[file:reviews/incremental-render.org][Adversarial review — incremental render]]
+
+* Map
+
+#+begin_example
+docs/
+  index.org                     ← you are here
+  proposals/
+    incremental-render-o1.org        ┐ perf follow-ups, cross-linked
+    incremental-width-maintenance.org ┘
+    select-all-matching.org          pagination v2
+  reviews/
+    incremental-render.org           review of the shipped incremental render
+#+end_example

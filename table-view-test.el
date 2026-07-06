@@ -1960,5 +1960,161 @@ push-down can be tested)."
       (call-interactively #'table-view-sort-cycle)
       (should (eq table-view--widths-cache cache)))))  ; identical object, not recomputed
 
+(ert-deftest tv-test-width-cache-kept-on-fitting-append ()
+  ;; appending a row that fits the current widths keeps the cache (O(1) render),
+  ;; and the kept cache still equals a fresh computation
+  (tv-test--with-table
+    (let ((cache table-view--widths-cache))
+      (should cache)
+      (table-view-upsert-row (current-buffer)
+        '((id . "fit") (cells . ((name . "x") (count . 1) (status . "ok")))))
+      (should (eq table-view--widths-cache cache))     ; kept, not recomputed
+      (should (equal table-view--widths-cache
+                     (table-view--widths table-view--spec (table-view--visible-rows)))))))
+
+(ert-deftest tv-test-width-cache-recomputed-on-widening-append ()
+  ;; appending a WIDER row invalidates and recomputes, widening the column
+  (tv-test--with-table
+    (table-view-upsert-row (current-buffer)
+      '((id . "wide") (cells . ((name . "a-really-really-wide-name") (count . 1) (status . "ok")))))
+    (should (equal table-view--widths-cache
+                   (table-view--widths table-view--spec (table-view--visible-rows))))
+    (should (>= (alist-get "name" table-view--widths-cache nil nil #'equal) 25))))
+
+(ert-deftest tv-test-width-cache-kept-on-non-max-update ()
+  ;; updating a row that is NOT a column max, with a value that fits, keeps the
+  ;; cache -- and the kept cache still matches a fresh computation
+  (tv-test--with-table            ; names alpha(5) bravo(5) charlie(7): charlie is max
+    (let ((cache table-view--widths-cache))
+      (table-view-upsert-row (current-buffer)   ; update bravo (not the max) -> "bravo"
+        '((id . "b") (cells . ((name . "bravo") (count . 2) (status . "ok")))))
+      (should (eq table-view--widths-cache cache))    ; cache kept
+      (should (equal table-view--widths-cache
+                     (table-view--widths table-view--spec (table-view--visible-rows)))))))
+
+(ert-deftest tv-test-width-cache-recomputed-on-max-row-update ()
+  ;; updating the row that HOLDS a column's max must recompute (it may shrink)
+  (tv-test--with-table            ; names alpha(5) bravo(5) charlie(7): charlie is max
+    (table-view-upsert-row (current-buffer)   ; shrink charlie -> "cee"
+      '((id . "c") (cells . ((name . "cee") (count . 2) (status . "warn")))))
+    (should (equal table-view--widths-cache   ; recomputed to the true (shrunk) width
+                   (table-view--widths table-view--spec (table-view--visible-rows))))
+    (should (= (alist-get "name" table-view--widths-cache nil nil #'equal) 5))))  ; max = alpha/bravo
+
+;;; Incremental render (perf) -- differential oracle vs full render
+
+(defun tv-test--fingerprint ()
+  "Text + full text-property list at every buffer position."
+  (let (out (p (point-min)))
+    (while (< p (point-max))
+      (push (cons (char-after p) (text-properties-at p)) out)
+      (setq p (1+ p)))
+    (nreverse out)))
+
+(defun tv-test--render-equals-full ()
+  "Assert the current buffer equals what a forced FULL render would produce.
+The buffer may have been drawn incrementally (or by the in-place mark path);
+this proves that output is byte- and text-property-identical to a full redraw."
+  (let ((actual (tv-test--fingerprint)))
+    (setq table-view--rendered-rows nil)          ; force the next render to be full
+    (table-view--render)
+    (should (equal actual (tv-test--fingerprint)))))
+
+(ert-deftest tv-test-incremental-render-matches-full ()
+  ;; Every mutation's incremental (or in-place) render must match a full redraw.
+  (tv-test--with-table
+    (tv-test--render-equals-full)                 ; initial
+    (table-view-upsert-row (current-buffer)       ; update in place
+      '((id . "b") (cells . ((name . "BRAVO-EXTENDED") (count . 5) (status . "warn")))))
+    (tv-test--render-equals-full)
+    (table-view-upsert-row (current-buffer)       ; append
+      '((id . "d") (cells . ((name . "delta") (count . 4) (status . "ok")))))
+    (tv-test--render-equals-full)
+    (table-view-delete-row (current-buffer) "c")  ; delete a middle row
+    (tv-test--render-equals-full)
+    (setq table-view--sort-keys '(("count" . t))) ; full reorder
+    (call-interactively #'table-view-sort-cycle)
+    (tv-test--render-equals-full)
+    (table-view-filter "a")                       ; filter (visible set shrinks)
+    (tv-test--render-equals-full)
+    (call-interactively #'table-view-sort)        ; g clears filter
+    (tv-test--render-equals-full)
+    (table-view--goto-id "a") (table-view-mark-toggle)   ; gutter appears
+    (tv-test--render-equals-full)
+    (table-view--goto-id "d") (table-view-mark-toggle)   ; in-place mark
+    (tv-test--render-equals-full)
+    (table-view--goto-id "a") (table-view-unmark)        ; in-place unmark
+    (tv-test--render-equals-full)
+    (table-view--goto-id "a") (table-view-mark-toggle)
+    (table-view-narrow-toggle)                    ; narrow to marked
+    (tv-test--render-equals-full)
+    (table-view-narrow-toggle)                    ; widen
+    (tv-test--render-equals-full)
+    (table-view-unmark-all)                       ; gutter disappears
+    (tv-test--render-equals-full)
+    (table-view-add-column '((key . "x") (header . "X-Header") (type . "text")))
+    (tv-test--render-equals-full)
+    (table-view-remove-column "x")
+    (tv-test--render-equals-full)))
+
+(ert-deftest tv-test-incremental-render-chained-streaming ()
+  ;; Many upserts in a row without a full render between them (chained
+  ;; incrementals) must still converge to the correct full-render output.
+  (tv-test--with-table
+    (dotimes (i 15)
+      (table-view-upsert-row (current-buffer)
+        `((id . ,(format "s%d" i))
+          (cells . ((name . ,(format "stream-%02d" i)) (count . ,i) (status . "ok"))))))
+    ;; update a few existing streamed rows in place
+    (table-view-upsert-row (current-buffer)
+      '((id . "s7") (cells . ((name . "stream-07-upd") (count . 99) (status . "err")))))
+    (table-view-delete-row (current-buffer) "s3")
+    (tv-test--render-equals-full)
+    (should (= (length table-view--rows) (+ 3 15 -1)))))   ; a,b,c + 15 streamed - 1 deleted
+
+(ert-deftest tv-test-incremental-render-links-toggle ()
+  ;; Regression: toggling `table-view-render-links' between renders must not
+  ;; leave stale (eq-unchanged) rows rendered under the old flag, nor a stale
+  ;; width cache.  The flip forces a full redraw.
+  (let ((table-view-render-links t))
+    (tv-test--with-display
+        "{ \"columns\": [ {\"key\":\"u\",\"header\":\"U\"} ],
+           \"rows\": [ {\"id\":\"a\",\"cells\":{\"u\":\"[[http://x][Apple]]\"}},
+                       {\"id\":\"b\",\"cells\":{\"u\":\"[[http://y][Banana]]\"}} ] }"
+      (should (string-match-p "Apple" (buffer-string)))                      ; link rendered
+      (should-not (string-match-p (regexp-quote "[[http") (buffer-string)))
+      (setq table-view-render-links nil)                                     ; consumer flips it
+      (table-view-upsert-row (current-buffer)                                ; any re-render
+        '((id . "b") (cells . ((u . "[[http://y][Banana]]")))))
+      (should (string-match-p (regexp-quote "[[http://x][Apple]]") (buffer-string))) ; verbatim now
+      (should-not (string-match-p "Apple |" (buffer-string)))                ; no stale delinked row
+      (tv-test--render-equals-full))))                                       ; == a full redraw
+
+(ert-deftest tv-test-render-multiline-cell ()
+  ;; Regression: a cell value with a newline is flattened to one line, so the
+  ;; row occupies a single buffer line and incremental line-counting stays correct.
+  (tv-test--with-table
+    (table-view-upsert-row (current-buffer)
+      '((id . "b") (cells . ((name . "line1\nline2") (count . 1) (status . "ok")))))
+    (should (string-match-p "line1 line2" (buffer-string)))     ; newline -> space
+    (should-not (string-match-p "line1\nline2" (buffer-string)))
+    (tv-test--render-equals-full)
+    (table-view-upsert-row (current-buffer)                     ; a later diff still aligns
+      '((id . "c") (cells . ((name . "charlie") (count . 2) (status . "warn")))))
+    (tv-test--render-equals-full)))
+
+(ert-deftest tv-test-incremental-render-reuses-lines ()
+  ;; An upsert that fits the current column widths must rewrite ONLY the changed
+  ;; row -- an unchanged row's line stays byte-identical (not repadded).
+  (tv-test--with-table
+    (cl-flet ((line-of (id) (save-excursion (table-view--goto-id id)
+                                            (buffer-substring (line-beginning-position)
+                                                              (line-end-position)))))
+      (let ((a-before (line-of "a")) (b-before (line-of "b")))
+        (table-view-upsert-row (current-buffer)      ; same widths (all fit)
+          '((id . "b") (cells . ((name . "bravo") (count . 2) (status . "ok")))))
+        (should (equal (line-of "a") a-before))       ; unchanged row untouched
+        (should-not (equal (line-of "b") b-before)))))) ; changed row rewritten
+
 (provide 'table-view-test)
 ;;; table-view-test.el ends here

@@ -1,0 +1,77 @@
+#+TITLE: Adversarial review — incremental render
+#+OPTIONS: toc:nil num:nil
+
+[[file:../index.org][← Wiki index]] · follow-ups:
+[[file:../proposals/incremental-render-o1.org][O(1) render]], [[file:../proposals/incremental-width-maintenance.org][width maintenance]]
+
+* Scope
+
+Adversarial find→verify review of the shipped incremental render and the
+width-keep optimization in =table-view.el=:
+
+- =table-view--render= dispatch (incremental vs full) and the =rendered-*= state.
+- =table-view--render-incremental= — the common prefix/suffix diff, =vconcat=,
+  =nth-row-pos= boundaries, and point restoration.
+- =table-view--upsert-keeps-widths-p= and width-cache invalidation.
+- Interactions with paged / narrowed views, the in-place mark path, value-fn
+  columns, and =table-view-render-links=.
+
+Reviewed along four lenses: /diff algorithm/, /incremental guard/,
+/width-keep/, and /integration & point/.  Each candidate finding was
+adversarially re-verified against the code and the existing tests.
+
+* Existing correctness guards
+
+- =tv-test-incremental-render-matches-full= and
+  =tv-test-incremental-render-chained-streaming= — the incrementally-drawn
+  buffer is asserted byte- and text-property-identical to a forced full render.
+- =tv-test-width-cache-stays-consistent= and friends — the width cache always
+  equals a fresh computation after every mutation type.
+- Full suite: 201 tests, clean byte-compile.
+
+* Findings
+
+Five confirmed findings that deduplicate to *two* real bugs, both since
+*fixed* with regression tests.  (No spurious findings survived verification.)
+
+** [FIXED] Runtime toggle of ~table-view-render-links~ left stale rows and widths — medium
+
+Found independently by four lenses (diff-algo, guard, width-keep, integration).
+
+=table-view-render-links= is a global flag that changes a cell's display text,
+width, /and/ text properties without changing any row object.  The incremental
+guard compares only row objects (=eq=), columns, mark-gutter, and widths, and
+=table-view--link-cache-check= dropped only the /text/ memo caches on a flip —
+not the width cache or the incremental-render record.  So after a consumer did
+=(setq table-view-render-links nil)=, a re-render that didn't otherwise
+invalidate widths (=^= sort, in-place mark, a width-keeping upsert) left
+=eq=-unchanged rows drawn under the old flag — a mixed delinked/raw buffer that
+diverged from a full render, with misaligned columns.
+
+- *Repro*: a link column showing =Apple=; flip the flag to nil; =^= sort →
+  some rows stay =Apple= (old), reordered rows show raw =[[http://…][…]]=.
+- *Root cause*: the flag is an input to cell text/width/props but was not part
+  of the incremental guard nor a width-invalidation seam.
+- *Fix*: =table-view--link-cache-check= now also invalidates the width cache
+  and nils =table-view--rendered-rows= (forcing a full redraw) on a flip, and
+  =table-view--render= calls it *first*, before widths and the path decision.
+- *Test*: =tv-test-incremental-render-links-toggle=.
+
+** [FIXED] A cell value containing a newline desynced line counting — low
+
+=table-view--nth-row-pos= advances =forward-line N= from the first row,
+assuming one buffer line per row.  A cell whose display string contained a
+newline made its row span two buffer lines (both tagged with the same id), so
+=nth-row-pos= miscounted and =delete-region= cut the wrong region — a garbled
+incremental buffer.  (A newline also broke a *full* render's fixed-column
+layout, just without corruption.)
+
+- *Fix*: =table-view--str= now flattens control characters (=[[:cntrl:]]=) to
+  spaces, so every row is exactly one buffer line in both render paths.
+- *Test*: =tv-test-render-multiline-cell=.
+
+* Outcome
+
+Both fixed; =203= tests pass with a clean byte-compile.  The differential
+oracle now also exercises a render-links toggle and a multi-line cell, closing
+the two gaps the review exposed.

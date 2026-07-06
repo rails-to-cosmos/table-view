@@ -187,11 +187,17 @@ buffers."
   (alist-get (intern key) (alist-get 'cells row)))
 
 (defun table-view--str (val)
-  "Render cell VAL as a display string."
-  (cond ((null val) "")
-        ((stringp val) val)
-        ((numberp val) (number-to-string val))
-        (t (format "%s" val))))
+  "Render cell VAL as a single-line display string.
+Control characters (newlines, tabs, ...) become spaces so every row stays on
+exactly one buffer line -- otherwise a cell newline would break the fixed
+column layout and the one-line-per-row assumption of incremental rendering."
+  (let ((s (cond ((null val) "")
+                 ((stringp val) val)
+                 ((numberp val) (number-to-string val))
+                 (t (format "%s" val)))))
+    (if (string-match-p "[[:cntrl:]]" s)
+        (replace-regexp-in-string "[[:cntrl:]]+" " " s)
+      s)))
 
 (defun table-view--badge-color (col value)
   "Return the colour declared for VALUE in badge column COL, or nil."
@@ -280,13 +286,22 @@ off or S has no link."
 (defconst table-view--link-cache-cap 65536
   "Per-cache entry cap; a cache is cleared wholesale once it grows past this.")
 
+;; Forward declaration: `table-view--link-cache-check' resets the
+;; incremental-render record, whose defvar-local is further down.
+(defvar table-view--rendered-rows)
+
 (defun table-view--link-cache-check ()
-  "Drop the link caches when `table-view-render-links' has changed, so
-memoization stays behaviour-identical to recomputing."
+  "Re-sync caches derived from `table-view-render-links' when it has changed.
+The flag alters a cell's display text, width, AND text properties without
+changing any row object, so a change must drop the link memo caches, the width
+cache, and the incremental-render record -- otherwise `eq'-unchanged rows keep
+their pre-toggle rendering and columns misalign."
   (unless (eq table-view--links-cache-flag table-view-render-links)
     (setq table-view--links-cache-flag table-view-render-links
           table-view--linkify-cache nil
-          table-view--delink-cache nil)))
+          table-view--delink-cache nil
+          table-view--rendered-rows nil)      ; force a full redraw
+    (table-view--invalidate-widths)))
 
 (defmacro table-view--cached-link (cache-var s &rest body)
   "Memoize BODY (the transform of string S) in buffer-local CACHE-VAR."
@@ -579,9 +594,37 @@ narrowed), then restricted to the current filter."
   "Drop the cached column widths so the next render recomputes them."
   (setq table-view--widths-cache nil))
 
+;; A record of what the buffer currently shows, so a re-render can diff the new
+;; visible rows against it and rewrite only the lines that changed (see
+;; `table-view--render-incremental').
+(defvar-local table-view--rendered-rows nil
+  "The row objects currently drawn in the buffer, in order.")
+(defvar-local table-view--rendered-widths nil
+  "The widths alist the current buffer content was drawn with.")
+(defvar-local table-view--rendered-columns nil
+  "The `columns' list the current buffer content was drawn with.")
+(defvar-local table-view--rendered-marks-active nil
+  "Whether the mark gutter is present in the current buffer content.")
+
 (defun table-view--cell-width (col row)
   "Screen width of COL's cell in ROW (its displayed text, links reduced)."
   (string-width (table-view--cell-text col (table-view--cell row (alist-get 'key col)))))
+
+(defun table-view--upsert-keeps-widths-p (old new)
+  "Non-nil when upserting NEW cannot change any cached column width.
+OLD is the row being replaced, or nil for an append.  A column's width is
+unchanged when NEW's cell fits the current width AND -- for a replacement --
+OLD's cell was strictly below it (so removing OLD cannot shrink the column).
+Conservative: if OLD sat at a column's max, the width is recomputed."
+  (and table-view--widths-cache
+       (cl-every
+        (lambda (col)
+          (let ((w (or (alist-get (alist-get 'key col) table-view--widths-cache
+                                  nil nil #'equal)
+                       0)))
+            (and (<= (table-view--cell-width col new) w)
+                 (or (null old) (< (table-view--cell-width col old) w)))))
+        (table-view--columns table-view--spec))))
 
 (defun table-view--widths (spec rows)
   "Return alist of column-key -> display width for SPEC over ROWS."
@@ -688,19 +731,33 @@ render in load order and only reorder on `^'."
         (setq pos (next-single-property-change pos 'table-view-id))))
     found))
 
-(defun table-view--render ()
-  "Re-render the current buffer from spec + rows.
-Renders rows in their current order; sorting is explicit (see
-`table-view--sort-rows'), so a row updated by an action stays in place.
-Keeps point on the same row id when possible, else falls back to the
-same line number."
-  (let* ((spec table-view--spec)
-         (rows (table-view--visible-rows))
-         (widths (or table-view--widths-cache
-                     (setq table-view--widths-cache (table-view--widths spec rows))))
-         (inhibit-read-only t)
-         (line (line-number-at-pos))
-         (id (get-text-property (point) 'table-view-id)))
+(defun table-view--insert-row (spec row widths)
+  "Insert ROW's line at point, tagged with its id and row object."
+  (let ((start (point)))
+    (insert (table-view--row-string spec row widths #'table-view--cell-string) "\n")
+    (put-text-property start (point) 'table-view-id (alist-get 'id row))
+    (put-text-property start (point) 'table-view-row row)))
+
+(defun table-view--remember-render (rows widths)
+  "Record ROWS and WIDTHS as the buffer's current content."
+  (setq table-view--rendered-rows rows
+        table-view--rendered-widths widths
+        table-view--rendered-columns (table-view--columns table-view--spec)
+        table-view--rendered-marks-active (table-view--marks-active-p)))
+
+(defun table-view--nth-row-pos (n)
+  "Buffer position at the start of the Nth (0-based) data row line.
+N equal to the row count returns the position just past the last row."
+  (save-excursion
+    (goto-char (or (text-property-not-all (point-min) (point-max) 'table-view-id nil)
+                   (point-max)))
+    (forward-line n)
+    (point)))
+
+(defun table-view--render-full (spec rows widths)
+  "Erase the buffer and redraw everything from SPEC, ROWS, and WIDTHS."
+  (let ((line (line-number-at-pos))
+        (id (get-text-property (point) 'table-view-id)))
     (erase-buffer)
     (insert (propertize (or (alist-get 'title spec) "Table")
                         'face '(:weight bold :height 1.1))
@@ -711,13 +768,62 @@ same line number."
     (if (null rows)
         (insert (propertize "  (no rows)\n" 'face 'shadow))
       (dolist (row rows)
-        (let ((start (point)))
-          (insert (table-view--row-string spec row widths #'table-view--cell-string) "\n")
-          (put-text-property start (point) 'table-view-id (alist-get 'id row))
-          (put-text-property start (point) 'table-view-row row))))
+        (table-view--insert-row spec row widths)))
+    (table-view--remember-render rows widths)
     (unless (and id (table-view--goto-id id))
       (goto-char (point-min))
       (forward-line (1- line)))))
+
+(defun table-view--render-incremental (spec rows widths)
+  "Redraw only the rows that changed since the last render.
+The header, rule, and unchanged rows are left untouched; ROWS is diffed
+against `table-view--rendered-rows' by a common prefix and suffix (rows are
+compared by object identity, so a replaced/added/removed/reordered row falls
+into the rewritten middle).  Only called by `table-view--render' when the
+header layout -- columns, widths, and mark-gutter presence -- is unchanged."
+  (table-view--refresh-hint)
+  (let* ((old (vconcat table-view--rendered-rows))
+         (new (vconcat rows))
+         (no (length old)) (nn (length new))
+         (id (get-text-property (point) 'table-view-id))
+         (line (line-number-at-pos))
+         (p 0) (s 0))
+    (while (and (< p no) (< p nn) (eq (aref old p) (aref new p)))
+      (setq p (1+ p)))
+    (while (and (< s (- no p)) (< s (- nn p))
+                (eq (aref old (- no 1 s)) (aref new (- nn 1 s))))
+      (setq s (1+ s)))
+    (let ((beg (table-view--nth-row-pos p))
+          (end (table-view--nth-row-pos (- no s)))
+          (inhibit-read-only t))
+      (delete-region beg end)
+      (goto-char beg)
+      (cl-loop for i from p below (- nn s)
+               do (table-view--insert-row spec (aref new i) widths)))
+    (table-view--remember-render rows widths)
+    (unless (and id (table-view--goto-id id))
+      (goto-char (point-min))
+      (forward-line (1- line)))))
+
+(defun table-view--render ()
+  "Re-render the current buffer from spec + rows.
+Renders rows in their current order; sorting is explicit (see
+`table-view--sort-rows'), so a row updated by an action stays in place.
+Rewrites only the changed rows when the header layout (columns, widths, and
+mark-gutter presence) is unchanged, else redraws the whole buffer.  Keeps
+point on the same row id when possible, else on the same line number."
+  (table-view--link-cache-check)        ; a render-links flip forces a full redraw
+  (let* ((spec table-view--spec)
+         (rows (table-view--visible-rows))
+         (widths (or table-view--widths-cache
+                     (setq table-view--widths-cache (table-view--widths spec rows))))
+         (inhibit-read-only t))
+    (if (and table-view--rendered-rows rows          ; not first render, neither empty
+             (eq (table-view--columns spec) table-view--rendered-columns)
+             (eq (table-view--marks-active-p) table-view--rendered-marks-active)
+             (equal widths table-view--rendered-widths))
+        (table-view--render-incremental spec rows widths)
+      (table-view--render-full spec rows widths))))
 
 (defun table-view--refresh-hint ()
   "Rewrite the hint line (line 2) in place -- e.g. after the marked count
@@ -1674,16 +1780,19 @@ instead of enumerating rows it has not loaded.  This is the seam a future
     (when (buffer-live-p buf)
       (with-current-buffer buf
         (setq row (car (table-view--compute-cells (list row) table-view--spec)))
-        (let ((id (alist-get 'id row)) (found nil))
+        (let ((id (alist-get 'id row)) (old nil))
           (setq table-view--rows
                 (mapcar (lambda (r)
                           (if (equal (alist-get 'id r) id)
-                              (progn (setq found t) row)
+                              (progn (setq old r) row)
                             r))
                         table-view--rows))
-          (unless found
+          (unless old
             (setq table-view--rows (nconc table-view--rows (list row))))
-          (table-view--invalidate-widths)
+          ;; Keep the width cache (making the render a cheap one-line edit) when
+          ;; the upsert cannot change any column's max width; otherwise recompute.
+          (unless (table-view--upsert-keeps-widths-p old row)
+            (table-view--invalidate-widths))
           (table-view--render))))))
 
 (defun table-view-delete-row (buffer id)

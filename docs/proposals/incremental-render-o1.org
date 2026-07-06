@@ -1,0 +1,55 @@
+#+TITLE: Proposal — Incremental render → O(1) via mutator hints
+#+OPTIONS: toc:nil num:nil
+
+[[file:../index.org][← Wiki index]] · related: [[file:incremental-width-maintenance.org][Incremental column-width maintenance]] ·
+[[file:../reviews/incremental-render.org][review of the shipped render]]
+
+* Status
+
+*Deferred.*  The incremental render that shipped is already a large win; this
+proposal removes the remaining =O(rows)= factor for high-frequency streaming.
+
+* Background
+
+=table-view--render= keeps a record of what is on screen
+(=table-view--rendered-rows=) and, when the header layout is unchanged, diffs
+the new visible rows against it by a common *prefix* + *suffix* (both =vconcat='d
+to vectors; row objects compared with =eq=), then =delete-region='s the changed
+middle and reinserts only those rows.
+
+Measured (2000 rows × 5 cols): no-change render ~2 ms, append ~5 ms, below-max
+update ~4 ms — versus ~286–340 ms for the old full render.
+
+The remaining cost: the prefix/suffix scan is itself =O(rows)=.  Even a
+one-row append walks the whole row list to confirm the common prefix, and
+=vconcat= allocates an /n/-element vector every render.  Each element is cheap
+(a pointer =eq=), but the work grows with table size.
+
+* Proposal
+
+Let the mutator name what changed, so the render can skip the diff entirely.
+
+- A buffer-local =table-view--render-hint=, e.g. =(append . ROW)=,
+  =(update . ID)=, or =(delete . ID)=, set by =table-view-upsert-row= /
+  =table-view-delete-row= immediately before they call =table-view--render=.
+- =table-view--render= consumes the hint: when it is present /and/ columns,
+  widths, and gutter presence are unchanged, do the =O(1)= edit directly —
+  append inserts at end, update rewrites the id's line, delete removes it —
+  else fall back to the prefix/suffix diff, then to a full render.
+- Clear the hint after every render (so an un-hinted render never trusts a
+  stale hint).
+
+* Trade-offs
+
+- Couples the mutators to the render (they describe their edit).  The
+  prefix/suffix diff stays as the safety net for un-hinted renders (sort,
+  filter, external =set-rows=).
+- Correctness must still be pinned by the differential-oracle test — the
+  incrementally-drawn buffer must stay byte- and text-property-identical to a
+  full render.
+
+* When it matters
+
+Only for very large *client-side* streaming tables (tens of thousands of
+rows).  Those are usually better served by [[file:select-all-matching.org][server-side pagination]], so this
+is low priority.

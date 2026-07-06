@@ -1,0 +1,49 @@
+#+TITLE: Proposal — Incremental column-width maintenance
+#+OPTIONS: toc:nil num:nil
+
+[[file:../index.org][← Wiki index]] · related: [[file:incremental-render-o1.org][Incremental render → O(1)]]
+
+* Status
+
+*Deferred.*  Correct today via a conservative recompute; this proposal removes
+that recompute for update-heavy and uniform-width tables.
+
+* Background
+
+Column widths are cached (=table-view--widths-cache=) and reused on renders
+that cannot change them.  On upsert, =table-view--upsert-keeps-widths-p= keeps
+the cache when the change cannot alter any column max — an append that fits, or
+an update of a row that is strictly below every column's max.  Otherwise it
+=table-view--invalidate-widths= and the next render recomputes /all/ widths:
+=O(rows)=, ~40 ms at 2000 rows.
+
+That recompute fires whenever the changed/removed row *held* a column's max —
+we cannot tell whether it was the /unique/ holder.  In a uniform-width table
+every row is at the max, so every update recomputes.
+
+* Proposal
+
+Track, per column, the current max width *and how many rows hold it*.
+
+- =table-view--width-max= : alist =key → (WIDTH . COUNT)=.
+- Maintain incrementally alongside the rows:
+  - =set-rows= builds it in the same pass as the widths.
+  - *insert* a cell: if its width > =WIDTH=, replace with =(w . 1)=; if =eq=
+    =WIDTH=, bump =COUNT=.
+  - *remove/replace* a cell: if the old width =eq= =WIDTH=, decrement =COUNT=;
+    when =COUNT= reaches 0 the max has dropped — recompute *only that column's*
+    max (one column scan), not the whole table.
+- Net: every edit is =O(1)= except removing/replacing the /unique/ max holder
+  of a column, which costs one =O(rows)= scan of that single column.
+
+* Trade-offs
+
+- More buffer-local state to keep in sync with the rows.  Pin it with the
+  existing width-cache-consistency invariant test (the cache must always equal
+  a fresh computation).
+- Marginal benefit for tables that rarely update, or that page server-side.
+
+* See also
+
+- [[file:incremental-render-o1.org][Incremental render → O(1)]] — the render-side counterpart; together they make
+  a streaming update fully =O(1)=.
