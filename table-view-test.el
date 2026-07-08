@@ -2183,5 +2183,30 @@ this proves that output is byte- and text-property-identical to a full redraw."
             (should (= 1 (length (table-view--visible-rows)))))) ; still filtered
       (kill-buffer buf))))
 
+(ert-deftest tv-test-native-routing ()
+  "A large inline table is handed to the registered native display function;
+a small one, or one with a fill-fn, is rendered in elisp as usual."
+  (let* ((calls nil)
+         (table-view--native-display-function
+          (lambda (buffer _spec _handlers) (push buffer calls) t))
+         (table-view-native-threshold 100)
+         (rows-n (lambda (n pfx) (cl-loop for i below n collect
+                                          (list (cons 'id (format "%s%d" pfx i))
+                                                (cons 'cells (list (cons 'name "x")))))))
+         (spec (lambda (rows) `((title . "t") (columns . (((key . "name") (header . "N"))))
+                                (rows . ,rows)))))
+    (unwind-protect
+        (progn
+          (table-view-display " *tvr-a*" (funcall spec (funcall rows-n 150 "a")) nil) ; large
+          (should (member " *tvr-a*" calls))
+          (setq calls nil)
+          (table-view-display " *tvr-b*" (funcall spec (funcall rows-n 10 "b")) nil)  ; small
+          (should-not calls)
+          (should (with-current-buffer " *tvr-b*" (derived-mode-p 'table-view-mode)))
+          (setq calls nil)
+          (table-view-display " *tvr-c*" (funcall spec (funcall rows-n 150 "c")) nil #'ignore) ; fill-fn
+          (should-not calls))
+      (dolist (b '(" *tvr-a*" " *tvr-b*" " *tvr-c*")) (when (get-buffer b) (kill-buffer b))))))
+
 (provide 'table-view-test)
 ;;; table-view-test.el ends here

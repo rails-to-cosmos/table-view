@@ -339,5 +339,45 @@ Returns nil when cargo is unavailable and no valid binary exists."
             (should-not (string-match-p "core-00000" (buffer-string)))))
       (kill-buffer buf))))
 
+;;; Auto-routing from basic table-view-display
+
+(ert-deftest tvn-test-seam-registered ()
+  "Loading table-view-native registers the display seam in the core."
+  (should (eq table-view--native-display-function #'table-view-native--auto-display)))
+
+(ert-deftest tvn-test-available-p ()
+  (tvn-test--skip-unless-binary (should (table-view-native-available-p))))
+
+(ert-deftest tvn-test-auto-display-routes-when-available ()
+  "The auto-display routes a large inline table to the native backend."
+  (tvn-test--skip-unless-binary
+   (let ((buf (get-buffer-create " *tvn-auto*")))
+     (unwind-protect
+         (progn
+           (should (table-view-native--auto-display
+                    buf `((title . "t")
+                          (columns . (((key . "name") (header . "Name"))
+                                      ((key . "num") (header . "Num") (type . "number"))
+                                      ((key . "val") (header . "Val") (type . "number"))))
+                          (rows . ,(tvn-test--rows 20)))
+                    nil))
+           (sit-for 0.3)
+           (with-current-buffer buf
+             (should (table-view--paged-p))
+             (should (string-match-p "core-00000" (buffer-string)))))
+       (kill-buffer buf)))))
+
+(ert-deftest tvn-test-auto-display-recommends-when-unavailable ()
+  "When the backend is not ready, auto-display recommends a build and declines."
+  (let ((table-view-native--warned (make-hash-table))
+        (warned nil)
+        (buf (get-buffer-create " *tvn-auto-rec*")))
+    (unwind-protect
+        (cl-letf (((symbol-function 'table-view-native--resolve) (lambda () nil))
+                  ((symbol-function 'display-warning) (lambda (&rest _) (setq warned t))))
+          (should-not (table-view-native--auto-display buf '((rows . nil)) nil))
+          (should warned))
+      (kill-buffer buf))))
+
 (provide 'table-view-native-test)
 ;;; table-view-native-test.el ends here

@@ -101,6 +101,7 @@ Must equal the binary's `open' reply :protocol and the N in
      ('version-mismatch (format "native binary speaks protocol %s, need %d.  Rebuild with M-x table-view-native-compile."
                                 detail table-view-native-protocol))
      ('unsupported-source "the native backend is required for this data source.")
+     ('recommend-build (format "this %s-row table would be much faster with the native backend.  M-x table-view-native-compile to build it (needs cargo)." detail))
      (_ "using the pure-elisp path (slow past ~20k rows)."))
    "  Silence: (setq table-view-native-warn nil)."))
 
@@ -513,6 +514,28 @@ OP is one of \"sum\", \"min\", \"max\", \"avg\", \"count\" (a string)."
     (jsonrpc-shutdown table-view-native--connection))
   (setq table-view-native--connection nil)
   (table-view-native-compile t))
+
+;;; Auto-routing from `table-view-display'
+
+(defun table-view-native-available-p ()
+  "Return non-nil when the native backend is enabled and its binary resolves."
+  (and table-view-native-enabled (table-view-native--resolve) t))
+
+(defun table-view-native--auto-display (buffer spec handlers)
+  "Route a large inline-rows SPEC through the native backend when it is ready.
+Registered as `table-view--native-display-function'.  Returns non-nil when it
+displayed natively; nil (after recommending a build) to let the elisp path run."
+  (if (table-view-native-available-p)
+      (prog1 t
+        (table-view-native-display buffer
+                                   (list :kind "rows" :rows (alist-get 'rows spec))
+                                   spec handlers))
+    (table-view-native--fallback 'recommend-build (length (alist-get 'rows spec)))
+    nil))
+
+;; Loading table-view-native opts every large `table-view-display' into the
+;; native backend (when its binary is available); the core stays standalone.
+(setq table-view--native-display-function #'table-view-native--auto-display)
 
 (provide 'table-view-native)
 ;;; table-view-native.el ends here

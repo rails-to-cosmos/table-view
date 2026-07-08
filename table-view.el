@@ -1957,7 +1957,26 @@ the current page, keeping point on the same row when it comes back."
          ((table-view--paged-p) (table-view--refetch-current))
          (table-view--fill-fn (funcall table-view--fill-fn buf)))))))
 
-(defun table-view-display (buffer spec handlers &optional fill-fn page-fn)
+(defgroup table-view nil
+  "Declarative, backend-agnostic table view."
+  :group 'convenience :prefix "table-view-")
+
+(defcustom table-view-native-threshold 10000
+  "Row count at or above which `table-view-display' prefers the native backend.
+Applies only to a plain inline-rows table (no FILL-FN/PAGE-FN/`pagination')
+when the optional `table-view-native' package is loaded: such a large table is
+then displayed through the Rust backend if its binary is available; otherwise
+the elisp path runs and a one-time build recommendation is shown.  nil disables
+this routing."
+  :type '(choice (const :tag "Never" nil) integer))
+
+(defvar table-view--native-display-function nil
+  "Function (BUFFER SPEC HANDLERS) consulted by `table-view-display' for a large
+inline-rows table, or nil.  `table-view-native' sets it on load to route big
+tables through the Rust backend; it returns non-nil when it handled the display
+and nil to fall back to the elisp path.")
+
+(cl-defun table-view-display (buffer spec handlers &optional fill-fn page-fn)
   "Render SPEC into BUFFER, install HANDLERS, populate; return the buffer.
 SPEC is a parsed alist (see `table-view-parse'); HANDLERS maps a command-name
 string to (FN ID ROW).
@@ -1973,7 +1992,19 @@ Populate via FILL-FN or PAGE-FN (mutually exclusive; PAGE-FN wins):
 
 SPEC's `sort' (one {column, ascending}, or a list for multi-column) seeds the
 sort chain: applied to SPEC's rows on open (client), or sent with the first
-page request (paged)."
+page request (paged).
+
+When the optional `table-view-native' package is loaded and SPEC carries a
+large inline-rows set (see `table-view-native-threshold'), the display is
+routed through the native Rust backend if its binary is available."
+  ;; Route a large inline table to the native backend when it can take over.
+  (when (and table-view--native-display-function
+             (null fill-fn) (null page-fn)
+             (not (alist-get 'pagination spec))
+             table-view-native-threshold
+             (>= (length (alist-get 'rows spec)) table-view-native-threshold)
+             (funcall table-view--native-display-function buffer spec handlers))
+    (cl-return-from table-view-display (get-buffer buffer)))
   (let ((buf (get-buffer-create buffer)))
     (with-current-buffer buf
       (table-view-mode)
