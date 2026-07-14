@@ -184,17 +184,128 @@
     (should (equal table-view--sort-keys '(("count" . t))))
     (should table-view--sorted)))
 
-(ert-deftest tv-test-sort-column-at-point-toggles ()
+(ert-deftest tv-test-sort-column-at-point-cycles ()
+  ;; Repeating `^' on the same column walks the 4-state cycle (nulls inner):
+  ;; asc, asc nulls-first, desc, desc nulls-first, then wraps.
   (tv-test--with-table
     (table-view--goto-id "a")
     (table-view-forward-column 2)       ; onto "count"
-    (call-interactively #'table-view-sort-cycle)      ; count asc
-    (should (equal table-view--sort-keys '(("count" . t))))
-    (should (equal (tv-test--col-at-point) "count"))  ; cursor still on count
-    (call-interactively #'table-view-sort-cycle)      ; same column -> toggle desc
-    (should (equal table-view--sort-keys '(("count"))))
-    (call-interactively #'table-view-sort-cycle)      ; toggle back to asc
-    (should (equal table-view--sort-keys '(("count" . t))))))
+    (should (equal (tv-test--col-at-point) "count"))
+    (cl-flet ((step ()
+                (call-interactively #'table-view-sort-cycle)
+                (car table-view--sort-keys)))
+      (should (equal (step) '("count" . t)))                ; asc nulls-last
+      (should (equal (step) '("count" . asc-nulls-first)))  ; asc nulls-first
+      (should (equal (step) '("count")))                    ; desc nulls-last
+      (should (equal (step) '("count" . desc-nulls-first))) ; desc nulls-first
+      (should (equal (step) '("count" . t))))))             ; wraps
+
+;;; Nulls-first / nulls-last placement
+
+(ert-deftest tv-test-sort-key-accessors-roundtrip ()
+  ;; The constructor and the three readers agree across all four states, and
+  ;; the cdr stays the canonical (COL . t)/(COL) shape for nulls-last.
+  (dolist (c '((t   . last) (nil . last) (t . first) (nil . first)))
+    (let* ((asc (car c)) (nulls (cdr c))
+           (key (table-view--make-sort-key "col" asc nulls)))
+      (should (equal (table-view--sort-key-col key) "col"))
+      (should (eq (table-view--sort-key-asc key) (and asc t)))
+      (should (eq (table-view--sort-key-nulls key) nulls))))
+  (should (equal (table-view--make-sort-key "col" t   'last)  '("col" . t)))
+  (should (equal (table-view--make-sort-key "col" nil 'last)  '("col")))
+  (should (equal (table-view--make-sort-key "col" t   'first) '("col" . asc-nulls-first)))
+  (should (equal (table-view--make-sort-key "col" nil 'first) '("col" . desc-nulls-first))))
+
+(defmacro tv-test--nulls-orders (json &rest asserts)
+  "Display JSON, then for each (KEY . EXPECTED) in ASSERTS sort by KEY from
+load order and check the row-id order equals EXPECTED."
+  (declare (indent 1))
+  `(tv-test--with-display ,json
+     (let ((orig (copy-sequence table-view--rows)))
+       (cl-flet ((order (key)
+                   (setq table-view--rows (copy-sequence orig)
+                         table-view--sort-keys (list key))
+                   (table-view--sort-rows)
+                   (mapcar (lambda (r) (alist-get 'id r)) table-view--rows)))
+         ,@(mapcar (lambda (a) `(should (equal (order ',(car a)) ',(cdr a))))
+                   asserts)))))
+
+(ert-deftest tv-test-sort-nulls-string-column ()
+  ;; Empty-string cells are nulls: nulls-last drops them to the bottom for
+  ;; both directions, nulls-first lifts them to the top.
+  (tv-test--nulls-orders
+      "{ \"columns\": [ {\"key\":\"s\",\"header\":\"S\",\"sortable\":true} ],
+         \"rows\": [ {\"id\":\"a\",\"cells\":{\"s\":\"beta\"}},
+                     {\"id\":\"b\",\"cells\":{\"s\":\"\"}},
+                     {\"id\":\"c\",\"cells\":{\"s\":\"alpha\"}},
+                     {\"id\":\"d\",\"cells\":{\"s\":\"\"}} ] }"
+    (("s" . t)               . ("c" "a" "b" "d"))    ; asc,  nulls last
+    (("s")                   . ("a" "c" "b" "d"))    ; desc, nulls last
+    (("s" . asc-nulls-first) . ("b" "d" "c" "a"))    ; asc,  nulls first
+    (("s" . desc-nulls-first) . ("b" "d" "a" "c")))) ; desc, nulls first
+
+(ert-deftest tv-test-sort-nulls-number-column ()
+  ;; In a number column an empty string is a null pulled to the end, NOT a 0
+  ;; sorted before 1.
+  (tv-test--nulls-orders
+      "{ \"columns\": [ {\"key\":\"n\",\"header\":\"N\",\"type\":\"number\",\"sortable\":true} ],
+         \"rows\": [ {\"id\":\"a\",\"cells\":{\"n\":3}},
+                     {\"id\":\"b\",\"cells\":{\"n\":\"\"}},
+                     {\"id\":\"c\",\"cells\":{\"n\":1}},
+                     {\"id\":\"d\",\"cells\":{\"n\":\"\"}} ] }"
+    (("n" . t)               . ("c" "a" "b" "d"))    ; 1,3 then empties (not 0-first)
+    (("n")                   . ("a" "c" "b" "d"))    ; 3,1 then empties
+    (("n" . asc-nulls-first) . ("b" "d" "c" "a"))    ; empties then 1,3
+    (("n" . desc-nulls-first) . ("b" "d" "a" "c")))) ; empties then 3,1
+
+(ert-deftest tv-test-sort-nulls-multi-key ()
+  ;; The PRIMARY key's nulls setting decides where its empties land; the
+  ;; secondary key breaks ties within each group.
+  (tv-test--with-display
+      "{ \"columns\": [ {\"key\":\"s\",\"header\":\"S\",\"sortable\":true},
+                        {\"key\":\"n\",\"header\":\"N\",\"type\":\"number\",\"sortable\":true} ],
+         \"rows\": [ {\"id\":\"a\",\"cells\":{\"s\":\"x\",\"n\":2}},
+                     {\"id\":\"b\",\"cells\":{\"s\":\"\",\"n\":5}},
+                     {\"id\":\"c\",\"cells\":{\"s\":\"x\",\"n\":1}},
+                     {\"id\":\"d\",\"cells\":{\"s\":\"\",\"n\":9}} ] }"
+    (let ((orig (copy-sequence table-view--rows)))
+      (cl-flet ((order (keys)
+                  (setq table-view--rows (copy-sequence orig)
+                        table-view--sort-keys keys)
+                  (table-view--sort-rows)
+                  (mapcar (lambda (r) (alist-get 'id r)) table-view--rows)))
+        ;; primary nulls-last: "x" group (c,a by n asc), then empties (b,d)
+        (should (equal (order '(("s" . t) ("n" . t))) '("c" "a" "b" "d")))
+        ;; primary nulls-first: empties (b,d) first, then "x" group (c,a)
+        (should (equal (order '(("s" . asc-nulls-first) ("n" . t)))
+                       '("b" "d" "c" "a")))))))
+
+(ert-deftest tv-test-sort-description-nulls ()
+  ;; nulls-first is spelled out; nulls-last stays implicit.
+  (tv-test--with-table
+    (setq table-view--sort-keys '(("name" . t)))
+    (should (equal (table-view--sort-description) "name asc"))
+    (setq table-view--sort-keys '(("name")))
+    (should (equal (table-view--sort-description) "name desc"))
+    (setq table-view--sort-keys '(("name" . asc-nulls-first)))
+    (should (equal (table-view--sort-description) "name asc nulls-first"))
+    (setq table-view--sort-keys '(("name" . desc-nulls-first)))
+    (should (equal (table-view--sort-description) "name desc nulls-first"))
+    (setq table-view--sort-keys '(("name" . t) ("count" . desc-nulls-first)))
+    (should (equal (table-view--sort-description)
+                   "name asc -> count desc nulls-first"))))
+
+(ert-deftest tv-test-parse-sort-nulls ()
+  ;; A `nulls' spec field selects the placement; the default stays canonical.
+  (should (equal (table-view--parse-sort '((column . "a") (nulls . "first")))
+                 '(("a" . asc-nulls-first))))
+  (should (equal (table-view--parse-sort
+                  '((column . "a") (ascending . nil) (nulls . "first")))
+                 '(("a" . desc-nulls-first))))
+  (should (equal (table-view--parse-sort '((column . "a") (nulls . "last")))
+                 '(("a" . t))))                           ; explicit last -> canonical
+  (should (equal (table-view--parse-sort '((column . "a")))
+                 '(("a" . t)))))                          ; plain stays canonical
 
 ;;; Multi-column sort (C-u ^)
 

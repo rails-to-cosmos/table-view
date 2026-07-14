@@ -43,7 +43,10 @@
 (defun paginate-example--query (db req)
   "Return DB filtered and sorted per REQ -- the WHERE + ORDER BY a server runs.
 Filters `name' by the pushed-down substring and orders by the FULL sort
-chain (primary key, then each tie-breaker), so `C-u ^' secondary sorts work."
+chain (primary key, then each tie-breaker), so `C-u ^' secondary sorts work.
+Each key reads its direction with `table-view--sort-key-asc' and its empty-cell
+placement with `table-view--sort-key-nulls' -- the reference for translating a
+sort key to SQL `ORDER BY col [ASC|DESC] NULLS FIRST|LAST'."
   (let ((filter (plist-get req :filter))
         (sort (plist-get req :sort))
         (rows db))
@@ -53,16 +56,25 @@ chain (primary key, then each tie-breaker), so `C-u ^' secondary sorts work."
                     (string-match-p (regexp-quote (downcase filter))
                                     (downcase (alist-get 'name (alist-get 'cells r)))))
                   rows)))
-    (when sort                                    ; ORDER BY k1 [ASC|DESC], k2 …
+    (when sort                          ; ORDER BY k1 [ASC|DESC] NULLS …, k2 …
       (setq rows (sort (copy-sequence rows)
                        (lambda (a b)
                          (cl-loop
                           for ka in sort
                           for key = (intern (car ka))
-                          for asc = (cdr ka)
+                          for asc = (table-view--sort-key-asc ka)
+                          for nfirst = (eq (table-view--sort-key-nulls ka) 'first)
                           for va = (alist-get key (alist-get 'cells a))
                           for vb = (alist-get key (alist-get 'cells b))
+                          ;; A null is an empty-string or absent cell; place it
+                          ;; absolutely -- top for nulls-first, bottom for last --
+                          ;; regardless of ASC.
+                          for na = (or (null va) (equal va ""))
+                          for nb = (or (null vb) (equal vb ""))
                           do (cond
+                              ((and na nb) nil)               ; tie on this key
+                              (na (cl-return nfirst))
+                              (nb (cl-return (not nfirst)))
                               ((if (numberp va) (< va vb)
                                  (string< (format "%s" va) (format "%s" vb)))
                                (cl-return asc))

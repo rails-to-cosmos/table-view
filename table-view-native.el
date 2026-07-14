@@ -2,8 +2,8 @@
 
 ;; Author: Dmitry Akatov <akatovda@gmail.com>
 ;; URL: https://github.com/rails-to-cosmos/table-view
-;; Version: 0.1.0
-;; Package-Requires: ((emacs "28.1") (table-view "0.1.0"))
+;; Version: 0.2.0
+;; Package-Requires: ((emacs "28.1") (table-view "0.2.0"))
 ;; SPDX-License-Identifier: MIT
 
 ;;; Commentary:
@@ -327,7 +327,12 @@ survives a backend respawn; CONN0/HANDLE0 bootstrap the first fetch."
          (list :handle (table-view-native--live-handle buf conn conn0 handle0)
                :offset (or (plist-get req :offset) 0)
                :limit (plist-get req :limit)
-               :sort (vconcat (mapcar (lambda (ka) (vector (car ka) (and (cdr ka) t)))
+               ;; [COL ASC NULLS]: direction covers all four states; NULLS is
+               ;; "first"/"last" (a 2-element vector, absent NULLS, means last).
+               :sort (vconcat (mapcar (lambda (ka)
+                                        (vector (table-view--sort-key-col ka)
+                                                (table-view--sort-key-asc ka)
+                                                (symbol-name (table-view--sort-key-nulls ka))))
                                       (plist-get req :sort)))
                :filter (or (plist-get req :filter) "")
                :subscribe t)

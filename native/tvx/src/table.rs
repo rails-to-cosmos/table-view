@@ -75,13 +75,16 @@ impl Table {
     }
 
     /// Filtered+sorted row indices for (SORT, FILTER); memoized per rev (LRU 4).
-    pub fn view(&mut self, sort: &[(String, bool)], filter: &str) -> Result<Vec<u32>, String> {
+    /// Each SORT key is (column, ascending, nulls_first); the cache key uses
+    /// `{sort:?}` Debug, which includes the nulls_first bool, so runs that
+    /// differ only in null placement are cached separately.
+    pub fn view(&mut self, sort: &[(String, bool, bool)], filter: &str) -> Result<Vec<u32>, String> {
         let cache_key = format!("{}|{sort:?}|{filter}", self.rev);
         if let Some((_, v)) = self.cache.iter().find(|(k, _)| *k == cache_key) {
             return Ok(v.clone());
         }
-        let sort_ci: Vec<(usize, bool)> = sort.iter()
-            .map(|(k, asc)| self.col_index(k).map(|ci| (ci, *asc)).ok_or_else(|| format!("no column: {k}")))
+        let sort_ci: Vec<(usize, bool, bool)> = sort.iter()
+            .map(|(k, asc, nf)| self.col_index(k).map(|ci| (ci, *asc, *nf)).ok_or_else(|| format!("no column: {k}")))
             .collect::<Result<_, _>>()?;
         self.ensure_ranks();
         let mut v = self.filter_rows(filter);
@@ -89,11 +92,25 @@ impl Table {
             // Stable sort_by + a final RowIx tiebreak => deterministic, load-order
             // stable (ties keep insertion order, matching the elisp stable sort);
             // desc is a reversed compare per key, not a whole-vector reverse.
-            let keys: Vec<(&Col, bool)> = sort_ci.iter().map(|&(ci, asc)| (&self.cols[ci], asc)).collect();
+            // Null (empty-string) placement is ABSOLUTE per key: nulls_first
+            // floats empties to the top and nulls_last (default) sinks them to
+            // the bottom, independent of that key's asc/desc.  A tie on this key
+            // (both null, or equal non-null keys) falls through to the next key.
+            // `empty_code` is the code of "" precomputed once per key (None for a
+            // Col::Int, or a Col::Str with no empty cell), so the per-row null
+            // test is a u32 compare.
+            let keys: Vec<(&Col, bool, bool, Option<u32>)> = sort_ci.iter()
+                .map(|&(ci, asc, nf)| (&self.cols[ci], asc, nf, self.cols[ci].empty_code()))
+                .collect();
             v.sort_by(|&a, &b| {
-                for (col, asc) in &keys {
+                for &(col, asc, nulls_first, empty_code) in &keys {
+                    let na = col.is_empty_cell(a as usize, empty_code);
+                    let nb = col.is_empty_cell(b as usize, empty_code);
+                    if na && nb { continue; } // both null on this key => tie, fall through
+                    if na { return if nulls_first { std::cmp::Ordering::Less } else { std::cmp::Ordering::Greater }; }
+                    if nb { return if nulls_first { std::cmp::Ordering::Greater } else { std::cmp::Ordering::Less }; }
                     let (ka, kb) = (col.order_key(a as usize), col.order_key(b as usize));
-                    let ord = if *asc { ka.cmp(&kb) } else { kb.cmp(&ka) };
+                    let ord = if asc { ka.cmp(&kb) } else { kb.cmp(&ka) };
                     if ord != std::cmp::Ordering::Equal { return ord; }
                 }
                 a.cmp(&b)

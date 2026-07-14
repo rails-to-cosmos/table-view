@@ -12,7 +12,14 @@ fn rows(specs: &[(&str, &str, i64)]) -> Value {
     json!({"kind":"rows","rows": specs.iter().map(|(id, name, num)|
         json!({"id": id, "cells": {"name": name, "num": num}})).collect::<Vec<_>>()})
 }
+/// View row ids for a 2-element (column, ascending) sort chain, defaulting
+/// every key to nulls-last (nulls_first = false).
 fn ids(t: &mut Table, sort: &[(String, bool)], filter: &str) -> Vec<String> {
+    let sort: Vec<(String, bool, bool)> = sort.iter().map(|(k, a)| (k.clone(), *a, false)).collect();
+    ids_nf(t, &sort, filter)
+}
+/// View row ids for a full (column, ascending, nulls_first) sort chain.
+fn ids_nf(t: &mut Table, sort: &[(String, bool, bool)], filter: &str) -> Vec<String> {
     t.view(sort, filter).unwrap().iter().map(|&i| t.ids[i as usize].clone()).collect()
 }
 
@@ -42,6 +49,53 @@ fn filter_numeric_skip() {
 fn multi_key_stable() {
     let mut t = Table::build(&cols(), &rows(&[("a", "same", 2), ("b", "same", 1), ("c", "diff", 5)])).unwrap();
     assert_eq!(ids(&mut t, &[("name".into(), true), ("num".into(), true)], ""), ["c", "b", "a"]);
+}
+
+// name column with two empty ("null") cells, b and d, among apple/banana/cherry.
+fn nullable_names() -> Value {
+    rows(&[("a", "banana", 1), ("b", "", 2), ("c", "apple", 3), ("d", "", 4), ("e", "cherry", 5)])
+}
+#[test]
+fn nulls_last_default_both_directions() {
+    let mut t = Table::build(&cols(), &nullable_names()).unwrap();
+    // Non-null asc = apple(c) < banana(a) < cherry(e).  Empties sink to the very
+    // bottom in insertion order (b before d) for BOTH asc and desc; the desc
+    // reversal must not flip that placement.
+    assert_eq!(ids_nf(&mut t, &[("name".into(), true, false)], ""),  ["c", "a", "e", "b", "d"]);
+    assert_eq!(ids_nf(&mut t, &[("name".into(), false, false)], ""), ["e", "a", "c", "b", "d"]);
+}
+#[test]
+fn nulls_first_both_directions() {
+    let mut t = Table::build(&cols(), &nullable_names()).unwrap();
+    // Empties float to the very top (insertion order b, d) for BOTH asc and desc.
+    assert_eq!(ids_nf(&mut t, &[("name".into(), true, true)], ""),  ["b", "d", "c", "a", "e"]);
+    assert_eq!(ids_nf(&mut t, &[("name".into(), false, true)], ""), ["b", "d", "e", "a", "c"]);
+}
+#[test]
+fn nulls_flag_is_primary_keys_on_multi_key() {
+    // Primary key (name) has empties; the secondary key (num) breaks ties,
+    // including among the empties.  The empties honor the PRIMARY key's flag.
+    let mut t = Table::build(&cols(), &rows(&[("a", "", 2), ("b", "", 1), ("c", "x", 5), ("d", "", 3)])).unwrap();
+    // nulls_first on name: empties (a,b,d) first, ordered by num asc (b=1,a=2,d=3), then c.
+    assert_eq!(ids_nf(&mut t, &[("name".into(), true, true), ("num".into(), true, false)], ""),
+               ["b", "a", "d", "c"]);
+    // nulls_last on name: c first, then the empties by num asc.
+    assert_eq!(ids_nf(&mut t, &[("name".into(), true, false), ("num".into(), true, false)], ""),
+               ["c", "b", "a", "d"]);
+}
+#[test]
+fn wire_sort_backcompat_two_element() {
+    use crate::wire::parse_sort;
+    // A 2-element [key, asc] entry parses with nulls_first = false; a 3rd element
+    // "first"/"last" selects placement.
+    assert_eq!(parse_sort(&json!([["name", true]])),          vec![("name".to_string(), true, false)]);
+    assert_eq!(parse_sort(&json!([["name", false, "last"]])), vec![("name".to_string(), false, false)]);
+    assert_eq!(parse_sort(&json!([["name", true, "first"]])), vec![("name".to_string(), true, true)]);
+    // End to end: the back-compat 2-element form sorts empties LAST.
+    let mut t = Table::build(&cols(), &rows(&[("a", "b", 1), ("b", "", 2), ("c", "a", 3)])).unwrap();
+    let sort = parse_sort(&json!([["name", true]]));
+    let order: Vec<String> = t.view(&sort, "").unwrap().iter().map(|&i| t.ids[i as usize].clone()).collect();
+    assert_eq!(order, ["c", "a", "b"]); // "a"(c) < "b"(a) non-null, "" (b) last
 }
 
 #[test]
@@ -74,6 +128,7 @@ fn delta_diff_prefix_suffix() {
                          json!({"op":"insert","index":1,"row":{"id":"c","cells":{}}})]);
 }
 fn subscribe(t: &mut Table, sort: Vec<(String, bool)>, filter: &str, limit: usize) {
+    let sort: Vec<(String, bool, bool)> = sort.into_iter().map(|(k, a)| (k, a, false)).collect();
     let view = t.view(&sort, filter).unwrap();
     let matched = view.len();
     let end = limit.min(matched);
@@ -119,8 +174,11 @@ fn patch_outside_window_still_refreshes_counts() {
 fn append_missing_string_cell_is_empty_not_null() {
     let mut t = Table::build(&cols(), &rows(&[("a", "x", 1)])).unwrap();
     t.patch(&[json!({"id":"z","cells":{"num":5}})], &[]); // no "name"
-    // "" sorts before "x"; the appended row's name is "" not the literal "null".
+    // The appended row's name is "" (a null cell), not the literal "null".  Under
+    // the default nulls-last placement that empty cell sinks below "x"; a literal
+    // "null" would instead be a non-null value sorting before "x", so the order
+    // also distinguishes the two.
     let order = ids(&mut t, &[("name".into(), true)], "");
-    assert_eq!(order, ["z", "a"]);
+    assert_eq!(order, ["a", "z"]);
     assert_eq!(ids(&mut t, &[], "null"), Vec::<String>::new()); // no spurious "null"
 }

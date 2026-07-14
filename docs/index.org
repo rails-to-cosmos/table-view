@@ -19,6 +19,14 @@ up later.
 - [[file:proposals/native-backend.org][Native data backend (tvx)]] :: a Rust background process as a fast
   local =page-fn= over =jsonrpc.el= for 100k–1M rows.
 
+* Design notes (shipped)
+
+Design records for features already in the package.
+
+- [[file:proposals/nulls-ordering.org][Nulls-first / nulls-last ordering]] :: place empty cells at the top
+  or the bottom of a sort, independent of direction; the four-stage =^= cycle
+  and the =(COL . DIRECTION-CODE)= encoding.
+
 * Bugs
 
 Concrete defects to fix, each with the fix sketched.
@@ -51,6 +59,7 @@ docs/
     incremental-render-o1.org        ┐ perf follow-ups, cross-linked
     incremental-width-maintenance.org ┘
     select-all-matching.org          pagination v2
+    nulls-ordering.org               shipped: nulls-first/last sort
   reviews/
     incremental-render.org           review of the shipped incremental render
 #+end_example

@@ -1,6 +1,6 @@
 [package]
 name = "tvx"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 description = "table-view native backend spike: JSON-RPC page-fn over stdio"
 
