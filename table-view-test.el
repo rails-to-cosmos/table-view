@@ -1204,6 +1204,25 @@ This is the set-rows contract: a backend-delivered value wins over the `value-fn
     (table-view-mark-toggle)                       ; toggle off
     (should-not table-view--marks)))
 
+(ert-deftest tv-test-layout-accessor ()
+  (tv-test--with-table
+    (let ((layout (table-view-layout)))
+      (should (equal '("name" "count" "status")
+                     (mapcar (lambda (c) (alist-get 'key c))
+                             (plist-get layout :columns))))
+      ;; sort chain is a copy: mutating it must not touch the live state
+      (should (equal (plist-get layout :sort) table-view--sort-keys))
+      (when (plist-get layout :sort)
+        (should-not (eq (plist-get layout :sort) table-view--sort-keys))))))
+
+(ert-deftest tv-test-set-sort ()
+  (tv-test--with-table
+    (table-view-set-sort '(("count" . t)))
+    (should (equal '("b" "c" "a")            ; counts ascending: 1 2 3
+                   (mapcar (lambda (r) (alist-get 'id r)) table-view--rows)))
+    (table-view-set-sort nil)
+    (should (null table-view--sort-keys))))
+
 (ert-deftest tv-test-mark-all ()
   (tv-test--with-table
     (table-view-mark-all)

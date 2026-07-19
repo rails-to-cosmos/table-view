@@ -5,7 +5,7 @@
 ;; Author: Dmitry Akatov <akatovda@gmail.com>
 ;; Maintainer: Dmitry Akatov <akatovda@gmail.com>
 ;; URL: https://github.com/rails-to-cosmos/table-view
-;; Version: 0.3.0
+;; Version: 0.4.0
 ;; Package-Requires: ((emacs "28.1"))
 ;; Keywords: convenience, data, tools
 ;; SPDX-License-Identifier: MIT
@@ -68,7 +68,8 @@
 ;;         off a column, cycle through every column and direction
 ;;   C-u ^ — add the column at point as a secondary (tie-breaker) sort key;
 ;;           a following run of `^' then toggles that key's direction
-;;   m   — toggle mark on the current row;  u — unmark it;  U — unmark all
+;;   m   — toggle mark on the current row;  u — unmark it
+;;   M   — mark all visible rows;  U — unmark all
 ;;   /   — narrow to the marked rows, or filter by substring when none marked
 ;;   n/p — next/previous data row (stops on the last / first row)
 ;;   f/b — forward/backward: by column on a table line (header or row),
@@ -109,6 +110,14 @@ the hint line never claims a sort the displayed rows are not actually in.")
 cell matching the string (case-insensitive substring) are rendered.")
 (defvar-local table-view--marks nil
   "List of marked row ids.")
+(defvar table-view-show-action-help t
+  "Default for `table-view--show-help': whether new views show the action legend.
+Toggle it per buffer with `?' (`table-view-toggle-help').")
+
+(defvar-local table-view--show-help t
+  "Non-nil when the hint line shows the action-key legend (toggled by `?').
+The sort status and any spec `subtitle' stay visible regardless.")
+
 (defvar-local table-view--narrowed nil
   "Non-nil when the view is narrowed to the marked rows.")
 (defvar-local table-view--mark-cache nil
@@ -839,7 +848,8 @@ Prepends the mark-gutter column when any row is marked."
           "|"))
 
 (defun table-view--hint-string ()
-  "A one-line status/help string: current sort + declared action keys.
+  "The hint line: current sort (always) + the action-key legend when
+`table-view--show-help' is on, else a `?:help' affordance to reveal it.
 Shows \"unsorted\" until an explicit sort has been applied, since rows
 render in load order and only reorder on `^'."
   (format "sort: %s%s%s%s    %s"
@@ -859,9 +869,12 @@ render in load order and only reorder on `^'."
                  (format "    marked: %d" (length table-view--marks)))
                 (t ""))
           (table-view--page-segment)
-          (mapconcat (lambda (a) (format "%s:%s"
-                                         (alist-get 'key a) (alist-get 'label a)))
-                     (table-view--actions table-view--spec) "  ")))
+          (if table-view--show-help
+              (concat (mapconcat (lambda (a) (format "%s:%s"
+                                                     (alist-get 'key a) (alist-get 'label a)))
+                                 (table-view--actions table-view--spec) "  ")
+                      "  ?:hide")
+            "?:help")))
 
 (defun table-view--goto-id (id)
   "Move point to the start of the row whose id is ID; non-nil on success."
@@ -903,7 +916,11 @@ N equal to the row count returns the position just past the last row."
     (insert (propertize (or (alist-get 'title spec) "Table")
                         'face '(:weight bold :height 1.1))
             "\n")
-    (insert (propertize (table-view--hint-string) 'face 'shadow) "\n\n")
+    (insert (propertize (table-view--hint-string) 'face 'shadow) "\n")
+    (let ((subtitle (alist-get 'subtitle spec)))
+      (when (and subtitle (not (string-empty-p subtitle)))
+        (insert subtitle "\n")))
+    (insert "\n")
     (insert (table-view--header-string spec widths) "\n")
     (insert (table-view--rule-string spec widths) "\n")
     (if (null rows)
@@ -1331,8 +1348,10 @@ KEY when a column was actually removed."
     (define-key map "/" #'table-view-filter-or-narrow)
     (define-key map "m" #'table-view-mark-toggle)
     (define-key map "u" #'table-view-unmark)
+    (define-key map "M" #'table-view-mark-all)
     (define-key map "U" #'table-view-unmark-all)
     (define-key map "^" #'table-view-sort-cycle)
+    (define-key map "?" #'table-view-toggle-help)
     (define-key map (kbd "C-c C-o") #'table-view-open-link)
     (define-key map (kbd "M-<right>") #'table-view-move-column-right)
     (define-key map (kbd "M-<left>")  #'table-view-move-column-left)
@@ -1346,7 +1365,8 @@ KEY when a column was actually removed."
   (setq-local cursor-type 'box)
   ;; `g' is not bound here; it stays `special-mode's `revert-buffer', which we
   ;; route to `table-view-revert' -- the standard Emacs refresh, not a sort.
-  (setq-local revert-buffer-function (lambda (&rest _) (table-view-revert))))
+  (setq-local revert-buffer-function (lambda (&rest _) (table-view-revert)))
+  (setq-local table-view--show-help table-view-show-action-help))
 
 (defun table-view--install-action-keys (spec)
   "Build a buffer-local keymap binding the declared action keys.
@@ -1462,6 +1482,25 @@ leaves any active filter or narrowing untouched."
     (table-view--sort-rows)
     (table-view--render)))
 
+(defun table-view-layout (&optional buffer)
+  "BUFFER's current layout: (:columns COLUMNS :sort SORT-KEYS).
+COLUMNS are the live column alists in display order (shared structure --
+treat as read-only); SORT-KEYS a copy of the active sort chain.  The
+consumer-facing read API for persisting a layout, so consumers never reach
+into `table-view--spec' internals."
+  (with-current-buffer (or buffer (current-buffer))
+    (list :columns (table-view--columns table-view--spec)
+          :sort (copy-tree table-view--sort-keys))))
+
+(defun table-view-set-sort (sort-keys &optional buffer)
+  "Set BUFFER's sort chain to a copy of SORT-KEYS and apply it.
+Nil SORT-KEYS clears the chain; rows keep their current order.  Write
+complement of `table-view-layout''s `:sort'."
+  (with-current-buffer (or buffer (current-buffer))
+    (setq table-view--sort-keys (copy-tree sort-keys))
+    (unless sort-keys (setq table-view--sorted nil))
+    (table-view-apply-sort)))
+
 (defun table-view-mark-toggle ()
   "Toggle the mark on the row at point, then move to the next row.
 Marked rows show a `*' in a gutter column and are the operand of a
@@ -1504,6 +1543,31 @@ Complements `m' (mark/unmark toggle) and `U' (unmark all); mirrors dired's
       (when was-narrowed (table-view--invalidate-widths))
       (table-view--rerender-after-mark was-active)
       (table-view--move-row 1))))
+
+(defun table-view-toggle-help ()
+  "Toggle the action-key legend on the hint line (`?').
+The sort status and the spec `subtitle' stay visible either way."
+  (interactive)
+  (setq table-view--show-help (not table-view--show-help))
+  (table-view--refresh-hint))
+
+(defun table-view-mark-all ()
+  "Mark every visible row: the filtered set, or the loaded page when paged.
+Complements `U' (unmark all)."
+  (interactive)
+  (let ((rows (table-view--visible-rows)))
+    (if (null rows)
+        (message "No rows to mark")
+      (dolist (row rows)
+        (let ((id (alist-get 'id row)))
+          (unless (member id table-view--marks)
+            (push id table-view--marks)
+            (push (cons id row) table-view--mark-cache))))
+      ;; Many gutter cells change at once (and the gutter may appear),
+      ;; so always take the full re-render path.
+      (table-view--invalidate-widths)
+      (table-view--render)
+      (message "Marked %d rows" (length table-view--marks)))))
 
 (defun table-view-unmark-all ()
   "Remove every mark (and its cached payload), widening a narrowed view."
