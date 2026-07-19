@@ -1,7 +1,7 @@
 #+TITLE: Design — Native data backend (tvx), production spec
 #+OPTIONS: toc:2 num:nil
 
-[[file:../index.org][← Wiki index]] · related: [[file:select-all-matching.org][pagination v2]], [[file:incremental-render-o1.org][O(1) render]]
+[[file:../index.org][← Wiki index]] · related: [[file:select-all-matching.org][pagination v2]], [[file:incremental-render-o1.org][O(1) render]], [[file:nulls-ordering.org][nulls ordering]]
 
 * Status
 

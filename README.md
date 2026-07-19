@@ -117,7 +117,7 @@ Open one and `M-x eval-buffer`.
 | `n` / `p`                | next / previous data row (stops on the last / first row, never leaving the table body)                                                        |
 | `f` / `b`                | forward / backward — by **column** (cell) on any table line (header or data row), by **char** elsewhere                                        |
 | `M-<left>` / `M-<right>` | move the column at point left / right (org-table style); point follows the column                                                              |
-| `^`                      | sort by the column at point — a data cell **or its header** (repeat toggles asc/desc); off a column, cycles through every column and direction |
+| `^`                      | sort by the column at point — a data cell **or its header**; repeat cycles asc → asc nulls-first → desc → desc nulls-first (empty cells sort last by default); off a column, cycles every column asc/desc |
 | `C-u ^`                  | add the column at point as a secondary (tie-breaker) sort key; a following run of `^` then toggles that key's direction                        |
 | `g`                      | revert: `revert-buffer` (`special-mode`) runs `table-view-revert` — clear filter/narrow & refresh (client) or re-fetch the current page (paged), preserving the sort |
 | `m` / `u` / `M` / `U`    | toggle mark on the current row / unmark it / mark all visible rows / unmark all (marked rows get a `*` gutter column) |
@@ -130,9 +130,14 @@ Open one and `M-x eval-buffer`.
 
 Unless the spec declares a `sort`, tables open **unsorted** (in load order);
 sorting is otherwise opt-in via `^` (with point on a data cell or its column
-header).  `C-u ^` adds the column at point as a lower-priority tie-breaker, so
-you can sort within groups — e.g. by name, then by year.  A spec `sort` may
-itself be a list for a multi-column default.
+header).  Repeating `^` on the same column walks four stages — ascending,
+ascending nulls-first, descending, descending nulls-first — then wraps.  A
+"null" is an **empty cell** (nil or the empty string); empties sort **last** by
+default, and the nulls-first stages pull them to the top instead.  Null
+placement is absolute (top or bottom of the whole view), independent of the
+asc/desc direction.  `C-u ^` adds the column at point as a lower-priority
+tie-breaker, so you can sort within groups — e.g. by name, then by year.  A
+spec `sort` may itself be a list for a multi-column default.
 
 Refresh is `table-view-revert` (clears a filter/narrow in client buffers,
 re-fetches the current page in paged ones) without imposing a sort it wasn't
@@ -153,7 +158,7 @@ for a column whose key is `"name"`). Booleans are `t` / omitted.
 | `title`   | buffer title line                                                                                                                                                                            |
 | `columns` | list of column definitions (see below)                                                                                                                                                       |
 | `actions` | list of action keybindings (see below)                                                                                                                                                       |
-| `sort`    | default sort, applied on open when the spec supplies rows: a single `{ "column": KEY, "ascending": BOOL }`, or a **list** of them `[{…}, {…}]` for a multi-column default (order = priority) |
+| `sort`    | default sort, applied on open when the spec supplies rows: a single `{ "column": KEY, "ascending": BOOL, "nulls": "first"\|"last" }` (`nulls` optional, default `"last"`), or a **list** of them `[{…}, {…}]` for a multi-column default (order = priority) |
 | `rows`    | initial rows (optional; can be filled later)                                                                                                                                                 |
 | `pagination` | server-side pagination config (with a `page-fn`, see below): `page-size` (rows per page, default 50) and `strategy` (`"offset"`, the default, or `"keyset"`)                             |
 
@@ -219,9 +224,15 @@ fetch (synchronously *or* asynchronously) and deliver the page with
 
 ```elisp
 (defun my-page-fn (req)
-  ;; req: (:buffer BUF :limit N :sort ((KEY . ASC)…) :filter STR-or-nil
+  ;; req: (:buffer BUF :limit N :sort ((COL . DIR)…) :filter STR-or-nil
   ;;       :offset M          ; offset strategy
   ;;       :cursor C :direction 'forward|'backward)  ; keyset strategy
+  ;; Each sort key is (COL . DIR); DIR encodes both direction and null
+  ;; placement, so read it with the accessors rather than the raw cdr:
+  ;;   (table-view--sort-key-asc KEY)   -> t (asc) / nil (desc)
+  ;;   (table-view--sort-key-nulls KEY) -> 'first / 'last  (empties top/bottom)
+  ;; e.g. translate to SQL `ORDER BY COL [ASC|DESC] NULLS FIRST|LAST'.  See
+  ;; examples/paginate.el for a worked page-fn.
   (let* ((rows  (my-query :where (plist-get req :filter)   ; filter pushes down
                           :order (plist-get req :sort)      ; sort pushes down
                           :offset (plist-get req :offset)

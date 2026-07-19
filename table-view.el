@@ -5,7 +5,7 @@
 ;; Author: Dmitry Akatov <akatovda@gmail.com>
 ;; Maintainer: Dmitry Akatov <akatovda@gmail.com>
 ;; URL: https://github.com/rails-to-cosmos/table-view
-;; Version: 0.2.0.0.20260719.0
+;; Version: 0.3.0
 ;; Package-Requires: ((emacs "28.1"))
 ;; Keywords: convenience, data, tools
 ;; SPDX-License-Identifier: MIT
@@ -68,8 +68,7 @@
 ;;         off a column, cycle through every column and direction
 ;;   C-u ^ — add the column at point as a secondary (tie-breaker) sort key;
 ;;           a following run of `^' then toggles that key's direction
-;;   m   — toggle mark on the current row;  u — unmark it
-;;   M   — mark all visible rows;  U — unmark all
+;;   m   — toggle mark on the current row;  u — unmark it;  U — unmark all
 ;;   /   — narrow to the marked rows, or filter by substring when none marked
 ;;   n/p — next/previous data row (stops on the last / first row)
 ;;   f/b — forward/backward: by column on a table line (header or row),
@@ -101,14 +100,6 @@
   "Sort chain: list of (KEY . ASC) conses, highest priority first.
 KEY is a column key (string); ASC is non-nil for ascending.  Rows equal
 on one key are ordered by the next; an empty list renders load order.")
-(defvar table-view-show-action-help t
-  "Default for `table-view--show-help': whether new views show the action legend.
-Toggle it per buffer with `?' (`table-view-toggle-help').")
-
-(defvar-local table-view--show-help t
-  "Non-nil when the hint line shows the action-key legend (toggled by `?').
-The sort status and any spec `subtitle' stay visible regardless.")
-
 (defvar-local table-view--sorted nil
   "Non-nil once an explicit sort has been applied to the current row set.
 Reset whenever the full row set is replaced (`table-view-set-rows'), so
@@ -178,7 +169,6 @@ failed fetch never advances the visible page position.")
 
 (defun table-view--columns (spec) (alist-get 'columns spec))
 (defun table-view--actions (spec) (alist-get 'actions spec))
-(defun table-view--subtitle (spec) (alist-get 'subtitle spec))
 
 (defun table-view--column (spec key)
   "Return the column alist whose key is KEY in SPEC."
@@ -509,21 +499,83 @@ row (decorate-sort-undecorate) instead of per comparison."
      ((equal (alist-get 'type col) "number") (cons num #'<))
      (t (cons txt #'string<)))))
 
+;; A sort key is a cons (COL . DIRECTION-CODE).  DIRECTION-CODE widens the plain
+;; asc/desc cdr with a nulls-placement axis while keeping the old shape: t and
+;; nil still mean ascending/descending nulls-last, so every existing (COL . t) /
+;; (COL) key is unchanged.  Two symbols add nulls-first:
+;;   t                 asc,  nulls-last  (default)
+;;   nil               desc, nulls-last
+;;   asc-nulls-first   asc,  nulls-first
+;;   desc-nulls-first  desc, nulls-first
+;; A "null" is an empty cell (a nil or empty-string comparison text).
+
+(defun table-view--sort-key-col (key)
+  "Return the column name of sort KEY."
+  (car key))
+
+(defun table-view--sort-key-asc (key)
+  "Return non-nil when sort KEY orders ascending.
+Direction is encoded in KEY's cdr: t or `asc-nulls-first' ascend; nil or
+`desc-nulls-first' descend."
+  (and (memq (cdr key) '(t asc-nulls-first)) t))
+
+(defun table-view--sort-key-nulls (key)
+  "Return where empty cells sort for KEY: `first' or `last' (the default)."
+  (if (memq (cdr key) '(asc-nulls-first desc-nulls-first)) 'first 'last))
+
+(defun table-view--make-sort-key (col asc nulls)
+  "Build a sort key for column COL.
+ASC non-nil sorts ascending; NULLS is `first' or `last' (empties at the top
+or bottom).  The cons's cdr encodes both, so a plain (COL . t) or (COL) key
+still means nulls-last ascending or descending."
+  (cons col (cond ((eq nulls 'first) (if asc 'asc-nulls-first 'desc-nulls-first))
+                  (asc t)
+                  (t nil))))
+
+(defun table-view--sort-key-next (key)
+  "Return the next stage of KEY in the asc/desc x nulls-first/last cycle.
+Order (nulls inner): asc last, asc first, desc last, desc first, then wrap."
+  (let ((col (car key)))
+    (pcase (cdr key)
+      ('t                (table-view--make-sort-key col t   'first))
+      ('asc-nulls-first  (table-view--make-sort-key col nil 'last))
+      ('desc-nulls-first (table-view--make-sort-key col t   'last))
+      (_                 (table-view--make-sort-key col nil 'first)))))
+
+(defun table-view--sort-null-p (col val)
+  "Return non-nil when VAL is an empty cell (a sort null) in column COL.
+A cell is null when its comparison text is empty -- a nil cell or the empty
+string -- so nulls-first/last can gather blanks at one end regardless of the
+column's comparator."
+  (string-empty-p (table-view--str (table-view--sort-value col val))))
+
 (defun table-view--sort-rows-multi ()
-  "Sort `table-view--rows' by a multi-key chain (comparator run per comparison)."
+  "Sort `table-view--rows' by a multi-key chain (comparator run per comparison).
+Each key places its empty cells first or last per the key's nulls setting,
+independent of the key's direction."
   (let ((tests (mapcar
                 (lambda (ka)
                   (let ((col (table-view--column table-view--spec (car ka))))
-                    (list (table-view--comparator col) (car ka) (cdr ka) col)))
+                    (list (table-view--comparator col)
+                          (car ka)
+                          (table-view--sort-key-asc ka)
+                          (eq (table-view--sort-key-nulls ka) 'first)
+                          col)))
                 table-view--sort-keys)))
     (setq table-view--rows
           (sort (copy-sequence table-view--rows)
                 (lambda (a b)
-                  (cl-loop for (less key asc col) in tests
+                  (cl-loop for (less key asc nfirst col) in tests
                            for va = (table-view--sort-value col (table-view--cell a key))
                            for vb = (table-view--sort-value col (table-view--cell b key))
-                           do (cond ((funcall less va vb) (cl-return asc))
-                                    ((funcall less vb va) (cl-return (not asc))))
+                           for na = (string-empty-p (table-view--str va))
+                           for nb = (string-empty-p (table-view--str vb))
+                           do (cond
+                               ((and na nb) nil)                 ; tie on this key
+                               (na (cl-return nfirst))
+                               (nb (cl-return (not nfirst)))
+                               ((funcall less va vb) (cl-return asc))
+                               ((funcall less vb va) (cl-return (not asc))))
                            finally return nil))))))
 
 (defun table-view--sort-rows ()
@@ -540,40 +592,55 @@ then sorts; multi-key chains use `table-view--sort-rows-multi'."
       (if (cdr table-view--sort-keys)
           (table-view--sort-rows-multi)
         (let* ((ka (car table-view--sort-keys))
-               (key (car ka)) (asc (cdr ka))
-               (spec (table-view--sort-key-spec
-                      (table-view--column table-view--spec key)))
+               (key (car ka))
+               (asc (table-view--sort-key-asc ka))
+               (nfirst (eq (table-view--sort-key-nulls ka) 'first))
+               (col (table-view--column table-view--spec key))
+               (spec (table-view--sort-key-spec col))
                (keyfn (car spec)) (kless (cdr spec))
-               (decorated (mapcar (lambda (r)
-                                    (cons (funcall keyfn (table-view--cell r key)) r))
-                                  table-view--rows)))
+               (decorated (mapcar
+                           (lambda (r)
+                             (let* ((v (table-view--cell r key))
+                                    (null? (table-view--sort-null-p col v)))
+                               ;; (NULL? KEYVAL ROW); KEYVAL is nil (unused) for nulls.
+                               (list null? (and (not null?) (funcall keyfn v)) r)))
+                           table-view--rows)))
           (setq decorated
-                (sort decorated (if asc
-                                    (lambda (a b) (funcall kless (car a) (car b)))
-                                  (lambda (a b) (funcall kless (car b) (car a)))))
-                table-view--rows (mapcar #'cdr decorated)))))
+                (sort decorated
+                      (lambda (a b)
+                        (let ((na (car a)) (nb (car b)))
+                          (cond ((and na nb) nil)            ; both null: keep order (stable)
+                                (na nfirst)                  ; a null: a first iff nulls-first
+                                (nb (not nfirst))            ; b null: a first iff nulls-last
+                                (asc (funcall kless (cadr a) (cadr b)))
+                                (t   (funcall kless (cadr b) (cadr a)))))))
+                table-view--rows (mapcar #'caddr decorated)))))
     (setq table-view--sorted t)))
 
 (defun table-view--sort-description ()
-  "Render the sort chain as e.g. \"name asc -> pid desc\"."
-  (mapconcat (lambda (ka)
-               (format "%s %s" (car ka) (if (cdr ka) "asc" "desc")))
-             table-view--sort-keys " -> "))
+  "Render the sort chain, e.g. \"name asc -> pid desc nulls-first\".
+Empties sort last by default, left implicit; an explicit nulls-first is spelled
+out so the extra `^' stages read clearly."
+  (mapconcat
+   (lambda (ka)
+     (concat (format "%s %s" (car ka)
+                     (if (table-view--sort-key-asc ka) "asc" "desc"))
+             (when (eq (table-view--sort-key-nulls ka) 'first) " nulls-first")))
+   table-view--sort-keys " -> "))
 
 (defun table-view--parse-sort (sort)
   "Return the default sort chain declared by a spec's SORT value.
-SORT is either a single {column, ascending} alist or a list of them for
-a multi-column default; the result is a list of (KEY . ASC), highest
-priority first.  A missing `ascending' defaults to ascending."
-  (let ((specs (if (alist-get 'column sort)
-                   (list sort)          ; single {column, ascending}
-                 sort)))                ; list of them, or nil
+SORT is a single {column, ascending, nulls} alist or a list of them; the
+result is a list of sort keys, highest priority first.  A missing `ascending'
+defaults to ascending; `nulls' is \"first\" or \"last\" (the default)."
+  (let ((specs (if (alist-get 'column sort) (list sort) sort)))
     (delq nil
           (mapcar (lambda (s)
                     (when-let ((col (alist-get 'column s)))
-                      (cons col (if (assq 'ascending s)
-                                    (and (alist-get 'ascending s) t)
-                                  t))))
+                      (table-view--make-sort-key
+                       col
+                       (if (assq 'ascending s) (and (alist-get 'ascending s) t) t)
+                       (if (equal (alist-get 'nulls s) "first") 'first 'last))))
                   specs))))
 
 ;;; Filtering
@@ -772,8 +839,7 @@ Prepends the mark-gutter column when any row is marked."
           "|"))
 
 (defun table-view--hint-string ()
-  "The hint line: current sort (always) + the action-key legend when
-`table-view--show-help' is on, else a `?:help' affordance to reveal it.
+  "A one-line status/help string: current sort + declared action keys.
 Shows \"unsorted\" until an explicit sort has been applied, since rows
 render in load order and only reorder on `^'."
   (format "sort: %s%s%s%s    %s"
@@ -793,12 +859,9 @@ render in load order and only reorder on `^'."
                  (format "    marked: %d" (length table-view--marks)))
                 (t ""))
           (table-view--page-segment)
-          (if table-view--show-help
-              (concat (mapconcat (lambda (a) (format "%s:%s"
-                                                     (alist-get 'key a) (alist-get 'label a)))
-                                 (table-view--actions table-view--spec) "  ")
-                      "  ?:hide")
-            "?:help")))
+          (mapconcat (lambda (a) (format "%s:%s"
+                                         (alist-get 'key a) (alist-get 'label a)))
+                     (table-view--actions table-view--spec) "  ")))
 
 (defun table-view--goto-id (id)
   "Move point to the start of the row whose id is ID; non-nil on success."
@@ -840,11 +903,7 @@ N equal to the row count returns the position just past the last row."
     (insert (propertize (or (alist-get 'title spec) "Table")
                         'face '(:weight bold :height 1.1))
             "\n")
-    (insert (propertize (table-view--hint-string) 'face 'shadow) "\n")
-    (let ((subtitle (table-view--subtitle spec)))
-      (when (and subtitle (not (string-empty-p subtitle)))
-        (insert subtitle "\n")))
-    (insert "\n")
+    (insert (propertize (table-view--hint-string) 'face 'shadow) "\n\n")
     (insert (table-view--header-string spec widths) "\n")
     (insert (table-view--rule-string spec widths) "\n")
     (if (null rows)
@@ -1272,10 +1331,8 @@ KEY when a column was actually removed."
     (define-key map "/" #'table-view-filter-or-narrow)
     (define-key map "m" #'table-view-mark-toggle)
     (define-key map "u" #'table-view-unmark)
-    (define-key map "M" #'table-view-mark-all)
     (define-key map "U" #'table-view-unmark-all)
     (define-key map "^" #'table-view-sort-cycle)
-    (define-key map "?" #'table-view-toggle-help)
     (define-key map (kbd "C-c C-o") #'table-view-open-link)
     (define-key map (kbd "M-<right>") #'table-view-move-column-right)
     (define-key map (kbd "M-<left>")  #'table-view-move-column-left)
@@ -1289,8 +1346,7 @@ KEY when a column was actually removed."
   (setq-local cursor-type 'box)
   ;; `g' is not bound here; it stays `special-mode's `revert-buffer', which we
   ;; route to `table-view-revert' -- the standard Emacs refresh, not a sort.
-  (setq-local revert-buffer-function (lambda (&rest _) (table-view-revert)))
-  (setq-local table-view--show-help table-view-show-action-help))
+  (setq-local revert-buffer-function (lambda (&rest _) (table-view-revert))))
 
 (defun table-view--install-action-keys (spec)
   "Build a buffer-local keymap binding the declared action keys.
@@ -1449,24 +1505,6 @@ Complements `m' (mark/unmark toggle) and `U' (unmark all); mirrors dired's
       (table-view--rerender-after-mark was-active)
       (table-view--move-row 1))))
 
-(defun table-view-mark-all ()
-  "Mark every visible row: the filtered set, or the loaded page when paged.
-Complements `U' (unmark all)."
-  (interactive)
-  (let ((rows (table-view--visible-rows)))
-    (if (null rows)
-        (message "No rows to mark")
-      (dolist (row rows)
-        (let ((id (alist-get 'id row)))
-          (unless (member id table-view--marks)
-            (push id table-view--marks)
-            (push (cons id row) table-view--mark-cache))))
-      ;; Many gutter cells change at once (and the gutter may appear),
-      ;; so always take the full re-render path.
-      (table-view--invalidate-widths)
-      (table-view--render)
-      (message "Marked %d rows" (length table-view--marks)))))
-
 (defun table-view-unmark-all ()
   "Remove every mark (and its cached payload), widening a narrowed view."
   (interactive)
@@ -1504,7 +1542,10 @@ wrapping around; it continues from the current column when the sort is
 already a single column, else it starts at the first column ascending."
   (let ((keys (table-view--sortable-keys)))
     (when keys
-      (let* ((states (mapcan (lambda (k) (list (cons k t) (cons k nil))) keys))
+      (let* ((states (mapcan (lambda (k)
+                               (list (table-view--make-sort-key k t 'last)
+                                     (table-view--make-sort-key k nil 'last)))
+                             keys))
              (cur (and table-view--sorted
                        (= 1 (length table-view--sort-keys))
                        (car table-view--sort-keys)))
@@ -1539,16 +1580,21 @@ no COL, step the single-column walk-through."
     (setq table-view--sort-keys
           (if (assoc col table-view--sort-keys)
               (mapcar (lambda (ka)
-                        (if (equal (car ka) col) (cons col (not (cdr ka))) ka))
+                        (if (equal (car ka) col)
+                            (table-view--make-sort-key
+                             col (not (table-view--sort-key-asc ka))
+                             (table-view--sort-key-nulls ka))
+                          ka))
                       table-view--sort-keys)
-            (append table-view--sort-keys (list (cons col t))))))
+            (append table-view--sort-keys
+                    (list (table-view--make-sort-key col t 'last))))))
    (col
     (setq table-view--sort-keys
           (if (and table-view--sorted
                    (= 1 (length table-view--sort-keys))
                    (equal (caar table-view--sort-keys) col))
-              (list (cons col (not (cdar table-view--sort-keys))))
-            (list (cons col t)))))
+              (list (table-view--sort-key-next (car table-view--sort-keys)))
+            (list (table-view--make-sort-key col t 'last)))))
    (t
     (table-view--sort-advance))))
 
@@ -1556,7 +1602,11 @@ no COL, step the single-column walk-through."
   "Flip COL's direction in the sort chain and apply it."
   (setq table-view--sort-keys
         (mapcar (lambda (ka)
-                  (if (equal (car ka) col) (cons col (not (cdr ka))) ka))
+                  (if (equal (car ka) col)
+                      (table-view--make-sort-key
+                       col (not (table-view--sort-key-asc ka))
+                       (table-view--sort-key-nulls ka))
+                    ka))
                 table-view--sort-keys))
   (table-view--commit-order)
   (message "Sort: %s" (table-view--sort-description)))
@@ -1573,18 +1623,13 @@ It stays active while `^' is pressed and ends on any other key, so a run
 of `^' keeps flipping the just-added secondary key COL's direction."
   (set-transient-map (table-view--secondary-toggle-map col) t))
 
-(defun table-view-toggle-help ()
-  "Toggle the action-key legend on the hint line (`?').
-The sort status and the spec `subtitle' stay visible either way."
-  (interactive)
-  (setq table-view--show-help (not table-view--show-help))
-  (table-view--refresh-hint))
-
 (defun table-view-sort-cycle (&optional secondary)
   "Sort the table via `^'.
 On a sortable column (data cell or header), sort by it, collapsing any
-multi-column chain; `^' again on that column toggles asc/desc.  Off any
-column, cycle every sortable column asc then desc, one per press.
+multi-column chain.  Repeating `^' on that column cycles four stages: asc,
+asc nulls-first, desc, desc nulls-first, then wraps.  Empty cells sort last
+by default; the nulls-first stages pull them to the top instead.  Off any
+column, cycle every sortable column asc then desc (nulls-last), one per press.
 
 With \\[universal-argument] on a sortable column, instead ADD it as the next
 lower-priority tie-breaker (or flip it if already chained); a following run of

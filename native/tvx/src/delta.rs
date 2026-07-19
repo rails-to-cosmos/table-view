@@ -12,7 +12,7 @@ use serde_json::{json, Value};
 pub struct Sub {
     pub offset: usize,
     pub limit: usize,
-    pub sort: Vec<(String, bool)>,
+    pub sort: Vec<(String, bool, bool)>, // (column, ascending, nulls_first)
     pub filter: String,
     pub last: Vec<RowSnap>,
     pub client_rev: u64,

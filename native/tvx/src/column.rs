@@ -78,6 +78,22 @@ impl Col {
             Col::Str(c, _) => c.rank[c.codes[r] as usize] as u64,
         }
     }
+    /// Dictionary code of the "null" cell (the empty string `""`), if this
+    /// column has one.  Only a `Col::Str` can hold an empty cell; a `Col::Int`
+    /// ingests a missing value as 0, never as an empty string, so this is
+    /// always None for it and the nulls-first/last flag is a no-op there.
+    pub fn empty_code(&self) -> Option<u32> {
+        match self {
+            Col::Int(_) => None,
+            Col::Str(_, lookup) => lookup.get("").copied(),
+        }
+    }
+    /// Whether row R holds the "null" (empty-string) cell identified by
+    /// EMPTY_CODE (as returned by `empty_code`).  Always false for a `Col::Int`
+    /// or when EMPTY_CODE is None.
+    pub fn is_empty_cell(&self, r: usize, empty_code: Option<u32>) -> bool {
+        matches!((self, empty_code), (Col::Str(c, _), Some(ec)) if c.codes[r] == ec)
+    }
     pub fn set(&mut self, r: usize, v: &Value) {
         match self {
             Col::Int(col) => col[r] = json_i64(v),

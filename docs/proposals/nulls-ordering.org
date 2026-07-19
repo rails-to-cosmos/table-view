@@ -1,0 +1,84 @@
+#+TITLE: Nulls-first / nulls-last ordering
+#+OPTIONS: toc:nil num:nil
+
+[[file:../index.org][← Wiki index]] · related: [[file:native-backend.org][Native data backend (tvx)]]
+
+* Status
+
+*Implemented.*  Sorting on =^= gained a nulls-placement axis: empty cells can
+gather at the top or the bottom of the view, independent of the sort direction.
+A "null" is an *empty cell* — a nil value or the empty string (after
+link/display reduction).
+
+* Direction-code encoding
+
+A sort key stays a cons =(COL . DIRECTION-CODE)=, so every existing =(COL . t)=
+/ =(COL)= key keeps its meaning.  The cdr widens from a plain boolean to four
+values, adding the nulls axis without a second cons slot:
+
+| cdr                | direction  | nulls |
+|--------------------+------------+-------|
+| =t=                | ascending  | last  |
+| =nil=              | descending | last  |
+| =asc-nulls-first=  | ascending  | first |
+| =desc-nulls-first= | descending | first |
+
+Reusing the cdr keeps =t= and =nil= at their old meaning (ascending /
+descending, nulls-last), so default sorts, =table-view--parse-sort= output, the
+paged =:sort= payload, and every stored key stay backward-compatible.  Only the
+two nulls-first stages use the symbol cdrs.
+
+Read a key through the accessors rather than the raw cdr:
+
+- =table-view--sort-key-col= — the column name;
+- =table-view--sort-key-asc= — non-nil for ascending;
+- =table-view--sort-key-nulls= — ='first= or ='last=;
+- =table-view--make-sort-key COL ASC NULLS= — the constructor.
+
+* Cycle order (nulls inner)
+
+Repeating =^= on the *same* column advances =table-view--sort-key-next=:
+
+: asc nulls-last → asc nulls-first → desc nulls-last → desc nulls-first → wrap
+
+Null placement is the inner axis and direction the outer, so an asc/desc flip
+stays two presses apart while the nulls-first variants sit between them.  The
+off-column walk-through (=^= with point off any column) stays coarse — asc then
+desc, nulls-last only — visiting each sortable column in turn.
+
+* Client vs paged / native semantics
+
+- *Client (in-memory).*  =table-view--sort-rows= (single key,
+  decorate-sort-undecorate) and =table-view--sort-rows-multi= split each key's
+  rows into nulls and non-nulls: a null (=table-view--sort-null-p=, empty
+  comparison text) is placed absolutely — very top for nulls-first, very bottom
+  for nulls-last — before the comparator runs.  Placement is thus independent
+  of the column's comparator and of asc/desc.  Empties that tie keep their
+  relative order (the sort is stable).
+
+- *Paged =page-fn=.*  The chain rides the request's =:sort= as the same
+  =(COL . DIRECTION-CODE)= conses; the consumer reads them with the accessors
+  and translates to its own store, e.g. =ORDER BY COL [ASC|DESC] NULLS
+  FIRST|LAST=.  =examples/paginate.el= is the reference translation.
+
+- *Native (tvx).*  =table-view-native--page-fn= emits each key as a wire vector
+  =[COL ASC NULLS]=, where =NULLS= is ="first"= or ="last"=.  A two-element
+  vector =[COL ASC]= (an absent third element) means nulls-last, so older
+  payloads still parse.  The Rust backend reads the optional third element.
+
+* Known limitation — numeric native columns
+
+A column typed =number= in the native backend ingests each cell as a number,
+and a *missing* value is stored as =0=.  A =0= is a real value, so nulls
+placement is a *no-op* on such a column: the blanks-as-zeros sort among the
+other numbers rather than gathering at one end.  The client path treats an
+empty *string* in a number column as a null and pulls it to the chosen end; the
+native numeric column has already collapsed that distinction at ingest.  A
+consumer that needs nulls-aware numeric ordering natively can carry the column
+as text, or add an explicit "is-empty" sort key ahead of it.
+
+* See also
+
+- Key reference and the spec =sort= field's =nulls=: [[file:../../README.md][README]] → “Sorting” and
+  “Spec format”.
+- Native wire protocol: [[file:native-backend.org][Native data backend (tvx)]].
