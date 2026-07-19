@@ -117,6 +117,42 @@
 
 ;;; Sorting
 
+(ert-deftest tv-test-toggle-help ()
+  "`?' (`table-view-toggle-help') hides the action legend on the hint line;
+the sort status and the spec `subtitle' stay visible."
+  (let ((buf (get-buffer-create " *tv-help*")))
+    (unwind-protect
+        (progn
+          (table-view-display
+           buf '((title . "T") (subtitle . "#+TODO: TODO | DONE")
+                 (columns . (((key . "n") (header . "N") (sortable . t))))
+                 (actions . (((key . "x") (label . "Do") (command . "do"))))
+                 (sort . ((column . "n") (ascending . t))))
+           nil)
+          (table-view-set-rows buf '())
+          (with-current-buffer buf
+            (cl-flet ((hint ()
+                        (save-excursion (goto-char (point-min)) (forward-line 1)
+                          (buffer-substring-no-properties
+                           (line-beginning-position) (line-end-position))))
+                      (sub? ()
+                        (save-excursion (goto-char (point-min))
+                          (and (search-forward "#+TODO: TODO | DONE" nil t) t))))
+              ;; help ON (default): legend + sort + subtitle
+              (should (string-match-p "x:Do" (hint)))
+              (should (string-match-p "sort:" (hint)))
+              (should (sub?))
+              ;; toggle: legend gone, sort + subtitle stay
+              (table-view-toggle-help)
+              (should-not (string-match-p "x:Do" (hint)))
+              (should (string-match-p "sort:" (hint)))
+              (should (string-match-p "?:help" (hint)))
+              (should (sub?))
+              ;; toggle back: legend returns
+              (table-view-toggle-help)
+              (should (string-match-p "x:Do" (hint))))))
+      (kill-buffer buf))))
+
 (ert-deftest tv-test-sort-ascending ()
   (tv-test--with-table
     (setq table-view--sort-keys '(("count" . t)))
@@ -1056,6 +1092,21 @@ This is the set-rows contract: a backend-delivered value wins over the `value-fn
     (table-view--goto-id "b")
     (table-view-mark-toggle)                       ; toggle off
     (should-not table-view--marks)))
+
+(ert-deftest tv-test-mark-all ()
+  (tv-test--with-table
+    (table-view-mark-all)
+    (should (= 3 (length table-view--marks)))
+    (should (string-match-p "| \\* |" (buffer-string)))
+    (table-view-unmark-all)
+    (should-not table-view--marks)))
+
+(ert-deftest tv-test-mark-all-respects-filter ()
+  ;; With a filter active, `M' marks only the visible (matching) rows.
+  (tv-test--with-table
+    (table-view-filter "Alpha")
+    (table-view-mark-all)
+    (should (equal table-view--marks '("a")))))
 
 (ert-deftest tv-test-mark-gutter-only-when-marked ()
   (tv-test--with-table

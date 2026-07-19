@@ -120,7 +120,7 @@ Open one and `M-x eval-buffer`.
 | `^`                      | sort by the column at point — a data cell **or its header** (repeat toggles asc/desc); off a column, cycles through every column and direction |
 | `C-u ^`                  | add the column at point as a secondary (tie-breaker) sort key; a following run of `^` then toggles that key's direction                        |
 | `g`                      | revert: `revert-buffer` (`special-mode`) runs `table-view-revert` — clear filter/narrow & refresh (client) or re-fetch the current page (paged), preserving the sort |
-| `m` / `u` / `U`          | toggle mark on the current row / unmark the current row / unmark all (marked rows get a `*` gutter column) |
+| `m` / `u` / `M` / `U`    | toggle mark on the current row / unmark it / mark all visible rows / unmark all (marked rows get a `*` gutter column) |
 | `/`                      | narrow to the marked rows, or — when nothing is marked — filter by substring |
 | `C-c C-o`                | follow the Org link at point (cells may hold `[[target][desc]]`; links are also mouse-clickable)                                               |
 | `>` / `<` (or `.` / `,`) | next / previous page (server-paged buffers only)                                                                                               |
