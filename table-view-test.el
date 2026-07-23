@@ -43,6 +43,14 @@
            (with-current-buffer buf ,@body))
        (kill-buffer buf))))
 
+(defun tv-test--goto-header ()
+  "Move to the header row's beginning: the first `table-view-col' line.
+Line-number-independent -- the legend above the header is multiline."
+  (goto-char (point-min))
+  (goto-char (prop-match-beginning
+              (text-property-search-forward 'table-view-col nil nil)))
+  (beginning-of-line))
+
 (defmacro tv-test--with-display (json &rest body)
   "Display the JSON spec (with its own rows) in a temp buffer, then run BODY."
   (declare (indent 1))
@@ -131,26 +139,35 @@ the sort status and the spec `subtitle' stay visible."
            nil)
           (table-view-set-rows buf '())
           (with-current-buffer buf
-            (cl-flet ((hint ()
+            (cl-flet ((hint ()                     ; line 2: the STATUS line
                         (save-excursion (goto-char (point-min)) (forward-line 1)
                           (buffer-substring-no-properties
                            (line-beginning-position) (line-end-position))))
-                      (sub? ()
+                      (line-of (needle)
+                        (save-excursion
+                          (goto-char (point-min))
+                          (when (search-forward needle nil t)
+                            (line-number-at-pos))))
+                      (legend? ()
                         (save-excursion (goto-char (point-min))
-                          (and (search-forward "#+TODO: TODO | DONE" nil t) t))))
-              ;; help ON (default): legend + sort + subtitle
-              (should (string-match-p "x:Do" (hint)))
+                          (and (search-forward "x:Do" nil t) t))))
+              ;; help ON (default): status line, subtitle, then the legend
               (should (string-match-p "sort:" (hint)))
-              (should (sub?))
-              ;; toggle: legend gone, sort + subtitle stay
+              (should (string-match-p "\\?:hide" (hint)))
+              (should-not (string-match-p "x:Do" (hint)))   ; legend left the status line
+              (should (legend?))
+              (should (line-of "#+TODO: TODO | DONE"))
+              ;; the legend sits AFTER the subtitle
+              (should (> (line-of "x:Do") (line-of "#+TODO: TODO | DONE")))
+              ;; toggle: legend gone, status + subtitle stay
               (table-view-toggle-help)
-              (should-not (string-match-p "x:Do" (hint)))
+              (should-not (legend?))
               (should (string-match-p "sort:" (hint)))
-              (should (string-match-p "?:help" (hint)))
-              (should (sub?))
+              (should (string-match-p "\\?:help" (hint)))
+              (should (line-of "#+TODO: TODO | DONE"))
               ;; toggle back: legend returns
               (table-view-toggle-help)
-              (should (string-match-p "x:Do" (hint))))))
+              (should (legend?)))))
       (kill-buffer buf))))
 
 (ert-deftest tv-test-sort-ascending ()
@@ -413,8 +430,7 @@ load order and check the row-id order equals EXPECTED."
 
 (ert-deftest tv-test-sort-by-header-column ()
   (tv-test--with-table
-    (goto-char (point-min))
-    (forward-line 3)                    ; header row
+    (tv-test--goto-header)
     (table-view-forward-column 2)       ; onto the "count" header cell
     (should (equal (tv-test--col-at-point) "count"))
     (call-interactively #'table-view-sort-cycle)   ; ^ on the header sorts by count
@@ -600,7 +616,7 @@ load order and check the row-id order equals EXPECTED."
   (tv-test--with-table
     (goto-char (point-min))             ; title line: no cells
     (should-not (table-view--on-cells-p))
-    (forward-line 3)                    ; header row: has cells
+    (tv-test--goto-header)              ; header row: has cells
     (should (table-view--on-cells-p))
     (table-view--goto-id "a")           ; data row: has cells
     (should (table-view--on-cells-p))))
@@ -613,15 +629,13 @@ load order and check the row-id order equals EXPECTED."
 
 (ert-deftest tv-test-header-cells-tagged ()
   (tv-test--with-table
-    (goto-char (point-min))
-    (forward-line 3)                    ; header row
+    (tv-test--goto-header)
     (forward-char 2)                    ; into the first header cell
     (should (equal (tv-test--col-at-point) "name"))))
 
 (ert-deftest tv-test-forward-column-on-header ()
   (tv-test--with-table
-    (goto-char (point-min))
-    (forward-line 3)                    ; header row (at bol)
+    (tv-test--goto-header)
     (table-view-forward-column)
     (should (equal (tv-test--col-at-point) "name"))
     (table-view-forward-column)
@@ -629,8 +643,7 @@ load order and check the row-id order equals EXPECTED."
 
 (ert-deftest tv-test-f-on-header-moves-by-column ()
   (tv-test--with-table
-    (goto-char (point-min))
-    (forward-line 3)                    ; header row
+    (tv-test--goto-header)
     (call-interactively #'table-view-forward)   ; f -> column motion on the header
     (should (equal (tv-test--col-at-point) "name"))))
 
@@ -746,8 +759,7 @@ load order and check the row-id order equals EXPECTED."
 
 (ert-deftest tv-test-next-line-enters-rows-from-header ()
   (tv-test--with-table
-    (goto-char (point-min))
-    (forward-line 3)                    ; header row (above the data rows)
+    (tv-test--goto-header)
     (should-not (get-text-property (line-beginning-position) 'table-view-id))
     (table-view-next-line)
     (should (equal (get-text-property (point) 'table-view-id) "a"))))  ; enters first row
@@ -763,8 +775,7 @@ load order and check the row-id order equals EXPECTED."
 
 (ert-deftest tv-test-previous-line-on-header-stays ()
   (tv-test--with-table
-    (goto-char (point-min))
-    (forward-line 3)                    ; header row
+    (tv-test--goto-header)
     (let ((line (line-number-at-pos)))
       (table-view-previous-line)        ; up from the header would leave the table
       (should (= (line-number-at-pos) line)))))  ; stays put, no jump into the rows
@@ -808,8 +819,7 @@ load order and check the row-id order equals EXPECTED."
 
 (ert-deftest tv-test-sort-cycle-preserves-point-location ()
   (tv-test--with-table
-    (goto-char (point-min))
-    (forward-line 3)                    ; header row, on the "name" column
+    (tv-test--goto-header)
     (forward-char 2)
     (let ((line (line-number-at-pos))
           (col (current-column)))
@@ -820,8 +830,8 @@ load order and check the row-id order equals EXPECTED."
 
 (ert-deftest tv-test-g-preserves-point-location ()
   (tv-test--with-table
-    (goto-char (point-min))
-    (forward-line 6)                    ; a data row (rows render a,b,c)
+    (tv-test--goto-header)
+    (forward-line 3)                    ; a data row (rows render a,b,c)
     (forward-char 4)
     (let ((line (line-number-at-pos))
           (col (current-column)))
@@ -864,8 +874,7 @@ load order and check the row-id order equals EXPECTED."
 
 (ert-deftest tv-test-move-column-on-header ()
   (tv-test--with-table
-    (goto-char (point-min))
-    (forward-line 3)                      ; header row
+    (tv-test--goto-header)
     (table-view-forward-column)           ; onto "name" header
     (call-interactively #'table-view-move-column-right)
     (should (equal (tv-test--col-order) '("count" "name" "status")))
@@ -1844,8 +1853,7 @@ push-down can be tested)."
   ;; `^' in a paged buffer keeps the cursor on the same on-screen line and
   ;; column (e.g. the column header just used), not the beginning of the line.
   (tv-test--with-paged 10 3
-    (goto-char (point-min))
-    (forward-line 3)                    ; header row
+    (tv-test--goto-header)
     (table-view-forward-column)         ; onto the "num" header
     (should (equal (tv-test--col-at-point) "num"))
     (let ((line (line-number-at-pos)) (col (current-column)))

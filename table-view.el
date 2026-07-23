@@ -5,7 +5,7 @@
 ;; Author: Dmitry Akatov <akatovda@gmail.com>
 ;; Maintainer: Dmitry Akatov <akatovda@gmail.com>
 ;; URL: https://github.com/rails-to-cosmos/table-view
-;; Version: 0.4.0
+;; Version: 0.5.0
 ;; Package-Requires: ((emacs "28.1"))
 ;; Keywords: convenience, data, tools
 ;; SPDX-License-Identifier: MIT
@@ -68,6 +68,7 @@
 ;;         off a column, cycle through every column and direction
 ;;   C-u ^ — add the column at point as a secondary (tie-breaker) sort key;
 ;;           a following run of `^' then toggles that key's direction
+;;   ?   — toggle the multiline action legend (below the subtitle)
 ;;   m   — toggle mark on the current row;  u — unmark it
 ;;   M   — mark all visible rows;  U — unmark all
 ;;   /   — narrow to the marked rows, or filter by substring when none marked
@@ -848,10 +849,11 @@ Prepends the mark-gutter column when any row is marked."
           "|"))
 
 (defun table-view--hint-string ()
-  "The hint line: current sort (always) + the action-key legend when
-`table-view--show-help' is on, else a `?:help' affordance to reveal it.
-Shows \"unsorted\" until an explicit sort has been applied, since rows
-render in load order and only reorder on `^'."
+  "The one-line STATUS: sort, filter, marks, page, and the `?' affordance.
+The action-key legend is separate (`table-view--legend-lines'): multiline,
+rendered after the spec `subtitle'.  Shows \"unsorted\" until an explicit
+sort has been applied, since rows render in load order and only reorder
+on `^'."
   (format "sort: %s%s%s%s    %s"
           (if (and table-view--sorted table-view--sort-keys)
               (table-view--sort-description)
@@ -869,12 +871,24 @@ render in load order and only reorder on `^'."
                  (format "    marked: %d" (length table-view--marks)))
                 (t ""))
           (table-view--page-segment)
-          (if table-view--show-help
-              (concat (mapconcat (lambda (a) (format "%s:%s"
-                                                     (alist-get 'key a) (alist-get 'label a)))
-                                 (table-view--actions table-view--spec) "  ")
-                      "  ?:hide")
-            "?:help")))
+          (if table-view--show-help "?:hide" "?:help")))
+
+(defun table-view--legend-lines ()
+  "The action-key legend as wrapped lines, or nil when hidden (`?').
+\"KEY:Label\" tokens fill each line up to the displaying window's width
+\(80 columns when the buffer has no window, e.g. in batch)."
+  (when table-view--show-help
+    (let* ((win (get-buffer-window (current-buffer)))
+           (width (max 40 (if win (window-body-width win) 80)))
+           (lines nil) (cur ""))
+      (dolist (action (table-view--actions table-view--spec))
+        (let ((tok (format "%s:%s" (alist-get 'key action) (alist-get 'label action))))
+          (cond ((string-empty-p cur) (setq cur tok))
+                ((<= (+ (length cur) 2 (length tok)) width)
+                 (setq cur (concat cur "  " tok)))
+                (t (push cur lines) (setq cur tok)))))
+      (unless (string-empty-p cur) (push cur lines))
+      (nreverse lines))))
 
 (defun table-view--goto-id (id)
   "Move point to the start of the row whose id is ID; non-nil on success."
@@ -920,6 +934,8 @@ N equal to the row count returns the position just past the last row."
     (let ((subtitle (alist-get 'subtitle spec)))
       (when (and subtitle (not (string-empty-p subtitle)))
         (insert subtitle "\n")))
+    (dolist (line (table-view--legend-lines))
+      (insert (propertize line 'face 'shadow) "\n"))
     (insert "\n")
     (insert (table-view--header-string spec widths) "\n")
     (insert (table-view--rule-string spec widths) "\n")
@@ -1546,10 +1562,11 @@ Complements `m' (mark/unmark toggle) and `U' (unmark all); mirrors dired's
 
 (defun table-view-toggle-help ()
   "Toggle the action-key legend on the hint line (`?').
-The sort status and the spec `subtitle' stay visible either way."
+The sort status and the spec `subtitle' stay visible either way.  A full
+re-render: the legend is multiline, so its lines appear and disappear."
   (interactive)
   (setq table-view--show-help (not table-view--show-help))
-  (table-view--refresh-hint))
+  (table-view--render))
 
 (defun table-view-mark-all ()
   "Mark every visible row: the filtered set, or the loaded page when paged.
