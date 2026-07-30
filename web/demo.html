@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>table-view.js — demo</title>
+<style>
+  body{margin:0;font:14px/1.5 system-ui,sans-serif;background:#eceef2;color:#1c1e26;
+    padding:24px;display:flex;flex-direction:column;gap:14px}
+  @media (prefers-color-scheme:dark){body{background:#13141c;color:#c8ccd4}}
+  h1{font-size:16px;margin:0}
+  .controls{display:flex;gap:8px;flex-wrap:wrap}
+  .controls button{font:inherit;padding:5px 12px;border-radius:6px;border:1px solid #999;
+    background:transparent;color:inherit;cursor:pointer}
+  #app{height:70vh}
+  #log{font:12px ui-monospace,monospace;opacity:.75;min-height:1.4em}
+</style>
+</head>
+<body>
+  <h1>table-view.js — glance headline view</h1>
+  <div class="controls">
+    <button id="add">upsert row</button>
+    <button id="done">mark selected DONE</button>
+    <button id="del">delete selected</button>
+  </div>
+  <div id="app"></div>
+  <div id="log">click a row (select) · double-click = default action · click a link</div>
+
+  <script src="table-view.js"></script>
+  <script>
+    const view = {
+      title: "Inbox — glance",
+      columns: [
+        { key: "state", header: "State", type: "badge", sortable: true,
+          badges: [ { value: "TODO", color: "#e0af68" },
+                    { value: "NEXT", color: "#7aa2f7" },
+                    { value: "WAIT", color: "#bb9af7" },
+                    { value: "DONE", color: "#9ece6a" } ] },
+        { key: "priority", header: "Pri", type: "text", sortable: true, values: ["A","B","C"] },
+        { key: "title", header: "Headline", type: "text" },
+        { key: "tags", header: "Tags", type: "text" },
+        { key: "scheduled", header: "Scheduled", type: "text", sortable: true },
+        { key: "effort", header: "Effort", type: "number", align: "right", sortable: true }
+      ],
+      actions: [
+        { key: "RET", command: "open",  label: "Open in Emacs" },
+        { key: "t",   command: "cycle", label: "Cycle TODO" }
+      ],
+      sort: { column: "scheduled", ascending: true },
+      rows: [
+        { id: "a1b2", cells: { state: "NEXT", priority: "A",
+          title: "[[org-glance:a1b2][Ship table-view.js]]", tags: ":web:glance:",
+          scheduled: "2026-08-01", effort: 120 } },
+        { id: "c3d4", cells: { state: "TODO", priority: "B",
+          title: "Write SCHEMA.md", tags: ":web:", scheduled: "2026-08-03", effort: 45 } },
+        { id: "e5f6", cells: { state: "WAIT", priority: "C",
+          title: "Wire RefKind into fgl graph", tags: ":glance:graph:",
+          scheduled: "2026-08-09", effort: 240 } },
+        { id: "g7h8", cells: { state: "DONE", priority: "B",
+          title: "See [[https://example.com/pr/12][PR #12]] merged", tags: ":done:",
+          scheduled: "2026-07-28", effort: 30 } }
+      ]
+    };
+
+    const log = (m) => (document.getElementById("log").textContent = m);
+
+    const tv = TableView.mount(document.getElementById("app"), view, {
+      onAction: (command, id, row) =>
+        log(`action: ${command}  id=${id}  headline="${TableView.displayText(row.cells.title)}"`),
+      onLink: (target, row) => log(`link: ${target}  (from ${row ? row.id : "?"})`),
+    });
+
+    let n = 0;
+    document.getElementById("add").onclick = () => {
+      n++;
+      tv.upsertRow({ id: "new" + n, cells: {
+        state: "TODO", priority: "B", title: "Streamed row " + n,
+        tags: ":live:", scheduled: "2026-08-1" + n, effort: n * 15 } });
+      log("upserted new" + n);
+    };
+    document.getElementById("done").onclick = () => {
+      const rows = tv.getRows();
+      const id = (tv.el.querySelector(".tv-sel") || {}).dataset?.id;
+      if (!id) return log("select a row first");
+      const row = rows.find((r) => r.id === id);
+      row.cells.state = "DONE";
+      tv.upsertRow(row);
+      log("marked " + id + " DONE");
+    };
+    document.getElementById("del").onclick = () => {
+      const id = (tv.el.querySelector(".tv-sel") || {}).dataset?.id;
+      if (!id) return log("select a row first");
+      tv.deleteRow(id);
+      log("deleted " + id);
+    };
+  </script>
+</body>
+</html>
