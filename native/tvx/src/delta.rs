@@ -46,9 +46,9 @@ pub fn diff_ops(old: &[RowSnap], new: &[RowSnap]) -> Vec<Value> {
     for i in (p..no - s).rev() {
         ops.push(json!({"op": "delete", "index": i}));
     }
-    for i in p..nn - s {
+    for (i, row) in new.iter().enumerate().take(nn - s).skip(p) {
         ops.push(json!({"op": "insert", "index": i,
-                        "row": {"id": new[i].id, "cells": new[i].cells}}));
+                        "row": {"id": row.id, "cells": row.cells}}));
     }
     ops
 }

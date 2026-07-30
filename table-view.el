@@ -358,6 +358,12 @@ unchanged for numeric/custom comparators.  Applied once, before the
 comparator, so every comparator kind agrees with the display."
   (if (stringp val) (table-view--cell-text col val) val))
 
+(defun table-view--row-with-cells (row cells)
+  "Return ROW with its `cells' entry replaced by CELLS, other keys kept.
+A fresh cons list, so the caller's ROW is never mutated."
+  (cons (cons 'cells cells)
+        (seq-remove (lambda (kv) (eq (car kv) 'cells)) row)))
+
 (defun table-view--compute-cells (rows spec)
   "Return ROWS with SPEC's `value-fn' columns' cells materialised.
 A `value-fn' column declares a function of (ID ROW).  Each row lacking that
@@ -380,8 +386,7 @@ fresh `cells' alist, so the caller's ROWS are never mutated."
                  (push (cons sym (funcall (alist-get 'value-fn col) id row)) added))))
            (if (null added)
                row
-             (cons (cons 'cells (append added cells))
-                   (seq-remove (lambda (kv) (eq (car kv) 'cells)) row)))))
+             (table-view--row-with-cells row (append added cells)))))
        rows))))
 
 (defun table-view--strip-cell (rows key)
@@ -393,10 +398,17 @@ stale computed cell so a (re)added `value-fn' column recomputes it instead of
     (mapcar (lambda (row)
               (let ((cells (alist-get 'cells row)))
                 (if (assq sym cells)
-                    (cons (cons 'cells (assq-delete-all sym (copy-alist cells)))
-                          (seq-remove (lambda (kv) (eq (car kv) 'cells)) row))
+                    (table-view--row-with-cells row (assq-delete-all sym (copy-alist cells)))
                   row)))
             rows)))
+
+(defun table-view--refresh-mark-cache ()
+  "Refresh cached marked-row snapshots from `table-view--rows', keyed by id.
+A marked row that reappears in the current rows updates its cache snapshot, so
+bulk actions and the narrowed render see its post-update data."
+  (dolist (r table-view--rows)
+    (let ((cell (assoc (alist-get 'id r) table-view--mark-cache)))
+      (when cell (setcdr cell r)))))
 
 (defun table-view--strip-cell-everywhere (key)
   "Drop column KEY's cell from `table-view--rows' and the paged mark-cache."
@@ -430,18 +442,6 @@ predicate function directly.  Consumers extend this with `push'.")
         ((stringp val) (string-to-number val))
         (t 0)))
 
-(defun table-view--number-lessp (a b)
-  "Numeric order of A and B, coercing number-strings and nil."
-  (< (table-view--as-number a) (table-view--as-number b)))
-
-(defun table-view--natural-lessp (a b)
-  "Number-aware string order of A and B, so \"2\" < \"10\" and \"x2\" < \"x10\"."
-  (string-version-lessp (table-view--str a) (table-view--str b)))
-
-(defun table-view--string-lessp (a b)
-  "Lexicographic order of A and B as display strings."
-  (string< (table-view--str a) (table-view--str b)))
-
 (defun table-view--value-order (col)
   "Ordered list of column COL's declared values, or nil.
 Taken from `values' when present, else the badge palette order (so
@@ -451,43 +451,14 @@ ordered list of expected values; colours stay in `badges'."
       (and (equal (alist-get 'type col) "badge")
            (mapcar (lambda (b) (alist-get 'value b)) (alist-get 'badges col)))))
 
-(defun table-view--categorical-lessp (order)
-  "Return a predicate ordering values by position in ORDER, unlisted last.
-Values are matched as display strings, so numeric cells compare against
-string entries in ORDER."
-  (let* ((keys (mapcar #'table-view--str order))
-         (n (length keys)))
-    (lambda (a b)
-      (< (or (cl-position (table-view--str a) keys :test #'equal) n)
-         (or (cl-position (table-view--str b) keys :test #'equal) n)))))
-
-(defun table-view--comparator (col)
-  "Return a less-than predicate over raw cell values for column COL.
-Resolution order:
-  1. an explicit `compare' -- a predicate function, a built-in name
-     (\"number\"/\"numeric\", \"string\"/\"lexicographic\",
-     \"natural\"/\"version\"), or a name in `table-view-comparators';
-  2. else an ordered `values'/badge domain (categorical, unlisted last);
-  3. else `type' \"number\" (numeric);
-  4. else lexicographic."
-  (let ((compare (alist-get 'compare col))
-        (order (table-view--value-order col)))
-    (cond
-     ((functionp compare) compare)
-     ((member compare '("number" "numeric")) #'table-view--number-lessp)
-     ((member compare '("string" "lexicographic")) #'table-view--string-lessp)
-     ((member compare '("natural" "version")) #'table-view--natural-lessp)
-     ((and (stringp compare) (cdr (assoc compare table-view-comparators)))
-      (cdr (assoc compare table-view-comparators)))
-     (order (table-view--categorical-lessp order))
-     ((equal (alist-get 'type col) "number") #'table-view--number-lessp)
-     (t #'table-view--string-lessp))))
-
 (defun table-view--sort-key-spec (col)
-  "Return (KEYFN . KLESS) for column COL, mirroring `table-view--comparator'.
+  "Return (KEYFN . KLESS) for COL -- the single source of sort resolution.
 KEYFN maps a raw cell value to a comparison key; KLESS is a primitive less-than
 over keys.  Splitting the comparator this way lets the key be computed once per
-row (decorate-sort-undecorate) instead of per comparison."
+row (decorate-sort-undecorate) instead of per comparison.  Resolution order: an
+explicit `compare' (a predicate, a built-in name, or a `table-view-comparators'
+name), else an ordered `values'/badge domain (categorical, unlisted last), else
+`type' \"number\", else lexicographic."
   (let* ((compare (alist-get 'compare col))
          (order (table-view--value-order col))
          (sv (lambda (v) (table-view--sort-value col v)))
@@ -508,6 +479,13 @@ row (decorate-sort-undecorate) instead of per comparison."
               #'<)))
      ((equal (alist-get 'type col) "number") (cons num #'<))
      (t (cons txt #'string<)))))
+
+(defun table-view--comparator (col)
+  "Return a less-than predicate over raw cell values for column COL.
+Derived from `table-view--sort-key-spec' (the single source of resolution
+order): each argument is decorated with that spec's key, then compared."
+  (pcase-let ((`(,keyfn . ,kless) (table-view--sort-key-spec col)))
+    (lambda (a b) (funcall kless (funcall keyfn a) (funcall keyfn b)))))
 
 ;; A sort key is a cons (COL . DIRECTION-CODE).  DIRECTION-CODE widens the plain
 ;; asc/desc cdr with a nulls-placement axis while keeping the old shape: t and
@@ -576,10 +554,10 @@ independent of the key's direction."
           (sort (copy-sequence table-view--rows)
                 (lambda (a b)
                   (cl-loop for (less key asc nfirst col) in tests
-                           for va = (table-view--sort-value col (table-view--cell a key))
-                           for vb = (table-view--sort-value col (table-view--cell b key))
-                           for na = (string-empty-p (table-view--str va))
-                           for nb = (string-empty-p (table-view--str vb))
+                           for va = (table-view--cell a key)
+                           for vb = (table-view--cell b key)
+                           for na = (table-view--sort-null-p col va)
+                           for nb = (table-view--sort-null-p col vb)
                            do (cond
                                ((and na nb) nil)                 ; tie on this key
                                (na (cl-return nfirst))
@@ -674,12 +652,6 @@ changes -- a render-links flip, a column add/remove -- clear the cache."
                                 col (table-view--cell row (alist-get 'key col))))
                              (table-view--columns table-view--spec) "\n"))
                  cache))))
-
-(defun table-view--row-matches-p (row filter)
-  "Non-nil if ROW's text contains FILTER (case-insensitive substring).
-The newline cell separator makes column order irrelevant and blocks
-cross-column false matches for any (newline-free) typed pattern."
-  (string-search (downcase filter) (table-view--row-filter-text row)))
 
 (defun table-view--marked-p (id)
   "Non-nil when the row with ID is marked."
@@ -1987,10 +1959,7 @@ ROWS, and lands point on the first row (or the requested row id)."
                       (t (and next-cursor t)))
                 table-view--page-loading nil
                 table-view--page-error nil)
-          ;; Keep marked-row snapshots fresh when a marked row reappears here.
-          (dolist (r table-view--rows)
-            (let ((cell (assoc (alist-get 'id r) table-view--mark-cache)))
-              (when cell (setcdr cell r))))
+          (table-view--refresh-mark-cache)
           (setq table-view--pending nil)
           (table-view--invalidate-widths)
           (table-view--render)
@@ -2029,12 +1998,7 @@ any that only moved -- untouched.  Re-renders once for the whole batch."
                               (setq rows (append (seq-take rows i) (list row) (seq-drop rows i)))))
                   ("reset" (setq rows (mapcar #'reuse (append (plist-get op :rows) nil))))))
               (setq table-view--rows rows))))
-        ;; Keep marked-row snapshots fresh when a marked row is still visible, so
-        ;; bulk actions and the narrowed render see post-delta data (as in
-        ;; `table-view-set-page').
-        (dolist (r table-view--rows)
-          (let ((cell (assoc (alist-get 'id r) table-view--mark-cache)))
-            (when cell (setcdr cell r))))
+        (table-view--refresh-mark-cache)
         (table-view--invalidate-widths)
         (table-view--render)))))
 

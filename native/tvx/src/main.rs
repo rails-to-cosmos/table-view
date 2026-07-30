@@ -83,10 +83,7 @@ fn main() {
                         Err(e) => Err((-32004, e)),
                         Ok(view) => {
                             let matched = view.len();
-                            let end = (offset + limit).min(matched);
-                            let snaps: Vec<_> = if offset < matched {
-                                view[offset..end].iter().map(|&i| t.snap(i as usize)).collect()
-                            } else { vec![] };
+                            let snaps = t.window_snaps(&view, offset, limit);
                             let rows: Vec<Value> = snaps.iter()
                                 .map(|r| json!({"id": r.id, "cells": r.cells})).collect();
                             let gen = if subscribe {
@@ -97,7 +94,7 @@ fn main() {
                                 t.sub_gen
                             } else { 0 };
                             Ok(json!({"gen": gen, "rev": t.rev, "offset": offset, "total": total,
-                                      "matched": matched, "hasNext": end < matched, "rows": rows}))
+                                      "matched": matched, "hasNext": offset + limit < matched, "rows": rows}))
                         }
                     }
                 }

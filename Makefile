@@ -3,7 +3,7 @@ EMACS ?= emacs
 EL  := table-view.el
 TEST := table-view-test.el
 
-.PHONY: all test compile clean
+.PHONY: all test compile web-check elisp-check typecheck check clean
 
 all: compile test
 
@@ -14,6 +14,26 @@ test:
 ## Byte-compile the package (doubles as a lint pass; warnings are surfaced).
 compile:
 	$(EMACS) -Q -batch -L . -f batch-byte-compile $(EL)
+
+## Typecheck the browser renderer against the schema (JSDoc + `@ts-check', no
+## build; needs Node -- fetches tsc via npx on first run).  `noEmit' is set in
+## web/jsconfig.json.
+web-check:
+	cd web && npx --yes -p typescript tsc -p jsconfig.json
+
+## Byte-compile the library elisp with warnings promoted to errors (the elisp
+## analogue of a type check: undefined functions, arity, unused bindings, ...).
+## The EXIT trap removes the .elc byproducts while keeping emacs's exit status.
+elisp-check:
+	@trap 'rm -f *.elc' EXIT; \
+	  $(EMACS) -Q -batch -L . --eval '(setq byte-compile-error-on-warn t)' \
+	    -f batch-byte-compile $(EL) table-view-native.el
+
+## Type-check everything: the elisp sources and the web renderer.
+typecheck: elisp-check web-check
+
+## Full quality gate (CI / pre-commit): type-check both sides, then run tests.
+check: typecheck test
 
 ## Remove byte-compiled artifacts.
 clean:

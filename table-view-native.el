@@ -312,14 +312,13 @@ is stored."
           ((eq conn0 conn) handle0)
           (t (table-view-native--open conn)))))
 
-(defun table-view-native--page-fn (buffer conn0 handle0)
-  "Return a `page-fn' closure fetching subscribed windows for BUFFER.
+(defun table-view-native--page-fn (conn0 handle0)
+  "Return a `page-fn' closure fetching subscribed windows for the table buffer.
 The closure resolves the live connection and handle at call time, so it
 survives a backend respawn; CONN0/HANDLE0 bootstrap the first fetch."
   (lambda (req)
     (let* ((buf (plist-get req :buffer))
            (conn (table-view-native--ensure-connection)))
-      (ignore buffer)
       (if (not conn)
           (table-view-page-error buf "native backend unavailable")
         (jsonrpc-async-request
@@ -384,7 +383,7 @@ Other source kinds (e.g. \"gen\", \"file\") pass through untouched."
                                                         (list (cons 'page-size page-size)
                                                               (cons 'strategy 'offset))))))))
         (table-view-display buffer spec handlers nil
-                            (table-view-native--page-fn buf conn handle))
+                            (table-view-native--page-fn conn handle))
         (with-current-buffer buf
           (setq-local table-view-native--source wire  ; wire-ready, for respawn re-open
                       table-view-native--conn-handle (cons conn handle)
@@ -494,22 +493,23 @@ $/delta that updates the subscribed window."
                    :upserts (vconcat (mapcar #'table-view-native--row->wire (plist-get args :upserts)))
                    :deletes (vconcat (plist-get args :deletes))))))))))
 
+(defun table-view-native--sync-request (buffer method extra key)
+  "Send a synchronous METHOD request for BUFFER's handle; return reply KEY.
+EXTRA is a plist of method params beyond :handle."
+  (with-current-buffer (get-buffer buffer)
+    (plist-get (jsonrpc-request (car table-view-native--conn-handle) method
+                                (append (list :handle (cdr table-view-native--conn-handle)) extra))
+               key)))
+
 (defun table-view-native-count (buffer &optional filter)
   "Return the number of rows in native table-view BUFFER matching FILTER."
-  (with-current-buffer (get-buffer buffer)
-    (plist-get (jsonrpc-request (car table-view-native--conn-handle) 'count
-                                (list :handle (cdr table-view-native--conn-handle)
-                                      :filter (or filter "")))
-               :matched)))
+  (table-view-native--sync-request buffer 'count (list :filter (or filter "")) :matched))
 
 (defun table-view-native-aggregate (buffer column op &optional filter)
   "Aggregate COLUMN of native table-view BUFFER with OP under FILTER.
 OP is one of \"sum\", \"min\", \"max\", \"avg\", \"count\" (a string)."
-  (with-current-buffer (get-buffer buffer)
-    (plist-get (jsonrpc-request (car table-view-native--conn-handle) 'aggregate
-                                (list :handle (cdr table-view-native--conn-handle)
-                                      :column column :op op :filter (or filter "")))
-               :value)))
+  (table-view-native--sync-request
+   buffer 'aggregate (list :column column :op op :filter (or filter "")) :value))
 
 (defun table-view-native-reset ()
   "Clear native fallback/crash state and rebuild the backend."

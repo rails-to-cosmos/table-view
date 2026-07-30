@@ -174,28 +174,28 @@ the sort status and the spec `subtitle' stay visible."
   (tv-test--with-table
     (setq table-view--sort-keys '(("count" . t)))
     (table-view--sort-rows)
-    (should (equal (mapcar (lambda (r) (alist-get 'id r)) table-view--rows)
+    (should (equal (tv-test--ids table-view--rows)
                    '("b" "c" "a")))))
 
 (ert-deftest tv-test-sort-descending ()
   (tv-test--with-table
     (setq table-view--sort-keys '(("count")))   ; ("count" . nil) = descending
     (table-view--sort-rows)
-    (should (equal (mapcar (lambda (r) (alist-get 'id r)) table-view--rows)
+    (should (equal (tv-test--ids table-view--rows)
                    '("a" "c" "b")))))
 
 (ert-deftest tv-test-sort-string ()
   (tv-test--with-table
     (setq table-view--sort-keys '(("name" . t)))
     (table-view--sort-rows)
-    (should (equal (mapcar (lambda (r) (alist-get 'id r)) table-view--rows)
+    (should (equal (tv-test--ids table-view--rows)
                    '("a" "b" "c")))))
 
 (ert-deftest tv-test-sort-badge ()
   (tv-test--with-table
     (setq table-view--sort-keys '(("status" . t)))
     (table-view--sort-rows)
-    (should (equal (mapcar (lambda (r) (alist-get 'id r)) table-view--rows)
+    (should (equal (tv-test--ids table-view--rows)
                    '("a" "c" "b")))))
 
 (ert-deftest tv-test-sort-sets-sorted-flag ()
@@ -279,7 +279,7 @@ load order and check the row-id order equals EXPECTED."
                    (setq table-view--rows (copy-sequence orig)
                          table-view--sort-keys (list key))
                    (table-view--sort-rows)
-                   (mapcar (lambda (r) (alist-get 'id r)) table-view--rows)))
+                   (tv-test--ids table-view--rows)))
          ,@(mapcar (lambda (a) `(should (equal (order ',(car a)) ',(cdr a))))
                    asserts)))))
 
@@ -326,7 +326,7 @@ load order and check the row-id order equals EXPECTED."
                   (setq table-view--rows (copy-sequence orig)
                         table-view--sort-keys keys)
                   (table-view--sort-rows)
-                  (mapcar (lambda (r) (alist-get 'id r)) table-view--rows)))
+                  (tv-test--ids table-view--rows)))
         ;; primary nulls-last: "x" group (c,a by n asc), then empties (b,d)
         (should (equal (order '(("s" . t) ("n" . t))) '("c" "a" "b" "d")))
         ;; primary nulls-first: empties (b,d) first, then "x" group (c,a)
@@ -373,7 +373,7 @@ load order and check the row-id order equals EXPECTED."
     (table-view-set-rows (current-buffer) tv-test--tie-rows)
     (setq table-view--sort-keys '(("name" . t) ("count" . t)))  ; name asc, count asc
     (table-view--sort-rows)
-    (should (equal (mapcar (lambda (r) (alist-get 'id r)) table-view--rows)
+    (should (equal (tv-test--ids table-view--rows)
                    '("z" "y" "x")))))                            ; ties broken by count
 
 (ert-deftest tv-test-sort-secondary-direction-independent ()
@@ -381,7 +381,7 @@ load order and check the row-id order equals EXPECTED."
     (table-view-set-rows (current-buffer) tv-test--tie-rows)
     (setq table-view--sort-keys '(("name" . t) ("count")))      ; name asc, count DESC
     (table-view--sort-rows)
-    (should (equal (mapcar (lambda (r) (alist-get 'id r)) table-view--rows)
+    (should (equal (tv-test--ids table-view--rows)
                    '("z" "x" "y")))))
 
 (ert-deftest tv-test-sort-cu-appends-secondary ()
@@ -479,7 +479,7 @@ load order and check the row-id order equals EXPECTED."
                      {\"id\":\"3\",\"cells\":{\"n\":2}} ] }"
     (should (equal table-view--sort-keys '(("n" . t))))
     (should table-view--sorted)                          ; applied on open
-    (should (equal (mapcar (lambda (r) (alist-get 'id r)) table-view--rows)
+    (should (equal (tv-test--ids table-view--rows)
                    '("2" "3" "1")))))
 
 (ert-deftest tv-test-default-multi-sort-applied ()
@@ -493,7 +493,7 @@ load order and check the row-id order equals EXPECTED."
                      {\"id\":\"z\",\"cells\":{\"g\":\"B\",\"n\":5}} ] }"
     (should (equal table-view--sort-keys '(("g" . t) ("n"))))   ; multi-column chain
     (should table-view--sorted)                                  ; applied on open
-    (should (equal (mapcar (lambda (r) (alist-get 'id r)) table-view--rows)
+    (should (equal (tv-test--ids table-view--rows)
                    '("y" "x" "z")))))                            ; group by g, n desc within
 
 (ert-deftest tv-test-no-default-sort-opens-unsorted ()
@@ -503,7 +503,7 @@ load order and check the row-id order equals EXPECTED."
                      {\"id\":\"2\",\"cells\":{\"n\":1}} ] }"
     (should-not table-view--sort-keys)
     (should-not table-view--sorted)
-    (should (equal (mapcar (lambda (r) (alist-get 'id r)) table-view--rows)
+    (should (equal (tv-test--ids table-view--rows)
                    '("1" "2")))))                                ; load order
 
 ;;; Filtering
@@ -784,18 +784,21 @@ load order and check the row-id order equals EXPECTED."
   (tv-test--with-table
     (table-view-set-rows (current-buffer) nil)   ; (no rows)
     (goto-char (point-min))
-    (table-view-next-line)                        ; must not error
-    (table-view-previous-line)))
+    (let ((p (point)))
+      (table-view-next-line)
+      (should (= (point) p))                      ; nowhere to move with no rows
+      (table-view-previous-line)
+      (should (= (point) p)))))
 
 ;;; Refresh (g) preserves ordering
 
 (ert-deftest tv-test-g-preserves-unsorted-order ()
   (tv-test--with-table
     (should-not table-view--sorted)
-    (let ((before (mapcar (lambda (r) (alist-get 'id r)) table-view--rows)))
+    (let ((before (tv-test--ids table-view--rows)))
       (call-interactively #'table-view-revert)
       (should-not table-view--sorted)
-      (should (equal (mapcar (lambda (r) (alist-get 'id r)) table-view--rows)
+      (should (equal (tv-test--ids table-view--rows)
                      before)))))
 
 (ert-deftest tv-test-g-clears-filter-keeps-unsorted ()
@@ -812,7 +815,7 @@ load order and check the row-id order equals EXPECTED."
     (should table-view--sorted)
     (call-interactively #'table-view-revert)
     (should table-view--sorted)
-    (should (equal (mapcar (lambda (r) (alist-get 'id r)) table-view--rows)
+    (should (equal (tv-test--ids table-view--rows)
                    '("b" "c" "a")))))
 
 ;;; Cursor location preserved across re-renders (^ g /)
@@ -844,7 +847,7 @@ load order and check the row-id order equals EXPECTED."
   (tv-test--with-table
     (table-view--goto-id "c")           ; start on the last row
     (table-view-filter "l")             ; matches alpha (a) and charlie (c)
-    (should (equal (mapcar (lambda (r) (alist-get 'id r)) (table-view--visible-rows))
+    (should (equal (tv-test--ids (table-view--visible-rows))
                    '("a" "c")))
     (should (equal (get-text-property (point) 'table-view-id) "a"))))  ; first match, not c
 
@@ -962,7 +965,7 @@ renders and sorts like a backend-supplied column."
     (should (string-match-p "Neg" (buffer-string)))
     (setq table-view--sort-keys '(("neg" . t)))
     (table-view--sort-rows)
-    (should (equal (mapcar (lambda (r) (alist-get 'id r)) table-view--rows)
+    (should (equal (tv-test--ids table-view--rows)
                    '("a" "c" "b")))))
 
 (ert-deftest tv-test-value-fn-recomputed-on-set-rows ()
@@ -1121,7 +1124,7 @@ This is the set-rows contract: a backend-delivered value wins over the `value-fn
                      {\"id\":\"c\",\"cells\":{\"v\":\"item1\"}} ] }"
     (setq table-view--sort-keys '(("v" . t)))
     (table-view--sort-rows)
-    (should (equal (mapcar (lambda (r) (alist-get 'id r)) table-view--rows)
+    (should (equal (tv-test--ids table-view--rows)
                    '("c" "b" "a")))))                        ; item1, item2, item10
 
 (ert-deftest tv-test-values-sort-end-to-end ()
@@ -1133,7 +1136,7 @@ This is the set-rows contract: a backend-delivered value wins over the `value-fn
                      {\"id\":\"c\",\"cells\":{\"p\":\"medium\"}} ] }"
     (setq table-view--sort-keys '(("p" . t)))
     (table-view--sort-rows)
-    (should (equal (mapcar (lambda (r) (alist-get 'id r)) table-view--rows)
+    (should (equal (tv-test--ids table-view--rows)
                    '("b" "c" "a")))))                        ; low, medium, high
 
 ;;; Sortable defaults to true
@@ -1228,7 +1231,7 @@ This is the set-rows contract: a backend-delivered value wins over the `value-fn
   (tv-test--with-table
     (table-view-set-sort '(("count" . t)))
     (should (equal '("b" "c" "a")            ; counts ascending: 1 2 3
-                   (mapcar (lambda (r) (alist-get 'id r)) table-view--rows)))
+                   (tv-test--ids table-view--rows)))
     (table-view-set-sort nil)
     (should (null table-view--sort-keys))))
 
@@ -1348,7 +1351,7 @@ This is the set-rows contract: a backend-delivered value wins over the `value-fn
   (tv-test--with-table
     (table-view--goto-id "c") (table-view-mark-toggle)
     (table-view--goto-id "a") (table-view-mark-toggle)
-    (should (equal (mapcar (lambda (r) (alist-get 'id r)) (table-view-marked-rows))
+    (should (equal (tv-test--ids (table-view-marked-rows))
                    '("a" "c")))))                 ; row order, not mark order
 
 (ert-deftest tv-test-narrow-to-marked ()
@@ -1357,7 +1360,7 @@ This is the set-rows contract: a backend-delivered value wins over the `value-fn
     (table-view--goto-id "c") (table-view-mark-toggle)
     (table-view-narrow-toggle)
     (should table-view--narrowed)
-    (should (equal (mapcar (lambda (r) (alist-get 'id r)) (table-view--visible-rows))
+    (should (equal (tv-test--ids (table-view--visible-rows))
                    '("a" "c")))
     (should-not (string-match-p "bravo" (buffer-string)))
     (table-view-narrow-toggle)                    ; widen
@@ -1375,7 +1378,7 @@ This is the set-rows contract: a backend-delivered value wins over the `value-fn
     (let (got)
       (setq table-view--handlers
             `(("act" . ,(lambda (rows)
-                          (setq got (mapcar (lambda (r) (alist-get 'id r)) rows))))))
+                          (setq got (tv-test--ids rows))))))
       (table-view--goto-id "a") (table-view-mark-toggle)
       (table-view--goto-id "c") (table-view-mark-toggle)
       (table-view--dispatch "act" t)
@@ -1386,7 +1389,7 @@ This is the set-rows contract: a backend-delivered value wins over the `value-fn
     (let (got)
       (setq table-view--handlers
             `(("act" . ,(lambda (rows)
-                          (setq got (mapcar (lambda (r) (alist-get 'id r)) rows))))))
+                          (setq got (tv-test--ids rows))))))
       (setq table-view--marks nil)
       (table-view--goto-id "b")
       (table-view--dispatch "act" t)
@@ -1535,8 +1538,12 @@ push-down can be tested)."
            (with-current-buffer buf ,@body))
        (kill-buffer buf))))
 
+(defun tv-test--ids (rows)
+  "The ids of ROWS, in order."
+  (mapcar (lambda (r) (alist-get 'id r)) rows))
+
 (defun tv-test--visible-ids ()
-  (mapcar (lambda (r) (alist-get 'id r)) (table-view--visible-rows)))
+  (tv-test--ids (table-view--visible-rows)))
 
 ;; -- setup / offset basics --
 
@@ -1665,7 +1672,7 @@ push-down can be tested)."
     ;; a page arrives already ordered; the client must not re-sort the slice
     (setq table-view--sort-keys '(("num" . t)))
     (table-view--sort-rows)                      ; no-op on the rows in paged mode
-    (should (equal (mapcar (lambda (r) (alist-get 'id r)) table-view--rows)
+    (should (equal (tv-test--ids table-view--rows)
                    '("r1" "r2" "r3")))
     (should table-view--sorted)))                ; but the sort still counts as active
 
@@ -1677,7 +1684,7 @@ push-down can be tested)."
     (table-view-next-page)
     (table-view--goto-id "r4") (table-view-mark-toggle)   ; page 2
     (should (equal (sort (copy-sequence table-view--marks) #'string<) '("r1" "r4")))
-    (should (equal (mapcar (lambda (r) (alist-get 'id r)) (table-view-marked-rows))
+    (should (equal (tv-test--ids (table-view-marked-rows))
                    '("r1" "r4")))))              ; cached rows from both pages
 
 (ert-deftest tv-test-page-mark-survives-page-turn ()
@@ -1693,7 +1700,7 @@ push-down can be tested)."
     (let (got)
       (setq table-view--handlers
             `(("act" . ,(lambda (rows)
-                          (setq got (mapcar (lambda (r) (alist-get 'id r)) rows))))))
+                          (setq got (tv-test--ids rows))))))
       (table-view--goto-id "r1") (table-view-mark-toggle)
       (table-view-next-page)
       (table-view--goto-id "r5") (table-view-mark-toggle)
@@ -2022,7 +2029,7 @@ push-down can be tested)."
       '(((id . "a") (cells . ((name . "[[https://x.com][Homepage]]") (n . 1))))
         ((id . "b") (cells . ((name . "[[https://y.com][Docs]]") (n . 2)))))
     (setq table-view--filter "homepage")
-    (should (equal (mapcar (lambda (r) (alist-get 'id r)) (table-view--visible-rows))
+    (should (equal (tv-test--ids (table-view--visible-rows))
                    '("a")))))
 
 (ert-deftest tv-test-link-sort-by-description ()
@@ -2032,7 +2039,7 @@ push-down can be tested)."
         ((id . "b") (cells . ((name . "[[https://aaa.com][Banana]]") (n . 2)))))
     (setq table-view--sort-keys '(("name" . t)))
     (table-view--sort-rows)
-    (should (equal (mapcar (lambda (r) (alist-get 'id r)) table-view--rows)
+    (should (equal (tv-test--ids table-view--rows)
                    '("a" "b")))))                       ; Apple < Banana, though URLs reversed
 
 (ert-deftest tv-test-open-link-at-point ()
@@ -2087,7 +2094,7 @@ push-down can be tested)."
           (with-current-buffer buf
             (setq table-view--sort-keys '(("p" . t)))
             (table-view--sort-rows)
-            (should (equal (mapcar (lambda (r) (alist-get 'id r)) table-view--rows)
+            (should (equal (tv-test--ids table-view--rows)
                            '("a" "z")))))               ; Apple < Zebra, by description
       (kill-buffer buf))))
 
@@ -2105,7 +2112,7 @@ push-down can be tested)."
           (with-current-buffer buf
             (setq table-view--sort-keys '(("n" . t)))
             (table-view--sort-rows)
-            (should (equal (mapcar (lambda (r) (alist-get 'id r)) table-view--rows)
+            (should (equal (tv-test--ids table-view--rows)
                            '("small" "big")))))         ; 9 < 100 numerically, by description
       (kill-buffer buf))))
 
@@ -2348,9 +2355,9 @@ this proves that output is byte- and text-property-identical to a full redraw."
                                          '((id . "c") (cells . ((name . "c") (count . 20))))))
           (with-current-buffer buf
             ;; set-rows keeps insertion order -- the seeded sort has not applied
-            (should (equal (mapcar (lambda (r) (alist-get 'id r)) table-view--rows) '("a" "b" "c")))
+            (should (equal (tv-test--ids table-view--rows) '("a" "b" "c")))
             (table-view-apply-sort)
-            (should (equal (mapcar (lambda (r) (alist-get 'id r)) table-view--rows) '("b" "c" "a")))))
+            (should (equal (tv-test--ids table-view--rows) '("b" "c" "a")))))
       (kill-buffer buf))))
 
 (ert-deftest tv-test-apply-sort-preserves-filter ()

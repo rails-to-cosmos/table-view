@@ -33,3 +33,53 @@ comments, commit messages, prose. State the point directly.
 - `make test` — run the ERT suite in batch mode.
 - `make compile` — byte-compile (surfaces warnings).
 - Direct: `emacs -Q -batch -L . -l table-view-test.el -f ert-run-tests-batch-and-exit`
+
+## Invariants
+
+Rules the code silently enforces; a refactor must preserve them. Fuller
+evidence for the render ones is in
+[`docs/reviews/incremental-render.org`](docs/reviews/incremental-render.org).
+
+Rendering / rows:
+- Incremental render diffs rows by `eq`; mutators MUST keep unchanged row cons
+  cells (copy the list spine only; `--compute-cells`/`--strip-cell` return the
+  *same* row when nothing changed; `apply-delta` reuses the pooled `equal` row).
+  Never rebuild rows with `mapcar #'copy-alist` or force a fresh cons.
+- `table-view--link-cache-check` runs FIRST in `table-view--render`: a
+  render-links flip is invisible to `eq`, so it clears the link/width/render
+  caches and forces a full redraw.
+- One buffer line per row: `table-view--str` flattens control chars to spaces
+  because `--nth-row-pos` counts with `forward-line`.
+- Consumer rows are never mutated; caches are keyed by row id; the mark-cache is
+  refreshed by id on `set-page`/`apply-delta` (`--refresh-mark-cache`).
+- The widths cache must equal a fresh computation; the incremental path is
+  entered only when columns, marks-active, and widths are all unchanged.
+- Paged mode does not client-sort (server owns order); a page position commits
+  only on a successful `set-page`.
+- `g` is intentionally unbound in the mode map — it inherits `special-mode`'s
+  `revert-buffer`, wired to `table-view-revert` via `revert-buffer-function`.
+
+Core / native split:
+- Core stays standalone: no hard `require` of `table-view-native`; the seam is
+  `table-view--native-display-function` (nil unless the native package loads).
+- Elisp and Rust collation/sort/null/filter MUST agree; the differential test
+  `tvn-test-differential-native-equals-elisp` is the oracle — mirror any change
+  on both sides. `table-view--sort-key-spec` is the single source of sort
+  resolution; `--comparator` derives from it.
+
+Wire protocol / backend:
+- Sort wire is back-compatible: a 2-element `[col asc]` entry means nulls-last;
+  the 3rd `"first"`/`"last"` nulls element is optional.
+- Server owns gen/rev; the client applies a `$/delta` only when `baseRev` AND
+  `gen` match, else it resyncs. The `$/delta` is written before the patch reply.
+  An empty-ops delta still refreshes counts (not a no-op). Delta ops are
+  deletes-descending then inserts-ascending, applied strictly in order.
+- Protocol integer is lockstepped: Rust `PROTOCOL` == elisp
+  `table-view-native-protocol`; the cached binary is named `tvx-p%d`.
+- Rust `StrCol` rank is stale exactly when `rank.len() != values.len()` (rebuilt
+  lazily before a sort). A missing string cell stores `""`, never `"null"`; a
+  numeric column ingests a missing cell as `0` (the nulls flag is inert there).
+
+Release:
+- Version lockstep: `make bump-version` rewrites all sites (both `.el` headers,
+  the `(table-view "X")` dep, `Cargo.toml`) — never hand-edit one.

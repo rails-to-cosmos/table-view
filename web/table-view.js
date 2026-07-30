@@ -16,7 +16,40 @@
  *
  * Also emits DOM CustomEvents on the container: `tableview-action`
  * ({detail:{command,id,row}}) and `tableview-link` ({detail:{target,row}}).
+ *
+ * Type-checked with `// @ts-check` + the JSDoc @typedefs below (no build step);
+ * run `make web-check`.  The typedefs are the JS mirror of ../SCHEMA.md.
  */
+// @ts-check
+
+/**
+ * @typedef {string|number|null} Cell  A cell value; null/missing render as "".
+ * @typedef {{ value: string, color: string }} Badge
+ * @typedef {{ key: string,
+ *             header?: string,
+ *             type?: "text"|"number"|"badge",
+ *             align?: "left"|"right",
+ *             sortable?: boolean,
+ *             badges?: Badge[],
+ *             values?: string[],
+ *             compare?: string }} Column
+ * @typedef {{ key?: string, command: string, label?: string }} Action
+ * @typedef {{ column: string, ascending?: boolean, direction?: string }} Sort
+ * @typedef {{ column: string, ascending: boolean }} SortKey  A normalized sort key (internal).
+ * @typedef {{ id: string, cells?: Record<string, Cell> }} Row
+ * @typedef {{ title?: string,
+ *             columns: Column[],
+ *             actions?: Action[],
+ *             sort?: Sort | Sort[],
+ *             rows?: Row[] }} View
+ * @typedef {{ op: "insert", index: number, row: Row }
+ *        | { op: "delete", index: number }
+ *        | { op: "reset", rows: Row[] }} Op
+ * @typedef {{ onAction?: (command: string, id: string, row: Row) => void,
+ *             onLink?: (target: string, row: Row | null) => void }} MountOptions
+ */
+
+/** @param {*} root  The global object (`window`, or CommonJS `this`). */
 (function (root) {
   "use strict";
 
@@ -31,6 +64,7 @@
 
   // A cell's plain display string (links -> DESC), one line. Used for width,
   // filter and sort so a link column lines up and searches by its description.
+  /** @param {Cell|undefined} val  @returns {string} */
   function displayText(val) {
     if (val === null || val === undefined) return "";
     let s = typeof val === "string" ? val : String(val);
@@ -39,6 +73,7 @@
   }
 
   // Cell inner HTML: badge colouring + Org links + escaping.
+  /** @param {Column} col  @param {Cell|undefined} val  @returns {string} */
   function cellHTML(col, val) {
     if (col.type === "badge") {
       const raw = displayText(val);
@@ -64,12 +99,14 @@
 
   // ---- sorting -------------------------------------------------------------
 
+  /** @param {Cell|undefined} v  @returns {number|null} */
   const asNumber = (v) => {
     const n = typeof v === "number" ? v : parseFloat(displayText(v));
     return Number.isNaN(n) ? null : n;
   };
 
   // Ordered domain of a column: explicit `values`, else badge palette order.
+  /** @param {Column} col  @returns {string[]|null} */
   function valueOrder(col) {
     if (col.values) return col.values.map(String);
     if (col.type === "badge") return (col.badges || []).map((b) => String(b.value));
@@ -77,6 +114,10 @@
   }
 
   // Less-than over raw cell values for a column (mirrors table-view.el).
+  /**
+   * @param {Column} col
+   * @returns {(a: Cell|undefined, b: Cell|undefined) => number}
+   */
   function comparator(col) {
     const compare = col.compare;
     if (compare === "number" || compare === "numeric")
@@ -145,9 +186,19 @@
     document.head.appendChild(el);
   }
 
+  /**
+   * Mount a table-view into CONTAINER; return a live handle (the streaming API).
+   * @param {Element} container
+   * @param {View} view
+   * @param {MountOptions} [opts]
+   */
   function mount(container, view, opts) {
     injectStyle();
-    opts = opts || {};
+    const o = opts || {};   // narrowing sticks in closures (a reassigned param would not)
+    /**
+     * @type {{ view: View, rows: Row[], filter: string,
+     *          selected: string|null, sortKeys: SortKey[] }}
+     */
     const state = {
       view: view || { columns: [] },
       rows: (view && view.rows) ? view.rows.slice() : [],
@@ -161,6 +212,15 @@
     container.innerHTML = "";
     container.appendChild(root);
 
+    // Elements queried from `root' are all HTML (we only build HTML), so type
+    // them as HTMLElement once here instead of casting at every call site.
+    /** @param {string} sel  @returns {NodeListOf<HTMLElement>} */
+    const qsa = (sel) => /** @type {NodeListOf<HTMLElement>} */ (root.querySelectorAll(sel));
+
+    /**
+     * @param {Sort|Sort[]|undefined} sort
+     * @returns {SortKey[]}
+     */
     function normalizeSort(sort) {
       if (!sort) return [];
       const list = Array.isArray(sort) ? sort : [sort];
@@ -208,13 +268,13 @@
 
     function dispatch(command, row) {
       if (!row) return;
-      if (opts.onAction) opts.onAction(command, row.id, row);
+      if (o.onAction) o.onAction(command, row.id, row);
       root.dispatchEvent(new CustomEvent("tableview-action",
         { detail: { command, id: row.id, row } }));
     }
 
     function followLink(target, row) {
-      if (opts.onLink) { opts.onLink(target, row); }
+      if (o.onLink) { o.onLink(target, row); }
       else if (/^https?:\/\//i.test(target)) window.open(target, "_blank", "noopener");
       root.dispatchEvent(new CustomEvent("tableview-link", { detail: { target, row } }));
     }
@@ -275,41 +335,44 @@
       return `${count} · ${sort}`;
     }
 
+    /** @param {string|null} id */
     function setSelected(id) {
       state.selected = id;
-      root.querySelectorAll(".tv-table tbody tr").forEach((tr) =>
-        tr.classList.toggle("tv-sel", tr.dataset.id === id));
+      qsa(".tv-table tbody tr")
+        .forEach((tr) => tr.classList.toggle("tv-sel", tr.dataset.id === id));
       const has = id !== null && id !== undefined;
-      root.querySelectorAll(".tv-btn[data-cmd]").forEach((b) => (b.disabled = !has));
+      /** @type {NodeListOf<HTMLButtonElement>} */ (root.querySelectorAll(".tv-btn[data-cmd]"))
+        .forEach((b) => (b.disabled = !has));
     }
 
     function wire() {
-      const filter = root.querySelector(".tv-filter");
+      const filter = /** @type {HTMLInputElement} */ (root.querySelector(".tv-filter"));
       filter.addEventListener("input", () => { state.filter = filter.value; render(); });
 
-      root.querySelectorAll("th[data-key]").forEach((th) =>
-        th.addEventListener("click", () => toggleSort(th.dataset.key)));
+      qsa("th[data-key]")
+        .forEach((th) => th.addEventListener("click", () => toggleSort(th.dataset.key)));
 
-      root.querySelectorAll(".tv-btn[data-cmd]").forEach((b) =>
-        b.addEventListener("click", () => {
+      qsa(".tv-btn[data-cmd]")
+        .forEach((b) => b.addEventListener("click", () => {
           const row = state.rows.find((r) => r.id === state.selected);
           dispatch(b.dataset.cmd, row);
         }));
 
-      root.querySelectorAll(".tv-table tbody tr").forEach((tr) => {
-        tr.addEventListener("click", (e) => {
-          if (e.target.classList.contains("tv-link")) return;
-          setSelected(tr.dataset.id);
+      qsa(".tv-table tbody tr")
+        .forEach((tr) => {
+          tr.addEventListener("click", (e) => {
+            if (/** @type {HTMLElement} */ (e.target).classList.contains("tv-link")) return;
+            setSelected(tr.dataset.id ?? null);
+          });
+          tr.addEventListener("dblclick", () => {
+            const row = state.rows.find((r) => r.id === tr.dataset.id);
+            const cmd = defaultCommand();
+            if (cmd) dispatch(cmd, row);
+          });
         });
-        tr.addEventListener("dblclick", () => {
-          const row = state.rows.find((r) => r.id === tr.dataset.id);
-          const cmd = defaultCommand();
-          if (cmd) dispatch(cmd, row);
-        });
-      });
 
-      root.querySelectorAll(".tv-link").forEach((a) =>
-        a.addEventListener("click", (e) => {
+      qsa(".tv-link")
+        .forEach((a) => a.addEventListener("click", (e) => {
           e.preventDefault();
           const tr = a.closest("tr");
           const row = tr && state.rows.find((r) => r.id === tr.dataset.id);
@@ -325,6 +388,7 @@
     // ---- streaming API -----------------------------------------------------
     return {
       el: root,
+      /** @param {View} v */
       setView(v) {
         state.view = v || { columns: [] };
         state.rows = (v && v.rows) ? v.rows.slice() : [];
@@ -332,17 +396,21 @@
         state.selected = null;
         render();
       },
+      /** @param {Row[]} rows */
       setRows(rows) { state.rows = (rows || []).slice(); render(); },
+      /** @param {Row} row */
       upsertRow(row) {
         const i = state.rows.findIndex((r) => r.id === row.id);
         if (i === -1) state.rows.push(row); else state.rows[i] = row;
         render();
       },
+      /** @param {string} id */
       deleteRow(id) {
         state.rows = state.rows.filter((r) => r.id !== id);
         if (state.selected === id) state.selected = null;
         render();
       },
+      /** @param {Op[]} ops */
       applyDelta(ops) {
         for (const op of ops || []) {
           if (op.op === "insert") state.rows.splice(op.index, 0, op.row);
@@ -357,5 +425,6 @@
 
   const TableView = { mount, displayText, comparator };
   root.TableView = TableView;
+  // @ts-ignore -- optional CommonJS export (no @types/node dependency)
   if (typeof module !== "undefined" && module.exports) module.exports = TableView;
 })(typeof window !== "undefined" ? window : this);

@@ -47,11 +47,7 @@ Returns nil when cargo is unavailable and no valid binary exists."
                                     (cons 'num (abs (mod (* i 2654435761) 100000)))
                                     (cons 'val i))))))
 (defun tvn-test--wire (rows)
-  (vconcat (mapcar (lambda (r)
-                     (list :id (alist-get 'id r)
-                           :cells (cl-loop for (k . v) in (alist-get 'cells r)
-                                           append (list (intern (concat ":" (symbol-name k))) v))))
-                   rows)))
+  (vconcat (mapcar #'table-view-native--row->wire rows)))
 (defconst tvn-test--spec
   '((title . "x")
     (columns . (((key . "name") (header . "Name"))
@@ -346,6 +342,10 @@ Returns nil when cargo is unavailable and no valid binary exists."
   (should (eq table-view--native-display-function #'table-view-native--auto-display)))
 
 (ert-deftest tvn-test-available-p ()
+  ;; Unavailable when the binary does not resolve (deterministic, no binary needed).
+  (cl-letf (((symbol-function 'table-view-native--resolve) (lambda () nil)))
+    (should-not (table-view-native-available-p)))
+  ;; Available when the binary resolves.
   (tvn-test--skip-unless-binary (should (table-view-native-available-p))))
 
 (ert-deftest tvn-test-auto-display-routes-when-available ()

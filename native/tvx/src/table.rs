@@ -2,7 +2,7 @@
 //! cache, patch application, and post-patch delta computation for a subscribed
 //! window.
 
-use crate::column::{gen_col, rebuild_str_lookups, Col, StrCol};
+use crate::column::{gen_col, Col, StrCol};
 use crate::delta::{diff_ops, RowSnap, Sub};
 use crate::wire::{cell_i64, cell_str, json_to_string};
 use serde_json::{json, Value};
@@ -30,7 +30,7 @@ impl Table {
             .collect();
 
         let kind = source.get("kind").and_then(Value::as_str).unwrap_or("");
-        let (ids, mut cols): (Vec<String>, Vec<Col>) = match kind {
+        let (ids, cols): (Vec<String>, Vec<Col>) = match kind {
             "gen" => {
                 let n = source.get("n").and_then(Value::as_u64).unwrap_or(0) as usize;
                 let ids = (0..n).map(|i| format!("r{i}")).collect();
@@ -44,7 +44,7 @@ impl Table {
                     if num {
                         Col::Int(rows.iter().map(|r| cell_i64(r, k)).collect())
                     } else {
-                        Col::Str(StrCol::from(rows.iter().map(|r| cell_str(r, k)).collect()), HashMap::new())
+                        Col::Str(StrCol::from(rows.iter().map(|r| cell_str(r, k)).collect()))
                     }
                 }).collect();
                 (ids, cols)
@@ -53,7 +53,6 @@ impl Table {
         };
         let n = ids.len();
         let id_index = ids.iter().enumerate().map(|(i, s)| (s.clone(), i)).collect();
-        rebuild_str_lookups(&mut cols);
         Ok(Table { ids, alive: vec![true; n], keys, id_index, cols, rev: 0,
                    sub_gen: 0, cache: Vec::new(), sub: None })
     }
@@ -68,8 +67,8 @@ impl Table {
 
     fn ensure_ranks(&mut self) {
         for c in &mut self.cols {
-            if let Col::Str(s, _) = c {
-                if s.dirty { s.rebuild_rank(); }
+            if let Col::Str(s) = c {
+                if s.rank.len() != s.values.len() { s.rebuild_rank(); }
             }
         }
     }
@@ -134,13 +133,13 @@ impl Table {
         let needle = filter.to_lowercase();
         let numeric_needle = needle.bytes().all(|b| b.is_ascii_digit() || matches!(b, b'.' | b'-' | b'e'));
         let code_hit: Vec<Option<Vec<bool>>> = self.cols.iter().map(|c| match c {
-            Col::Str(s, _) => Some(s.lower.iter().map(|u| u.contains(&needle)).collect()),
+            Col::Str(s) => Some(s.lower.iter().map(|u| u.contains(&needle)).collect()),
             Col::Int(_) => None,
         }).collect();
         (0..n as u32).filter(|&i| {
             let i = i as usize;
             alive[i] && self.cols.iter().enumerate().any(|(ci, c)| match c {
-                Col::Str(s, _) => code_hit[ci].as_ref().unwrap()[s.codes[i] as usize],
+                Col::Str(s) => code_hit[ci].as_ref().unwrap()[s.codes[i] as usize],
                 Col::Int(v) => numeric_needle && v[i].to_string().contains(&needle),
             })
         }).collect()
@@ -152,6 +151,17 @@ impl Table {
     }
     pub fn snap(&self, r: usize) -> RowSnap {
         RowSnap { id: self.ids[r].clone(), cells: self.cells_of(r) }
+    }
+
+    /// The RowSnap window `[offset, offset+limit)` of VIEW (empty past the end).
+    /// VIEW is the filtered+sorted row indices, so `view.len()` is `matched`.
+    pub fn window_snaps(&self, view: &[u32], offset: usize, limit: usize) -> Vec<RowSnap> {
+        let end = (offset + limit).min(view.len());
+        if offset < view.len() {
+            view[offset..end].iter().map(|&i| self.snap(i as usize)).collect()
+        } else {
+            Vec::new()
+        }
     }
 
     /// Apply upserts (update by id, else append) and deletes (tombstone); bump
@@ -200,10 +210,7 @@ impl Table {
         let view = self.view(&sort, &filter).ok()?;
         let matched = view.len();
         let total = self.total();
-        let end = (offset + limit).min(matched);
-        let new: Vec<RowSnap> = if offset < matched {
-            view[offset..end].iter().map(|&i| self.snap(i as usize)).collect()
-        } else { vec![] };
+        let new = self.window_snaps(&view, offset, limit);
         let ops = diff_ops(&last, &new);
         let rev = self.rev;
         let sub = self.sub.as_mut().unwrap();
@@ -230,7 +237,7 @@ impl Table {
         }
         let nums: Vec<i64> = match &self.cols[ci] {
             Col::Int(v) => rows.iter().map(|&r| v[r as usize]).collect(),
-            Col::Str(_, _) => return Err(format!("column {column} is not numeric")),
+            Col::Str(_) => return Err(format!("column {column} is not numeric")),
         };
         if nums.is_empty() {
             return Ok(Value::Null);
