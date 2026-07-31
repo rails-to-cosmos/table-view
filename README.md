@@ -321,6 +321,20 @@ hands the query to the producer, and whatever `setRows` delivers is what shows.
 | `stripLastToken()` | drop the typed text, else the last chip, and reapply; false if nothing was left |
 | `el`               | the root element, which also emits the two CustomEvents        |
 
+### Touch
+
+On a coarse pointer the targets grow to ~44px — rows, suggestion rows and chips
+— by **padding**, not by a set height, so rows stay uniform and the measured row
+height carries the change into the virtualization and scroll arithmetic on its
+own. The filter input reaches 16px (under which iOS zooms the page on focus),
+and a chip's remove mark is always visible rather than waiting for a hover.
+
+A **long press** (500ms, finger still) runs the row's default action — the same
+one RET and a double click run — selecting the cell under the finger first.
+Drift past 10px or a scroll of any size calls it off, because every touch on a
+list might be the start of a scroll; only the touchend that completes a press is
+swallowed, so no click or context menu follows the action.
+
 Rows are **virtualized**: only the scrolled-to window plus a small overscan
 has DOM, so a 13k-row view mounts and filters without freezing the tab. A row
 outside the window has no element to click — move the selection with
@@ -414,8 +428,13 @@ accept, **Escape** dismisses, a click accepts without taking focus. Only a
 column name starts highlighted — a tag name is often the word you were actually
 searching for — so Enter still commits the word as typed.
 
-**Tab** completes and stays; **Enter** completes and then commits, so picking a
-suggestion and running it is one keystroke. **C-n**/**C-p** move the list too,
+**Tab** completes and stays, at either stage. **Enter** is stage-aware:
+completing a *key* leaves the caret past the colon with that key's values
+already listed — `ta` → RET → `tag:` and the tags with their counts — because
+`tag:` is half a predicate; only a *finished* token sends Enter on to commit and
+hand the table over. Nothing at the value stage starts highlighted, so RET with
+`tag:` typed and no value chosen commits the presence predicate you wrote rather
+than whichever value sorted first. **C-n**/**C-p** move the list too,
 while it is open and the box has focus — the
 Emacs minibuffer and vim's insert-mode completion agree on those. Platform
 reality: Chrome-family browsers take C-n for a new window before the page sees

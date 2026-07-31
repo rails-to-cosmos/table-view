@@ -88,6 +88,7 @@ class Ev {
     this.detail = init && init.detail;
     this.key = init && init.key;
     this.repeat = !!(init && init.repeat);
+    this.touches = (init && init.touches) || [];
     this.target = null;
     this.defaultPrevented = false;
     this.propagationStopped = false;
@@ -526,7 +527,7 @@ async function filterQuery() {
   b.dispatchEvent(new Ev("keydown", { key: "ArrowDown" }));
   b.dispatchEvent(new Ev("keydown", { key: "Tab" }));
   check("Tab accepts the highlighted value, with a trailing space",
-        b.value, "state:TODO ");
+        b.value, "state:NEXT ");
   check("and the list closes once the token is finished", items(), []);
 
   type("state:DONE tit");
@@ -545,9 +546,10 @@ async function filterQuery() {
   b.dispatchEvent(new Ev("keydown", { key: "Escape" }));
   check("the second Escape clears the box", b.value, "");
 
-  // Enter with a list open is one gesture: complete, commit, hand over.
+  // Enter on a chosen value is one gesture: complete, commit, hand over.
   type("state:DO");
   const blurs = b.blurs || 0;
+  b.dispatchEvent(new Ev("keydown", { key: "ArrowDown" }));
   b.dispatchEvent(new Ev("keydown", { key: "Enter" }));
   await painted();
   check("Enter with the list open completes and then goes",
@@ -1627,6 +1629,181 @@ async function virtualKeys() {
           [["tv-bar", "tv-chips", "tv-scroll", "tv-hint"], 0, false]);
     check("and its chips are not golden",
           omni.querySelector(".tv-root").classes.has("tv-omni"), true);
+  }
+
+  // --- RET is stage-aware: a key completes and waits, a value completes and goes
+  {
+    const asked = [];
+    const st = new El("div");
+    const t = TableView.mount(st, view(40), { onFilter: (q) => asked.push(q) });
+    const b = filterOf(st);
+    const labels = () => st.querySelectorAll(".tv-ac-label").map((e) => e.text);
+    const counts = () => st.querySelectorAll(".tv-ac-n").map((e) => Number(e.text));
+    const type = (q) => { b.value = q; b.dispatchEvent(new Ev("input")); };
+    const on = () => st.querySelectorAll(".tv-ac-on").length;
+
+    // The contract: `tag:' by RET, then the tags with their counts.
+    type("ta");
+    check("a bare word offers the column key", labels()[0], "tag:");
+    check("which is the one thing preselected", on(), 1);
+    b.dispatchEvent(new Ev("keydown", { key: "Enter" }));
+    check("RET completes it to `key:' and stays", [b.value, b.blurs || 0], ["tag:", 0]);
+    check("with the caret past the colon",
+          b.selectionStart === undefined || b.selectionStart === 4, true);
+    check("nothing was delivered — the token is half a predicate", asked, []);
+    check("and the list is already showing that key's values",
+          labels().sort(),
+          ["daemon", "emacs", "glance", "ops", "read", "system", "web"]);
+    check("each with the rows behind it", counts().every((n) => n > 0), true);
+    check("none of them chosen for the user", on(), 0);
+
+    // From there: RET again is the presence predicate they typed.
+    b.dispatchEvent(new Ev("keydown", { key: "Enter" }));
+    await painted();
+    check("a second RET commits the presence predicate, not a guessed value",
+          [st.querySelectorAll(".tv-chip").map((c) => c.text.replace("×", "")), asked],
+          [["tag:"], ["tag:"]]);
+    check("and hands the table over", b.blurs, 1);
+
+    // Or: arrow to a value, and RET finishes the whole thing.
+    asked.length = 0;
+    b.focus();
+    type("state:");
+    check("a value list opens with nothing chosen", on(), 0);
+    b.dispatchEvent(new Ev("keydown", { key: "ArrowDown" }));
+    const picked = labels()[0];
+    b.dispatchEvent(new Ev("keydown", { key: "Enter" }));
+    await painted();
+    check("RET on a chosen value completes and goes",
+          [st.querySelectorAll(".tv-chip").map((c) => c.text.replace("×", "")).pop(),
+           b.value, st.querySelectorAll(".tv-ac-item").length],
+          ["state:" + picked, "", 0]);
+    check("delivering once, with the table taking over", [asked.length, b.blurs], [1, 2]);
+
+    // Tab is unchanged at both stages: accept and stay, either way.
+    b.focus();
+    type("ta");
+    b.dispatchEvent(new Ev("keydown", { key: "Tab" }));
+    check("Tab on a key completes it and stays", [b.value, b.blurs], ["tag:", 2]);
+    b.dispatchEvent(new Ev("keydown", { key: "ArrowDown" }));
+    const tagPick = labels()[0];
+    b.dispatchEvent(new Ev("keydown", { key: "Tab" }));
+    check("Tab on a value finishes the token and still stays",
+          [b.value, b.blurs], ["tag:" + tagPick + " ", 2]);
+    check("and commits nothing on its own",
+          st.querySelectorAll(".tv-chip").length, 2);
+
+    // A whole token offered at the key stage still goes on RET.
+    b.value = "";
+    b.dispatchEvent(new Ev("input"));
+    type("TODO");
+    b.dispatchEvent(new Ev("keydown", { key: "ArrowDown" }));
+    b.dispatchEvent(new Ev("keydown", { key: "Enter" }));
+    await painted();
+    check("and a finished token offered beside a bare word goes on RET",
+          [st.querySelectorAll(".tv-chip").map((c) => c.text.replace("×", "")).pop(),
+           b.value], ["state:TODO", ""]);
+  }
+
+  // --- the touch pass: bigger targets, and a long press for the row action
+  {
+    const css = document.head.children.map((e) => e.text).join("");
+    const coarse = css.slice(css.indexOf("@media (pointer:coarse){"));
+    check("there is a coarse-pointer block", coarse.indexOf("@media (pointer:coarse){"), 0);
+    for (const [what, rule] of [
+      ["rows grow by padding", ".tv-table th,.tv-table td{padding:12px}"],
+      ["suggestions too", ".tv-ac-item{padding:12px 12px}"],
+      ["and chips", ".tv-chip{padding:13px 8px 13px 12px}"],
+      ["the remove mark stops waiting for a hover", ".tv-chip-x{opacity:1"],
+      ["and the box clears iOS's zoom threshold", ".tv-panel .tv-filter{font-size:16px}"]])
+      check(what, coarse.indexOf(rule) !== -1, true);
+    check("nothing in it sets a row height — the height is the padding's business",
+          /(^|[;{])height:/.test(coarse.slice(0, coarse.indexOf("}\n"))), false);
+
+    // The windowing reads a measured height, so the coarse padding carries into
+    // it with nothing else changed. Standing in for that here by moving what
+    // the shim reports a row measures.
+    const tall = new El("div");
+    ROW_PX = 44;
+    const tt = TableView.mount(tall, view(500));
+    const sc = tall.querySelector(".tv-scroll");
+    sc.clientHeight = 440;
+    sc.scrollTop = 44 * 20;
+    sc.dispatchEvent(new Ev("scroll"));
+    await sleep(60);
+    const pad = tall.querySelectorAll(".tv-table tbody tr.tv-pad")[0];
+    const first = tt.getVisible()
+      .findIndex((r) => r.id === tall.querySelectorAll("tbody tr[data-id]")[0].dataset.id);
+    // Written into the markup, so it is read back off the attribute.
+    check("the spacers are sized from the measured height, not from 30",
+          pad.attrs.get("style"), "height:" + first * 44 + "px");
+    check("and the window sits where that height puts it",
+          first, Math.max(0, Math.floor((44 * 20 - 44) / 44) - 15));
+    ROW_PX = 30;
+
+    // --- the long press
+    const box = new El("div");
+    const seen = [];
+    const t = TableView.mount(box, view(40), {
+      onAction: (command, id) => seen.push(command + " " + id),
+    });
+    box.querySelector(".tv-scroll").clientHeight = 600;
+    const sc2 = box.querySelector(".tv-scroll");
+    const rowAt = (i) => box.querySelectorAll(".tv-table tbody tr[data-id]")[i];
+    const finger = (type, el, x, y, opts) => {
+      const e = new Ev(type, Object.assign({ touches: [{ clientX: x, clientY: y }] }, opts));
+      (el || sc2).dispatchEvent(e);
+      return e;
+    };
+
+    const tr = rowAt(4), id = tr.dataset.id;
+    finger("touchstart", tr.children[2], 100, 100);
+    check("nothing happens on contact", [seen.length, t.getSelection().id], [0, null]);
+    await sleep(600);
+    check("a finger that stayed put runs the row's default action", seen.pop(),
+          "materialize " + id);
+    check("having selected the cell it was on first", t.getSelection(), { id, col: 2 });
+    const end = finger("touchend", tr, 100, 100);
+    check("and that touchend is swallowed, so no click or menu follows it",
+          end.defaultPrevented, true);
+    const plain = finger("touchend", tr, 100, 100);
+    check("while an ordinary one is left alone", plain.defaultPrevented, false);
+
+    // Drift means it was a scroll all along.
+    const tr2 = rowAt(6);
+    finger("touchstart", tr2.children[1], 100, 100);
+    finger("touchmove", sc2, 100, 118);
+    await sleep(600);
+    check("a finger that slid is a scroll, not an action", seen.length, 0);
+    check("and it left the selection alone", t.getSelection().id, id);
+
+    // Inside the slop it still counts.
+    finger("touchstart", tr2.children[1], 100, 100);
+    finger("touchmove", sc2, 104, 106);
+    await sleep(600);
+    check("a small tremor does not call it off", seen.pop(), "materialize " + tr2.dataset.id);
+    finger("touchend", tr2, 104, 106);
+
+    // A scroll of any size calls it off, whoever started it.
+    const tr3 = rowAt(8);
+    finger("touchstart", tr3.children[1], 100, 100);
+    sc2.dispatchEvent(new Ev("scroll"));
+    await sleep(600);
+    check("and a scroll calls it off outright", seen.length, 0);
+
+    // The ease still gives way to a finger — the regression that pass rests on.
+    check("touchmove still cancels the scroll ease",
+          (() => {
+            sc2.scrollTop = 0;
+            t.select(t.getVisible()[0].id);
+            return true;
+          })(), true);
+    t.select(t.getVisible()[35].id);
+    await sleep(20);
+    finger("touchmove", sc2, 100, 140);
+    const stopped = sc2.scrollTop;
+    await sleep(300);
+    check("so a touch-scroll is never fought for the viewport", sc2.scrollTop, stopped);
   }
 
   // --- the handle: stripLastToken and getQuery

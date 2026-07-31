@@ -125,8 +125,13 @@
  *   with the number of rows behind it; a virtual key has no domain to offer.
  *   Arrows — and C-n/C-p, which both editors' users reach for here — move it,
  *   Esc dismisses, and a click accepts without taking focus. Tab completes and
- *   stays; Enter completes and then commits, so picking a suggestion and
- *   running it is one keystroke and one delivery.
+ *   stays, at either stage. Enter is stage-aware: completing a key leaves the
+ *   caret past the colon with that key's values already listed, since `tag:'
+ *   is half a predicate and the values are the next thing to choose; only a
+ *   finished token sends it on to commit and hand over. Nothing at the value
+ *   stage starts highlighted, so Enter with `tag:' typed and no value chosen
+ *   commits the presence predicate that was written rather than whichever
+ *   value happened to sort first.
  *   Only a column completion starts highlighted, so Enter still commits the
  *   word as typed and an arrow is how you step into the offers.
  * - `palette: true' makes the filter a thing you summon. The page keeps the
@@ -475,6 +480,8 @@
   const PILL_CH = 4;           // a badge pill's dot, gap and ground, in characters
   const DEBOUNCE = 120;        // ms of quiet before a filter keystroke re-renders
   const SETTLE = 200;          // ms of quiet before the rows are taken to have settled
+  const LONG_PRESS = 500;      // ms of a still finger before it means the row action
+  const PRESS_SLOP = 10;       // px of drift that makes it a scroll instead
   const EASE = 0.3;            // fraction of the remaining scroll covered per frame
   const SNAP_PX = 0.5;         // closer than this and the ease is over
 
@@ -598,6 +605,19 @@
 .tv-arrow{margin-left:4px;opacity:.7}
 .tv-empty{padding:16px 12px;color:var(--tv-muted)}
 .tv-hint{padding:6px 12px;border-top:1px solid var(--tv-border);color:var(--tv-muted);font-size:12px}
+/* A finger is not a pointer. Targets grow to the ~44px everyone settled on, and
+   they grow by padding rather than by a set height, so the rows stay uniform
+   and the measured row height carries the change into the windowing and the
+   scroll arithmetic on its own. The filter reaches 16px because anything under
+   it makes iOS zoom the page on focus. The chip's remove mark stops hiding
+   behind a hover nobody can perform. */
+@media (pointer:coarse){
+  .tv-table th,.tv-table td{padding:12px}
+  .tv-ac-item{padding:12px 12px}
+  .tv-chip{padding:13px 8px 13px 12px}
+  .tv-chip-x{opacity:1;padding:0 8px}
+  .tv-filter,.tv-omni .tv-filter,.tv-panel .tv-filter{font-size:16px}
+}
 .tv-key{color:var(--tv-fg);font-weight:600}`;
     const el = document.createElement("style");
     el.textContent = css;
@@ -1530,6 +1550,57 @@
       setSelected(tr.dataset.id ?? null, at === -1 ? null : at);
     });
 
+    // A long press is the touch reading of the row's default action — what RET
+    // and a double click already do. It has to survive being the start of a
+    // scroll, which is what every touch on a list might be, so drift or a
+    // scroll of any size calls it off; only a finger that stayed put counts.
+    let pressAt = 0, pressX = 0, pressY = 0, pressRan = false;
+    /** @type {string|null} */
+    let pressOn = null;
+
+    function cancelPress() {
+      if (pressAt) { clearTimeout(pressAt); pressAt = 0; }
+      pressOn = null;
+    }
+
+    scroll.addEventListener("touchstart", (e) => {
+      const t = hit(e);
+      const tr = t && /** @type {HTMLElement|null} */ (t.closest("tr[data-id]"));
+      const touch = e.touches && e.touches[0];
+      if (!tr || !touch) return;
+      cancelPress();
+      pressRan = false;
+      pressOn = tr.dataset.id ?? null;
+      pressX = touch.clientX;
+      pressY = touch.clientY;
+      const td = /** @type {HTMLElement|null} */ (t.closest("td"));
+      const at = td ? Array.prototype.indexOf.call(tr.children, td) : -1;
+      pressAt = setTimeout(() => {
+        pressAt = 0;
+        if (pressOn === null) return;
+        pressRan = true;
+        setSelected(pressOn, at === -1 ? null : at);
+        const cmd = defaultCommand();
+        if (cmd) dispatch(cmd, state.rows.find((r) => r.id === pressOn));
+      }, LONG_PRESS);
+    });
+
+    scroll.addEventListener("touchmove", (e) => {
+      const touch = e.touches && e.touches[0];
+      if (!touch || pressOn === null) return;
+      if (Math.abs(touch.clientX - pressX) > PRESS_SLOP
+       || Math.abs(touch.clientY - pressY) > PRESS_SLOP) cancelPress();
+    });
+
+    // Only the touchend that completes one is swallowed — that press has been
+    // spent, and letting it through would follow with a click and a context
+    // menu on top of the action. Every other touchend is the page's as usual.
+    scroll.addEventListener("touchend", (e) => {
+      if (pressRan) { e.preventDefault(); pressRan = false; }
+      cancelPress();
+    });
+    scroll.addEventListener("touchcancel", cancelPress);
+
     scroll.addEventListener("dblclick", (e) => {
       const t = hit(e);
       const tr = t && /** @type {HTMLElement|null} */ (t.closest("tr[data-id]"));
@@ -1538,7 +1609,7 @@
       if (cmd) dispatch(cmd, rowOf(state.rows, tr));
     });
 
-    scroll.addEventListener("scroll", () => { wantWindow = true; schedule(); });
+    scroll.addEventListener("scroll", () => { wantWindow = true; cancelPress(); schedule(); });
     // A hand on the wheel, a finger on the glass, a drag of the scrollbar: the
     // ease stops chasing its target and leaves the viewport where it is put.
     for (const how of ["wheel", "touchmove", "pointerdown", "keydown"])
@@ -1818,8 +1889,11 @@
       for (const v of dom.list) {
         const lower = String(v).toLowerCase();
         if (!lower.startsWith(p)) continue;
+        // Not preselected: with `tag:' typed and no value chosen, Enter has to
+        // mean the presence predicate the user wrote, not whichever value
+        // happened to sort first.
         out.push({ text: String(v), count: dom.counts.get(lower) || 0, full: false,
-                   dim: false, pick: true });
+                   dim: false, pick: false });
         if (out.length === AC_MAX) break;
       }
       return out;
@@ -2026,11 +2100,17 @@
           if (down) { moveAc(1); return; }
           if (up) { moveAc(-1); return; }
           if (e.key === "Escape") { closeAc(); return; }
-          acceptAc(ac.items[acAt]);
-          // Tab completes and leaves the caret where more can be typed. Enter
-          // completes and goes — the same gesture it is with no list at all, so
-          // picking a suggestion and running it is one keystroke, one delivery.
-          if (e.key === "Tab") return;
+          const taken = ac.items[acAt];
+          // Whether this accept finishes the token — the same question the
+          // trailing space answers.
+          const finished = taken.full || ac.stage === "value";
+          acceptAc(taken);
+          // Tab always leaves the caret where more can be typed. Enter does too
+          // when what it completed was a key: the token is `key:' now, the
+          // value is the next thing to choose, and `acceptAc' has already
+          // opened the list of them. Only a finished token sends Enter on to
+          // commit, which is the gesture it is with no list at all.
+          if (e.key === "Tab" || !finished) return;
           closeAc();
         }
         // Nothing highlighted: the keys fall through to what they mean with no

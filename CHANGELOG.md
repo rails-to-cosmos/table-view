@@ -6,6 +6,22 @@ the rails-to-cosmos ELPA archive publishes date-stamped snapshots.
 ## Unreleased
 
 ### Added
+- Browser renderer: Enter in the suggestion list is stage-aware.
+  Completing a **key** (`ta` → `tag:`) keeps focus and reopens the list at
+  that key's values with their counts, since `tag:` is half a predicate;
+  only a **finished** token sends Enter on to commit and hand the table
+  over. Values are no longer preselected, so Enter with `tag:` typed and
+  nothing chosen commits the presence predicate as written rather than
+  the first value. Tab is unchanged — accept and stay, at either stage.
+- Browser renderer: touch support. On `pointer: coarse` the targets grow
+  to ~44px — rows, suggestion rows and chips — by padding rather than a
+  set height, so rows stay uniform and the *measured* row height carries
+  the change into the virtualization and scroll arithmetic unchanged; the
+  filter input reaches 16px so iOS does not zoom on focus; and a chip's
+  remove mark no longer waits for a hover. A long press (500ms, finger
+  still, cancelled by 10px of drift or any scroll) runs the row's default
+  action, selecting the cell under the finger first, and swallows only
+  the touchend that completed it so no click or context menu follows.
 - Browser renderer: `palette: true` mount option and `openFilter()` /
   `closeFilter()` on the handle — the filter becomes something you
   summon rather than something resident. The page keeps only the chip
