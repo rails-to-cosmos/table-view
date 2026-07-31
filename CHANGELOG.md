@@ -32,6 +32,32 @@ the rails-to-cosmos ELPA archive publishes date-stamped snapshots.
   called the latter was collapsed by the former. One owner now: mount
   calls `renderChips()` unconditionally, so the path a raw mount takes
   and the path the checks drive are the same path.
+- Browser renderer: **fixed** — a title word wearing punctuation composed
+  a suggestion that read like a tag. "Episode 84: Dick Gabriel on Lisp:"
+  indexed `lisp:` with its colon, so a scoped completion rendered
+  `:article:lisp:`, tag-shaped, for a `:lisp:` tag that does not exist.
+  Word extraction now strips edge punctuation (`:,.;!?"'()[]{}`) before
+  indexing, and the same cleanup runs on the typed prefix so the two
+  forms agree; interior hyphens and underscores stay. A colon in a
+  suggestion now comes from a real tag or from nowhere.
+- Browser renderer: **fixed** — the multi-valued-column verdict was
+  memoized and never invalidated, so a table mounted before its rows
+  arrived (an empty store, a query matching nothing, a mount filled by
+  `setRows` a moment later) decided there was no such column and never
+  looked again: no tag keys, `tag:a tag:b` ORing instead of intersecting,
+  and the raw `:a:b:` cells offered as values. It now dies with the
+  vocabulary it belongs to.
+- Browser renderer: **fixed** — date-column detection vetoed on the first
+  cell it could not parse, so one org-spelled stamp in a `scheduled`
+  column cost the whole column its prefix matching. It now weighs
+  evidence the way multi-valued detection does: dates for, cells that
+  could not be dates against, and anything that might be one abstaining.
+- Browser renderer: tags have a visual identity of their own — an
+  outlined ghost chip in the muted ink, distinct from the filled pill a
+  state renders as and the golden chip an applied filter renders as. The
+  multi-valued column's cells show a chip per value and the suggestion
+  list wears a tag the same way; applied-filter chips stay uniformly
+  golden, filter identity outranking tag identity there.
 - Browser renderer: **paging**. `pageSize` shows the filtered, sorted set
   a page at a time, with the window, spacers, scroll band and
   `getVisible()` all operating inside the page — column widths still

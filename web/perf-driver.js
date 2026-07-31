@@ -1946,6 +1946,229 @@ async function virtualKeys() {
     ua(null);
   }
 
+  // --- colons in a suggestion come from real tags, never from prose
+  {
+    const own = [{ key: "title", header: "H", type: "text" },
+                 { key: "tag", header: "T", type: "text" }];
+    const rows = [
+      { id: "a", cells: { title: "Episode 84: Dick Gabriel on Lisp: Software Engineering Radio",
+                          tag: ":article:" } },
+      { id: "b", cells: { title: "notes, quotes and (parens) [brackets] {braces};",
+                          tag: ":article:" } },
+      { id: "c", cells: { title: "well-known snake_case survives", tag: ":article:" } },
+    ];
+    const box = new El("div");
+    TableView.mount(box, { columns: own, rows });
+    const b = filterOf(box);
+    const offer = (q) => {
+      b.value = q;
+      b.dispatchEvent(new Ev("input"));
+      return box.querySelectorAll(".tv-ac-label").map((e) => e.text);
+    };
+
+    // The reported title, verbatim: "Lisp:" must index as lisp and compose a
+    // suggestion that reads like the tag it names and no other.
+    check("a word wearing a colon indexes without it",
+          offer("lis").filter((x) => !x.endsWith(":")), ["article:lisp"]);
+    check("and no colon-bearing variant of it exists anywhere",
+          offer("lis").some((x) => x.indexOf("lisp:") !== -1), false);
+    check("the reported title yields no tag-shaped artifact",
+          offer("lisp").concat(offer("gabriel"), offer("radio"))
+            .every((x) => x.split(":").length <= 2), true);
+
+    // Every edge, one table.
+    for (const [typed, want] of [["quot", "article:quotes"], ["paren", "article:parens"],
+                                 ["brack", "article:brackets"], ["brace", "article:braces"],
+                                 ["radi", "article:radio"], ["episod", "article:episode"]])
+      check(`${typed} completes to ${want}`, offer(typed).indexOf(want) !== -1, true);
+    check("interior punctuation is part of the word",
+          [offer("well-kn").indexOf("article:well-known") !== -1,
+           offer("snake_").indexOf("article:snake_case") !== -1], [true, true]);
+    check("a prefix typed with punctuation finds the clean word too",
+          offer("lisp:").length >= 0 && offer("radio,").indexOf("article:radio") === -1, true);
+
+    // The invariant, over every prefix the fixture can answer.
+    const every = [];
+    for (const q of ["lis", "gab", "rad", "quo", "par", "bra", "epi", "sof", "eng", "wel", "sna"])
+      every.push(...offer(q));
+    check("no suggestion's value part carries a colon", 
+          every.every((x) => x.slice(x.indexOf(":") + 1).indexOf(":") === -1), true);
+  }
+
+  // --- the multi-valued verdict dies with the rows it was read from
+  {
+    const own = [{ key: "title", header: "H", type: "text" },
+                 { key: "tag", header: "T", type: "text" }];
+    const box = new El("div");
+    // Mounted before its rows arrive, which is what a store still loading, or
+    // a query that matched nothing, looks like.
+    const t = TableView.mount(box, { columns: own, rows: [] });
+    const b = filterOf(box);
+    check("nothing to go on yet", t.getVisible().length, 0);
+
+    t.setRows([
+      { id: "a", cells: { title: "one", tag: ":alpha:beta:" } },
+      { id: "b", cells: { title: "two", tag: ":alpha:" } },
+      { id: "c", cells: { title: "three", tag: ":beta:" } },
+    ]);
+    b.value = "alp";
+    b.dispatchEvent(new Ev("input"));
+    const labels = box.querySelectorAll(".tv-ac-label").map((e) => e.text);
+    check("the rows arriving give it a vocabulary after all",
+          [labels.indexOf("alpha:") !== -1, labels.indexOf("tag:alpha") !== -1], [true, true]);
+
+    const shown = (q) => {
+      b.value = "";
+      b.dispatchEvent(new Ev("input"));
+      b.value = q;
+      b.dispatchEvent(new Ev("keydown", { key: "Enter" }));
+      const n = t.getVisible().length;
+      b.dispatchEvent(new Ev("keydown", { key: "Backspace" }));
+      return n;
+    };
+    check("virtual keys resolve against it", shown("alpha:"), 2);
+    check("and repeated ones intersect, the arity being known",
+          shown("tag:alpha tag:beta"), 1);
+    check("rather than offering the raw cell as a value", (() => {
+      b.value = "";
+      b.dispatchEvent(new Ev("input"));
+      b.value = "tag:";
+      b.dispatchEvent(new Ev("input"));
+      return box.querySelectorAll(".tv-ac-label").map((e) => e.text).sort();
+    })(), ["alpha", "beta"]);
+  }
+
+  // --- a date column survives a stamp it does not recognise
+  {
+    const own = [{ key: "title", header: "H", type: "text" },
+                 { key: "scheduled", header: "S", type: "text" },
+                 { key: "tag", header: "T", type: "text" }];
+    const rows = [
+      { id: "a", cells: { title: "one", scheduled: "2026-08-01", tag: ":x:" } },
+      { id: "b", cells: { title: "two", scheduled: "2026-08-02 09:30", tag: ":x:" } },
+      { id: "c", cells: { title: "three", scheduled: "<2026-09-03 Thu>", tag: ":x:" } },
+      { id: "d", cells: { title: "four", scheduled: "", tag: ":x:" } },
+    ];
+    const box = new El("div");
+    const t = TableView.mount(box, { columns: own, rows });
+    const b = filterOf(box);
+    const shown = (q) => { b.value = q; b.dispatchEvent(new Ev("keydown", { key: "Enter" }));
+                           const n = t.getVisible().length;
+                           b.dispatchEvent(new Ev("keydown", { key: "Backspace" }));
+                           return n; };
+    check("one stamp it cannot parse does not cost the column its prefix matching",
+          shown("scheduled:2026-08"), 2);
+    check("and prefix it is, not substring", shown("scheduled:08"), 0);
+
+    // A column of prose is still no date column, whatever dates fall in it.
+    const prose = new El("div");
+    const pt = TableView.mount(prose, { columns: own, rows: rows.map((r, i) => ({
+      id: r.id, cells: { title: i < 2 ? "2026-08-0" + i : "a sentence about things",
+                         scheduled: r.cells.scheduled, tag: ":x:" } })) });
+    const pb = filterOf(prose);
+    pb.value = "title:sentence";
+    pb.dispatchEvent(new Ev("keydown", { key: "Enter" }));
+    check("so a title column matches by substring as it always did",
+          pt.getVisible().length, 2);
+  }
+
+  // --- three roles, three shapes: filled pill, golden chip, ghost tag
+  {
+    const css = document.head.children.map((e) => e.text).join("");
+    const box = new El("div");
+    const t = TableView.mount(box, view(40), { pageSize: 0 });
+    const b = filterOf(box);
+    const tagCell = () => box.querySelectorAll(".tv-table tbody tr[data-id]")[0]
+      .children[columns.findIndex((c) => c.key === "tag")];
+
+    // --- the cell
+    const cell = tagCell();
+    const chips = cell.querySelectorAll(".tv-tag").map((e) => e.text);
+    check("a multi-valued cell renders a chip per value",
+          chips, TAGS[0].split(":").filter(Boolean));
+    check("split exactly as the vocabulary splits it", (() => {
+      b.value = "tag:";
+      b.dispatchEvent(new Ev("input"));
+      const vocab = box.querySelectorAll(".tv-ac-label").map((e) => e.text);
+      b.dispatchEvent(new Ev("keydown", { key: "Escape" }));
+      return chips.every((c) => vocab.indexOf(c) !== -1);
+    })(), true);
+    check("and the raw colons are gone from it", cell.text.indexOf(":"), -1);
+    check("a single-valued column is untouched",
+          box.querySelectorAll(".tv-table tbody tr[data-id]")[0]
+            .children[columns.findIndex((c) => c.key === "title")]
+            .querySelectorAll(".tv-tag").length, 0);
+
+    // --- the style
+    check("the ghost is outlined and unfilled",
+          [css.indexOf("border:1px solid currentColor") !== -1,
+           /\.tv-tag\{[^}]*background/.test(css)], [true, false]);
+    check("in the palette's muted ink, which both themes already carry",
+          /\.tv-tag\{[^}]*color:var\(--tv-muted\)/.test(css), true);
+    // The floor, with this file's own WCAG, on every ground a tag sits on.
+    const rgbOf = (h) => { h = h.replace("#", "");
+      return [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16)); };
+    const chan = (c) => (c / 255 <= 0.03928 ? c / 255 / 12.92
+                                            : Math.pow((c / 255 + 0.055) / 1.055, 2.4));
+    const lum = (c) => 0.2126 * chan(c[0]) + 0.7152 * chan(c[1]) + 0.0722 * chan(c[2]);
+    const ratio = (a, bg) => { const x = lum(rgbOf(a)) + 0.05, y = lum(rgbOf(bg)) + 0.05;
+                               return x > y ? x / y : y / x; };
+    for (const [theme, ink, grounds] of [
+      ["dark", "#A4C2EB", ["#000000", "#21252B", "#373D4F"]],
+      ["light", "#667071", ["#FFFFFF", "#F8F8FF", "#F0FFF0"]]])
+      check(`${theme} tag ink clears the floor on every ground it sits on`,
+            grounds.every((g) => ratio(ink, g) >= 4.5), true);
+    check("the theme's own comment colour would not have, on light",
+          ratio("#7F8C8D", "#FFFFFF") < 4.5, true);
+
+    // --- the dropdown
+    b.value = "sys";
+    b.dispatchEvent(new Ev("input"));
+    const keyRow = box.querySelectorAll(".tv-ac-item")[0];
+    check("a tag-key row wears the tag as a chip",
+          [keyRow.querySelectorAll(".tv-tag").map((e) => e.text),
+           keyRow.querySelector(".tv-ac-label").text], [["system"], "system:"]);
+    b.value = "sy";
+    b.dispatchEvent(new Ev("input"));
+    const scoped = box.querySelectorAll(".tv-ac-item")
+      .filter((e) => e.classes.has("tv-ac-dim"));
+    check("and a scoped row wears its tag part, the word plain",
+          [scoped[0].querySelectorAll(".tv-tag").length,
+           scoped[0].querySelector(".tv-ac-label").text.indexOf(
+             scoped[0].querySelector(".tv-tag").text + ":")], [1, 0]);
+    check("column-key rows carry no chip", (() => {
+      b.value = "sta";
+      b.dispatchEvent(new Ev("input"));
+      return box.querySelectorAll(".tv-ac-item")[0].querySelectorAll(".tv-tag").length;
+    })(), 0);
+    b.dispatchEvent(new Ev("keydown", { key: "Escape" }));
+
+    // --- the applied filter outranks the tag it names
+    b.value = "tag:web";
+    b.dispatchEvent(new Ev("keydown", { key: "Enter" }));
+    await painted();
+    const chip = box.querySelector(".tv-chip");
+    check("an applied filter is a golden chip, whatever it names",
+          [!!chip, chip.querySelectorAll(".tv-tag").length], [true, 0]);
+    check("one rule for all of them, not one per token",
+          css.indexOf(".tv-pal .tv-chip{background:#FFD600;color:#000000") !== -1, true);
+
+    // --- and none of it moved the data
+    b.dispatchEvent(new Ev("keydown", { key: "Backspace" }));
+    check("filtering still reads the raw text",
+          (() => { b.value = "tag:web";
+                   b.dispatchEvent(new Ev("keydown", { key: "Enter" }));
+                   const n = t.getVisible().length;
+                   b.dispatchEvent(new Ev("keydown", { key: "Backspace" }));
+                   return n; })(), 13);
+    check("and sorting it", (() => {
+      box.querySelector("th[data-key=state]").click();
+      const first = t.getVisible()[0].cells.state;
+      box.querySelector("th[data-key=scheduled]").click();
+      return first;
+    })(), "NEXT");
+  }
+
   // --- the paginator
   {
     const box = new El("div");

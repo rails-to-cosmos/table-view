@@ -84,8 +84,13 @@
  * - `prefers-reduced-motion: reduce' turns off both the crossfade and the ease:
  *   the marks land and the viewport jumps. The coalescing stays, being economy
  *   rather than motion.
- * - Badge cells render as pills: the palette colour tints the ground and writes
- *   the label, so one hue carries it in either scheme.
+ * - Three roles, three shapes, so a glance tells them apart: a state is a
+ *   filled pill in its palette colour, an applied filter is a golden chip, and
+ *   a tag is an outlined ghost chip in the muted ink. The multi-valued column's
+ *   cells render a chip per value, split by the one splitter the vocabulary
+ *   uses, and the dropdown wears a tag the same way wherever it names one. It
+ *   is presentation only: what is searched, sorted and measured is still the
+ *   text the producer sent.
  * - Rows are virtualized. `tbody` holds the scrolled-to window plus ~15 rows of
  *   overscan, between two spacer rows standing in for the height of the rest.
  *   Rows outside the window have no DOM: drive selection with `select(id)`
@@ -298,6 +303,26 @@
     return /Chrom(e|ium)\//.test(ua) && !/Firefox|Electron\//.test(ua);
   }
 
+  /**
+   * Punctuation a word wears in prose and never in a query. Stripped from both
+   * edges of every indexed word and of every prefix matched against them, so
+   * the two forms agree — and, colons being among them, so that no title word
+   * can compose a suggestion that reads like a tag it is not. "Lisp:" indexes
+   * as lisp; a colon in a suggestion comes from a real tag or from nowhere.
+   * Interior punctuation stays: hyphens and underscores are part of a word.
+   */
+  const EDGES = /^[:,.;!?"'()[\]{}]+|[:,.;!?"'()[\]{}]+$/g;
+  const bareWord = (w) => w.replace(EDGES, "");
+
+  /**
+   * The values CELL spells, org-style: `:a:b:' is a and b. The one splitter —
+   * the vocabulary is built with it and the cells are rendered with it, so a
+   * chip on screen and a key in a query can never disagree about where a value
+   * begins.
+   * @param {string} cell
+   */
+  function tagsIn(cell) { return cell.split(":").filter(Boolean); }
+
   /** A delimited value list, org-style: `:a:b:'. What makes a column multi-valued. */
   const ORG_TAGS = /^:[^:]+(:[^:]+)*:$/;
 
@@ -354,8 +379,19 @@
 
   // Cell inner HTML: badge colouring + Org links + escaping.
   /** @param {Column} col  @param {Cell|undefined} val  @param {boolean} [dark]
-   *  @returns {string} */
-  function cellHTML(col, val, dark) {
+   *  @param {boolean} [asTags]  @returns {string} */
+  function cellHTML(col, val, dark, asTags) {
+    // A multi-valued cell is a list of values, and reads as one: a ghost chip
+    // each, outlined rather than filled, so it is neither a state badge (a
+    // filled pill) nor an applied filter (a golden chip). Three roles, three
+    // shapes. Only the presentation changes — what is searched, sorted and
+    // measured is still the text the producer sent.
+    if (asTags) {
+      const raw = displayText(val);
+      const tags = tagsIn(raw);
+      if (!tags.length) return esc(raw);
+      return tags.map((t) => `<span class="tv-tag">${esc(t)}</span>`).join(" ");
+    }
     if (col.type === "badge") {
       const raw = displayText(val);
       const badge = (col.badges || []).find((b) => b.value === raw);
@@ -505,6 +541,7 @@
   const ROW_H = 30;            // row height until a rendered row can be measured
   const CELL_PAD = 24;         // a cell's horizontal padding, both sides
   const PILL_CH = 2;           // a badge pill's ground, in characters
+  const TAG_CH = 2;            // a tag chip's ground and the gap after it
   const DEBOUNCE = 120;        // ms of quiet before a filter keystroke re-renders
   const SETTLE = 200;          // ms of quiet before the rows are taken to have settled
   const LONG_PRESS = 500;      // ms of a still finger before it means the row action
@@ -631,6 +668,13 @@
 .tv-table tbody td.tv-cell-sel{box-shadow:inset 0 0 0 1px var(--tv-accent);border-radius:3px}
 .tv-table tbody tr{cursor:default}
 .tv-table tbody tr.tv-pad td{padding:0;border:0}
+/* The third role: outlined, unfilled, in the muted ink the palette already
+   carries — dark #A4C2EB, light #667071, both clear of the text floor. A
+   filled pill is a state, a golden chip is an applied filter, and this is
+   neither. */
+.tv-tag{display:inline-block;padding:0 6px;border-radius:999px;font-size:11px;
+  border:1px solid currentColor;color:var(--tv-muted)}
+.tv-ac-label .tv-tag{margin-right:1px}
 .tv-pill{display:inline-block;padding:0 8px;border-radius:999px;
   font-weight:600;color:var(--tv-ink,var(--tv-badge));
   background:color-mix(in srgb,var(--tv-badge) 15%,transparent)}
@@ -767,6 +811,13 @@
       domains.clear();
       vocab = null;
       wordIndex = null;
+      // The verdict about which column holds lists was read off the rows like
+      // everything else here, so it dies with them. Kept, it outlives its
+      // evidence: a table mounted before its rows arrive — an empty store, a
+      // query that matched nothing, a mount filled by `setRows' a moment later
+      // — decides there is no such column and never looks again, and the tag
+      // keys, their values and their arity all go with it.
+      multiAt = undefined;
       queueIndex();
     }
 
@@ -839,8 +890,7 @@
     /** The `title' column's index, or -1; where a scoped completion finds words. */
     function titleColumn() { return columns().findIndex((c) => c.key === "title"); }
 
-    /** The tags CELL spells, org-style: `:a:b:' is a and b. @param {string} cell */
-    function tagsIn(cell) { return cell.split(":").filter(Boolean); }
+
 
     /**
      * The tag vocabulary, derived once per row set: the tags themselves, the
@@ -1038,6 +1088,9 @@
 
     /** An ISO-ish date cell, which SCHEMA gives prefix matching. */
     const DATEISH = /^\d{4}-\d{2}(-\d{2})?([ T]\d{2}:\d{2})?$/;
+    /** A cell that might be meant as a date: org brackets it, or it opens with
+     *  a year. Not proof of one, but not evidence of prose either. */
+    const COULD_BE_DATE = /^[<[]?\d/;
 
     /**
      * Does column I hold dates? Decided once per query off a sample rather than
@@ -1046,14 +1099,21 @@
      * @param {number} i
      */
     function dateColumn(i) {
-      let seen = 0;
+      let shaped = 0, contrary = 0, seen = 0;
       for (const r of state.rows) {
         const s = rowText(r).cells[i];
         if (!s) continue;
-        if (!DATEISH.test(s)) return false;
-        if (++seen >= 20) break;
+        if (DATEISH.test(s)) shaped++;
+        else if (!COULD_BE_DATE.test(s)) contrary++;
+        if (++seen >= 40) break;
       }
-      return seen > 0;
+      // Weighed the way `multiColumn' weighs its own: evidence for, evidence
+      // against, and cells that are neither. A stamp org spelled its own way,
+      // or a date this parser does not quite recognise, is not a date column
+      // saying it holds prose — it abstains, and one of them must not cost the
+      // column its prefix matching. What argues against is a cell that could
+      // not be a date at all, which is what a column of sentences is full of.
+      return shaped >= 2 && !contrary;
     }
 
     /**
@@ -1196,6 +1256,11 @@
       // A badge cell draws a pill around its text, whose padding the cached
       // length knows nothing about.
       for (let i = 0; i < cols.length; i++) if (cols[i].type === "badge") w[i] += PILL_CH;
+      // A tag cell draws a chip round each of its values, and the raw text the
+      // widths were measured from spelled them with colons instead. The same
+      // approximation the pill allowance is: enough ground for the chip.
+      const multi = multiColumn();
+      if (multi !== -1) w[multi] += TAG_CH;
       widths = w;
       return w;
     }
@@ -1264,11 +1329,13 @@
     function rowHTML(r, i) {
       const cols = columns(), cs = r.cells || {};
       const on = r.id === state.selected;
+      const multi = multiColumn();
       let tds = "";
       for (let c = 0; c < cols.length; c++) {
         const cell = (cols[c].align === "right" ? "tv-right" : "")
                    + (on && c === state.selCol ? " tv-cell-sel" : "");
-        tds += `<td class="${cell}">${cellHTML(cols[c], cs[cols[c].key], dark)}</td>`;
+        tds += `<td class="${cell}">`
+             + `${cellHTML(cols[c], cs[cols[c].key], dark, c === multi)}</td>`;
       }
       const cls = (i % 2 ? " tv-alt" : "") + (on ? " tv-sel" : "");
       return `<tr class="${cls}" data-id="${esc(r.id)}">${tds}</tr>`;
@@ -1905,7 +1972,7 @@
     /**
      * @type {{stage: string, tok: Token,
      *         items: {text: string, count: number, full: boolean, dim: boolean,
-     *                  pick: boolean}[]}|null}
+     *                  pick: boolean, tag?: string}[]}|null}
      */
     let ac = null;
     let acAt = 0;
@@ -1988,7 +2055,7 @@
      * — it lands as `key:' with the value still to type, and carries no count
      * because it narrows nothing on its own.
      * @returns {{text: string, count: number, full: boolean, dim: boolean,
-     *             pick: boolean}[]}
+     *             pick: boolean, tag?: string}[]}
      */
     function suggestFor(st) {
       const p = st.prefix.toLowerCase();
@@ -2011,7 +2078,7 @@
           const rows = held.get(tag);
           if (!rows || keys.indexOf(tag) !== -1 || !tag.startsWith(p)) continue;
           out.push({ text: tag + ":", count: rows.size, full: false, dim: false,
-                     pick: false });
+                     pick: false, tag });
         }
         // 2. Values some column actually has, reached by prefix: `TOD' means
         //    `state:TODO' and `alberbl' means `tags:alberblanc'. Facts about
@@ -2051,7 +2118,7 @@
           for (const hit of scopedCompletions(p).slice(0, SCOPED_MAX)) {
             if (out.length === AC_MAX) break;
             out.push({ text: hit.tag + ":" + hit.word, count: hit.count,
-                       full: true, dim: true, pick: false });
+                       full: true, dim: true, pick: false, tag: hit.tag });
           }
         return out;
       }
@@ -2096,7 +2163,9 @@
           // A literal split does here what a regex one would: `displayText'
           // has already turned every run of control characters into a single
           // space, and the empty strings a double space leaves are skipped.
-          const words = rowText(r).cells[at].split(" ");
+          // Edge punctuation goes before anything else looks at the word, so
+          // the deduplication below sees the forms a query would.
+          const words = rowText(r).cells[at].split(" ").map(bareWord);
           for (let w = 0; w < words.length; w++) {
             const word = words[w];
             // A word twice in one title is still one row; the titles are short
@@ -2138,10 +2207,12 @@
      * The sorted index makes this the prefix range and its postings: a binary
      * search and a walk to the end of the range, rather than a pass over the
      * rows per keystroke.
-     * @param {string} p  @returns {{tag: string, word: string, count: number}[]}
+     * @param {string} prefix  @returns {{tag: string, word: string, count: number}[]}
      */
-    function scopedCompletions(p) {
+    function scopedCompletions(prefix) {
       const idx = titleIndex();
+      const p = bareWord(prefix);       // matched against words cleaned the same way
+      if (!p) return [];
       const out = [];
       for (let i = lowerBound(idx.words, p); i < idx.words.length; i++) {
         const word = idx.words[i];
@@ -2169,9 +2240,14 @@
       let html = "";
       for (let i = 0; i < ac.items.length; i++) {
         const it = ac.items[i];
+        // A row naming a tag wears it the way the cells do, so the same value
+        // is the same shape wherever it is read.
+        const label = it.tag
+          ? `<span class="tv-tag">${esc(it.tag)}</span>${esc(it.text.slice(it.tag.length))}`
+          : esc(it.text);
         html += `<div class="tv-ac-item${it.dim ? " tv-ac-dim" : ""}`
               + `${i === acAt ? " tv-ac-on" : ""}" data-i="${i}">`
-              + `<span class="tv-ac-label">${esc(it.text)}</span>`
+              + `<span class="tv-ac-label">${label}</span>`
               + (it.count < 0 ? "" : `<span class="tv-ac-n">${it.count}</span>`)
               + `</div>`;
       }

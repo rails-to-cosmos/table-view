@@ -398,8 +398,12 @@ the way `table-view.el` prints its legend: the keys are the interface, and a
 consumer binds them and dispatches the command (`onAction`, or the
 `tableview-action` event). A double click still runs the default action.
 
-**Badge cells render as pills** — the palette colour tints the ground and writes
-the label, so one hue carries it in either scheme.
+**Three roles, three shapes.** A *state* is a filled pill in its palette colour;
+an *applied filter* is a golden chip; a *tag* is an outlined ghost chip in the
+muted ink. The multi-valued column's cells render a chip per value — split by
+the same splitter the tag vocabulary uses — and the suggestion list wears a tag
+the same way wherever it names one. Presentation only: what is searched, sorted
+and measured is still the text you sent.
 
 ### The filter box
 
