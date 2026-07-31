@@ -138,7 +138,9 @@ whitespace (`&` accepted as an alias); each token is:
 - `-token` — negation of either form.
 - anything else — free text, case-insensitive substring over the row's cells.
 
-Tokens AND together. Field-predicate semantics, by column type: `badge` —
+Predicates sharing one key OR together; distinct keys and free-text tokens
+AND (`state:TODO state:DONE tanik` = either state, and the text). Negations
+AND regardless. Field-predicate semantics, by column type: `badge` —
 exact value match; a producer may add meta-values (e.g. glance's
 `state:active` / `state:inactive` matching keyword groups); `text`/`number` —
 case-insensitive substring; date-shaped text cells — prefix match
