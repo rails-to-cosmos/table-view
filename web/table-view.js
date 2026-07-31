@@ -77,15 +77,14 @@
  *   tokens something follows, so a word is never chipped out from under the
  *   caret. Backspace on an empty box takes the last chip off, a click takes any
  *   chip off, and `onFilter' is handed the whole query joined.
- * - Enter means one of three things, and which one depends on what is open and
- *   what is typed. With the suggestion list open it accepts a suggestion. With
- *   the list closed and something typed it commits that token — cancelling the
- *   pending debounce, so the query is delivered exactly once — and leaves the
- *   keyboard in the box, because a query is built a token at a time. With the
- *   list closed and the box empty it is the gesture that says the query is
- *   done: the table takes the selection and the box gives up focus, and nothing
- *   is delivered, the chips being applied already. So `/ tanik RET passport RET
- *   RET' is two ANDed tokens and a selected row, with two queries sent.
+ * - Enter with the suggestion list open accepts a suggestion and stays. With
+ *   the list closed it commits whatever is typed to a chip — cancelling the
+ *   pending debounce, so the query is delivered exactly once — then selects the
+ *   first visible row and blurs. That last part happens every time, in both
+ *   modes, and never waits on a producer's reply. A longer query is built by
+ *   coming back: the box reopens empty with its chips standing, so
+ *   `/ tanik RET / passport RET' is two ANDed tokens, two queries sent, and the
+ *   table focused after each RET.
  * - Escape walks out one step at a time: it closes the list if one is open,
  *   else drops what is half-typed, else blurs. Both keys stop there rather than
  *   bubbling into a consumer's own keymap. Nothing else moves focus or the
@@ -1312,16 +1311,18 @@
         else input.blur();
         return;
       }
-      // Enter means one of two things, and which one is what the box holds.
-      // With something typed it commits that token and stays put: the query is
-      // being built a token at a time and the next one is usually on its way.
-      if (input.value.trim()) { flushFilter(true); return; }
-      // With the box empty it is the gesture that says the query is done, so
-      // the table takes over. Nothing is delivered — the chips are already
-      // applied — unless typing was deleted and a debounce still owes the
-      // change, which is settled here rather than dropped.
-      input.value = "";                 // stray whitespace is nothing to commit
-      if (debounce) { clearTimeout(debounce); debounce = 0; deliver(); }
+      // Enter commits whatever is typed and hands the table back, every time.
+      // A longer query is built by coming back for it: the consumer's key for
+      // the filter box refocuses an empty box with the chips still standing,
+      // and the next token joins them.
+      if (input.value.trim()) {
+        flushFilter(true);              // `chipUp' reads the box, then empties it
+      } else {
+        input.value = "";               // stray whitespace is nothing to commit
+        // Nothing to commit, but a debounce may still owe a change — text typed
+        // and then deleted again. Settle it here rather than dropping it.
+        if (debounce) { clearTimeout(debounce); debounce = 0; deliver(); }
+      }
       selectFirstVisible();
       input.blur();
     });

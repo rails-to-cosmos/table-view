@@ -55,16 +55,15 @@ the rails-to-cosmos ELPA archive publishes date-stamped snapshots.
   keymap; nothing else moves focus or the selection.
 
 ### Changed
-- **Browser renderer: Enter in the filter box no longer hands the table
-  over while there is text to commit.** With the suggestion list closed,
-  Enter with something typed commits that token to a chip, delivers the
-  query once, and *keeps the keyboard in the box*; Enter on the *empty*
-  box is what hands the selection to the table and blurs, and it
-  delivers nothing, the chips being applied already. So a query is built
-  a token at a time — `/ tanik RET passport RET RET` is two ANDed tokens,
-  two queries sent, and a selected row. Enter with the list open still
-  accepts a suggestion. Consumers that relied on one Enter both filtering
-  and moving focus now need the second one.
+- **Browser renderer: Enter in the filter box commits the typed token to
+  a chip before handing the table over.** With the suggestion list
+  closed, Enter chips whatever is typed, delivers the query once, then
+  selects the first visible row and blurs — every time, in both local and
+  producer-filtered modes, without awaiting a producer reply. A longer
+  query is built by coming back to the box, which reopens empty with its
+  chips standing: `/ tanik RET / passport RET` is two ANDed tokens, two
+  queries sent, and the table focused after each RET. Enter with the list
+  open still accepts a suggestion.
 - **Browser renderer: the action toolbar is gone.** Actions render on
   the hint line as `KEY label` pairs, the way `table-view.el` prints its
   legend — the keys are the interface, and a button only offered a

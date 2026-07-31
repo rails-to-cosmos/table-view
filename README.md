@@ -376,27 +376,28 @@ caret. **Backspace** on an empty box takes the last chip off, a click takes any
 chip off, and `onFilter` is handed the whole query joined — a producer never
 learns that chips exist.
 
-**Enter** means one of three things, depending on what is open and what is
-typed:
+**Enter** means one of two things, depending on whether the suggestion list is
+open:
 
 | state | Enter does |
 |-------|------------|
-| suggestion list open      | accept the highlighted suggestion |
-| list closed, box has text | commit that token to a chip, deliver the query once, **keep the keyboard in the box** |
-| list closed, box empty    | hand the table the selection and blur — the query is done, and nothing is delivered because the chips are already applied |
+| suggestion list open | accept the highlighted suggestion, and stay in the box |
+| list closed          | commit whatever is typed to a chip, deliver the query once, then select the first visible row and blur |
 
-So a query is built a token at a time and ends with one extra Enter:
+Enter always ends with the table focused — in both local and producer-filtered
+modes, and without awaiting a producer's reply. A longer query is built by
+coming back to the box, which reopens empty with its chips standing:
 
 ```
-/  tanik  RET  passport  RET  RET
-        └ chip ┘  └ chip ┘   └ focus to the table
+/  tanik  RET   /  passport  RET
+   └ chip ┘ └ table    └ chip ┘ └ table
 ```
 
-— two ANDed tokens, two queries sent, and the selection on the first matching
-row. **Escape** walks out one step at a time: it closes the list if one is open,
-else drops what is half-typed, else blurs. Both keys stop at the input rather
-than bubbling into a consumer's own keymap, and nothing else moves focus or the
-selection: a debounce firing on its own leaves both where the typist left them.
+— two ANDed tokens and two queries sent. **Escape** walks out one step at a
+time: it closes the list if one is open, else drops what is half-typed, else
+blurs. Both keys stop at the input rather than bubbling into a consumer's own
+keymap, and nothing else moves focus or the selection: a debounce firing on its
+own leaves both where the typist left them.
 
 ## Development
 
