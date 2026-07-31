@@ -32,6 +32,8 @@ let bytes = 0, listeners = 0, work = 0;
 const realTimeout = setTimeout, realClear = clearTimeout;
 const timed = (fn) => () => { const t = now(); try { fn(); } finally { work += now() - t; } };
 const sleep = (ms) => new Promise((done) => realTimeout(done, ms));
+/** Wait out a coalesced selection paint (one rAF). */
+const painted = () => sleep(20);
 const sync = (fn) => { const t = now(); try { return fn(); } finally { work += now() - t; } };
 global.setTimeout = (fn, ms) => realTimeout(timed(fn), ms);
 global.clearTimeout = (id) => realClear(id);
@@ -39,6 +41,8 @@ global.requestAnimationFrame = (fn) => realTimeout(timed(fn), 0);
 
 // ---- DOM shim --------------------------------------------------------------
 
+/** The shim's line height; the driver moves it to stand in for a zoom. */
+let ROW_PX = 30;
 const VOID = new Set(["input", "br", "img", "col", "hr", "meta", "link"]);
 const ENTITY = { amp: "&", lt: "<", gt: ">", quot: '"', "#39": "'" };
 const decode = (s) =>
@@ -171,9 +175,34 @@ class El {
   }
   click() { this.dispatchEvent(new Ev("click")); }
   focus() { this.focused = true; }
-  blur() { this.focused = false; this.blurs = (this.blurs || 0) + 1; }
+  blur() {
+    this.focused = false;
+    this.blurs = (this.blurs || 0) + 1;
+    this.dispatchEvent(new Ev("blur"));      // a browser fires one; listeners rely on it
+  }
   select() {} scrollIntoView() {}
-  getBoundingClientRect() { return { height: this.tagName === "THEAD" ? 30 : 30, width: 0 }; }
+  getBoundingClientRect() { return { height: ROW_PX, width: 0 }; }
+  /** A row is one line tall; anything else is what its children add up to. */
+  get offsetHeight() {
+    const h = this.style.height;
+    if (h && /px$/.test(String(h))) return parseFloat(String(h));
+    if (this.tagName === "TR") return ROW_PX;
+    let sum = 0;
+    for (const c of this.children) sum += c.offsetHeight;
+    return sum;
+  }
+  /** Distance to the nearest positioned ancestor, by stacking up what precedes. */
+  get offsetTop() {
+    let top = 0, node = this;
+    while (node.parentNode && !node.parentNode.classes.has("tv-scroll")) {
+      for (const sib of node.parentNode.children) {
+        if (sib === node) break;
+        top += sib.offsetHeight;
+      }
+      node = node.parentNode;
+    }
+    return top;
+  }
   matches(sel) { return fitsAll(this, parseSel(sel)); }
   closest(sel) {
     const steps = parseSel(sel);
@@ -317,6 +346,11 @@ async function measure() {
   await bench("upsertRow (existing)", () => sync(() => tv.upsertRow(hot)));
   await bench("deleteRow", () => sync(() => tv.deleteRow("h-11")));
 
+  // A consumer holding a movement key: ~30 select() calls inside one frame.
+  const burst = tv.getVisible().slice(200, 230).map((r) => r.id);
+  await bench("select burst x30 (key repeat)",
+              () => sync(() => { for (const id of burst) tv.select(id); }));
+
   await bench("scroll re-window", () => sync(() => {
     const sc = app.querySelector(".tv-scroll");
     sc.scrollTop = 4000;
@@ -443,7 +477,10 @@ async function filterQuery() {
     return items();
   };
   check("a bare word suggests the column keys it opens", type("sta"), ["state:"]);
-  check("the prefix narrows them", type("s"), ["state:", "scheduled:"]);
+  // A bare word offers the keys it opens: the view's columns, then the tags
+  // the rows imply, both spelled `key:'.
+  check("the prefix narrows them",
+        type("s").filter((x) => x.endsWith(":")), ["state:", "scheduled:", "system:"]);
   check("a key with no match offers nothing", type("zzz"), []);
   check("an empty box offers nothing", type(""), []);
   check("a quoted token offers nothing", type('"sta'), []);
@@ -514,6 +551,7 @@ async function filterQuery() {
   b.dispatchEvent(new Ev("keydown", { key: "Escape" }));
   b.value = "system";
   b.dispatchEvent(new Ev("keydown", { key: "Enter" }));
+  await painted();
   check("Enter with the list closed commits the token and hands the table over",
         [(b.blurs || 0) - blurs, b.value, box.querySelectorAll(".tv-chip").length,
          !!box.querySelector(".tv-table tbody tr.tv-sel")], [1, "", 1, true]);
@@ -539,18 +577,25 @@ async function cellsChipsPills() {
 
   // --- cell selection
   const id = t.getVisible()[3].id;
+  const ok = t.select(id);
+  check("select answers before it paints", [ok, t.getSelection()], [true, { id, col: null }]);
+  await painted();
   check("select with no column is a whole-row selection, as it always was",
-        [t.select(id), !!rowOf(id).classes.has("tv-sel"), cellSel().length], [true, true, 0]);
-  check("and reports no column", t.getSelection(), { id, col: null });
-  check("select with a column stamps that cell", [t.select(id, 2), colOfSel()], [true, 2]);
-  check("and reports it", t.getSelection(), { id, col: 2 });
+        [!!rowOf(id).classes.has("tv-sel"), cellSel().length], [true, 0]);
+  check("select with a column stamps that cell", t.select(id, 2), true);
+  check("and reports it before the frame", t.getSelection(), { id, col: 2 });
+  await painted();
+  check("the cell is stamped once the frame lands", colOfSel(), 2);
   check("only one cell is ever stamped", cellSel().length, 1);
   check("the row stays selected too", rowOf(id).classes.has("tv-sel"), true);
   t.select(id, 99);
+  await painted();
   check("a column past the end clamps rather than wrapping", colOfSel(), nCols - 1);
   t.select(id, -5);
+  await painted();
   check("and so does one before the start", colOfSel(), 0);
   t.select(id, 2);
+  await painted();
 
   t.upsertRow(makeRow(Number(id.slice(2))));
   check("the stamp survives an upsert", [t.getSelection().col, colOfSel()], [2, 2]);
@@ -572,6 +617,115 @@ async function cellsChipsPills() {
   const td = rowOf(id).children[3];
   td.dispatchEvent(new Ev("click"));
   check("a click selects the cell it landed on", t.getSelection(), { id, col: 3 });
+  check("and stamps it there and then — a click is not a key repeat", colOfSel(), 3);
+
+  // --- coalescing: many moves between frames paint once, at the end
+  {
+    const ids = t.getVisible().slice(10, 40).map((r) => r.id);
+    t.select(ids[0]);
+    await painted();
+    bytes = 0;
+    for (const one of ids) t.select(one);          // a held key, ~30 in a frame
+    check("thirty moves write no HTML before the frame", bytes, 0);
+    check("and the state is already the last of them",
+          t.getSelection().id, ids[ids.length - 1]);
+    await painted();
+    check("the frame paints once", bytes > 0 && bytes < 3 * 18128, true);
+    check("landing on the row the last call asked for",
+          box.querySelector(".tv-table tbody tr.tv-sel").dataset.id, ids[ids.length - 1]);
+  }
+
+  // --- the highlight is the row, and it crossfades where it is
+  {
+    const css = document.head.children.map((e) => e.text).join("");
+    check("the marks are declared with a crossfade",
+          css.indexOf("transition:background-color .08s ease-out") !== -1, true);
+    check("and a calm root turns it off", css.indexOf(".tv-calm") !== -1, true);
+    check("no overlay is rendered", box.querySelectorAll(".tv-hl").length, 0);
+
+    // A move that leaves the window where it is re-stamps the rows already
+    // rendered — the same elements, so the marks have something to fade
+    // between rather than being rebuilt at their new value.
+    const near = t.getVisible()[2].id;
+    t.select(near);
+    await painted();
+    const tr = box.querySelector(".tv-table tbody tr.tv-sel");
+    t.select(t.getVisible()[3].id);
+    await painted();
+    check("the row that lost the mark is the same element that had it",
+          [tr.classes.has("tv-sel"),
+           box.querySelector(".tv-table tbody tr.tv-sel").dataset.id],
+          [false, t.getVisible()[3].id]);
+  }
+
+  // --- the viewport ease: one loop, retargeting, snapping, cancellable
+  {
+    const sc = box.querySelector(".tv-scroll");
+    sc.clientHeight = 300;                        // ten rows on screen
+    sc.scrollTop = 0;
+    const rowH = 30, head = 30;
+    const target = (i) => head + i * rowH + rowH - 300;   // block-nearest, downward
+    /** Is row I clear of the sticky header and inside the port at scroll TOP? */
+    const inView = (i, top) =>
+      head + i * rowH >= top + head - 0.5 && head + i * rowH + rowH <= top + 300 + 0.5;
+
+    t.select(t.getVisible()[30].id);
+    check("the ease does not land in one go", sc.scrollTop, 0);
+    await sleep(300);
+    check("it converges on the block-nearest target", sc.scrollTop, target(30));
+    check("and snaps rather than creeping",
+          Number.isInteger(sc.scrollTop) || Math.abs(sc.scrollTop - target(30)) < 0.5, true);
+
+    // Retargeting: a second move mid-flight changes where the one loop is
+    // heading; it must end at the second target, not the first.
+    sc.scrollTop = 0;
+    t.select(t.getVisible()[30].id);
+    await sleep(20);
+    const midway = sc.scrollTop;
+    t.select(t.getVisible()[20].id);
+    await sleep(300);
+    check("a move mid-ease retargets the same loop",
+          [midway > 0 && midway < target(30), sc.scrollTop !== target(30),
+           inView(20, sc.scrollTop)], [true, true, true]);
+
+    // The user outranks it.
+    sc.scrollTop = 0;
+    t.select(t.getVisible()[35].id);
+    await sleep(20);
+    sc.dispatchEvent(new Ev("wheel"));
+    const stoppedAt = sc.scrollTop;
+    await sleep(300);
+    check("a wheel cancels the ease where it stands",
+          [stoppedAt > 0, sc.scrollTop], [true, stoppedAt]);
+
+    // A rows change is about an order the target no longer describes.
+    sc.scrollTop = 0;
+    t.select(t.getVisible()[35].id);
+    t.setRows(view(40).rows);
+    await sleep(300);
+    check("and a rows change cancels it too", sc.scrollTop, 0);
+    sc.clientHeight = 600;
+  }
+
+  // --- reduced motion: no crossfade, no ease, still coalesced
+  {
+    global.matchMedia = (q) => ({ matches: q.indexOf("reduced-motion") !== -1 });
+    const quiet = new El("div");
+    const qt = TableView.mount(quiet, view(40));
+    delete global.matchMedia;
+    const qs = quiet.querySelector(".tv-scroll");
+    qs.clientHeight = 300;
+    check("a calm root is marked for the stylesheet to see",
+          quiet.querySelector(".tv-root").classes.has("tv-calm"), true);
+    bytes = 0;
+    qt.select(qt.getVisible()[30].id);
+    check("the viewport jumps rather than easing", qs.scrollTop, 30 + 30 * 30 + 30 - 300);
+    check("and the paint still waits for the frame", bytes, 0);
+    await painted();
+    check("landing on the row asked for",
+          quiet.querySelector(".tv-table tbody tr.tv-sel").dataset.id,
+          qt.getVisible()[30].id);
+  }
 
   // --- the action legend, in place of the toolbar
   check("the toolbar is gone", box.querySelectorAll(".tv-btn").length, 0);
@@ -655,6 +809,7 @@ async function cellsChipsPills() {
     bF.focus();                                    // `/'
     bF.value = "review";
     bF.dispatchEvent(new Ev("keydown", { key: "Enter" }));
+    await painted();
     check("RET commits the token and returns to the table",
           [chipsOf(), bF.value, bF.blurs, !!sel()], [["review"], "", 1, true]);
 
@@ -666,6 +821,7 @@ async function cellsChipsPills() {
 
     bF.value = "sync";
     bF.dispatchEvent(new Ev("keydown", { key: "Enter" }));
+    await painted();
     check("the second token joins the first, and RET returns again",
           [chipsOf(), bF.blurs, !!sel()], [["review", "sync"], 2, true]);
     const both = tF.getVisible().length;
@@ -693,10 +849,12 @@ async function cellsChipsPills() {
     bR.focus();
     bR.value = "tanik";
     bR.dispatchEvent(new Ev("keydown", { key: "Enter" }));
+    await painted();
     rowsAt.push(boxR.querySelector(".tv-table tbody tr.tv-sel").dataset.id);
     bR.focus();
     bR.value = "passport";
     bR.dispatchEvent(new Ev("keydown", { key: "Enter" }));
+    await painted();
     check("each committed token is delivered once, joined with the ones before",
           askedF, ["tanik", "tanik passport"]);
     check("the table has the keyboard after every RET", bR.blurs, 2);
@@ -721,6 +879,258 @@ async function cellsChipsPills() {
         asked, ["state:DONE", "state:DONE system"]);
   b4.dispatchEvent(new Ev("keydown", { key: "Backspace" }));
   check("and again when a chip is stripped", asked.pop(), "state:DONE");
+}
+
+/** SCHEMA's producer-defined virtual keys: org tags, derived from the rows. */
+async function virtualKeys() {
+  console.log("\n== virtual keys");
+  const box = new El("div");
+  const t = TableView.mount(box, view(40));
+  const b = filterOf(box);
+  const KEYS = columns.map((c) => c.key);
+  const reset = () => {
+    b.value = "";
+    b.dispatchEvent(new Ev("input"));
+    for (let i = 0; i < 40 && box.querySelectorAll(".tv-chip").length; i++)
+      b.dispatchEvent(new Ev("keydown", { key: "Backspace" }));
+  };
+  const shown = (q) => {
+    reset();
+    b.value = q;
+    b.dispatchEvent(new Ev("keydown", { key: "Enter" }));
+    return t.getVisible().length;
+  };
+  const items = () => box.querySelectorAll(".tv-ac-label").map((e) => e.text);
+  const counts = () => box.querySelectorAll(".tv-ac-n").map((e) => Number(e.text));
+  const type = (q) => { reset(); b.value = q; b.dispatchEvent(new Ev("input")); return items(); };
+
+  // --- the vocabulary
+  // The fixture tags rows `:web:glance:', `:emacs:', `:ops:system:', `:read:',
+  // `:web:', `:glance:daemon:' in turn.
+  check("a tag is a key, and an unknown word is not",
+        [TableView.parseQuery("glance:x", KEYS)[0].key, t.getVisible().length > 0],
+        [null, true]);
+  check("the renderer resolves it once the rows are in",
+        shown("glance:") > 0, true);
+  check("a word that names no tag stays free text", shown("nosuchtag:x"), 0);
+  // `:web:' names a real tag, and still parses as free text: a token opening
+  // with a colon is never a key, which is the trap the rule exists for. It
+  // matches the rows whose tags cell spells it, the way any free text would.
+  check("and the org-tag trap holds — a leading colon is never a key",
+        [TableView.parseQuery(":web:", KEYS.concat(["web"]))[0].key, shown(":web:")],
+        [null, 13]);
+
+  // --- semantics
+  const web = shown("web:");
+  const glance = shown("glance:");
+  check("a bare tag key is presence alone", [web, glance], [13, 13]);
+  check("whole-tag matching — a prefix of a tag is not that tag", shown("gla:"), 0);
+  check("tag and text AND together", shown("glance:review") < glance, true);
+  check("the same query typed against the tag column agrees",
+        shown("glance:review"), shown("tags:glance review"));
+  check("negation is the rows without the tag", shown("-web:"), 40 - web);
+  {
+    const ids = (q) => { shown(q); return t.getVisible().map((r) => r.id).sort(); };
+    const a = ids("glance:review"), b = ids("glance:sync");
+    const union = Array.from(new Set(a.concat(b))).sort();
+    check("tag keys OR when they share a name", ids("glance:review glance:sync"), union);
+    check("and the terms overlap, so a sum would have been the wrong oracle",
+          union.length < a.length + b.length, true);
+  }
+  check("and AND across different tags", shown("web:glance:") <= Math.min(web, glance), true);
+
+  // --- columns shadow tags on collision
+  {
+    const shadow = new El("div");
+    const rows = view(6).rows.map((r) => ({ id: r.id, cells: { ...r.cells, tags: ":title:" } }));
+    const st = TableView.mount(shadow, { columns, rows });
+    const sb = filterOf(shadow);
+    sb.value = "title:review";
+    sb.dispatchEvent(new Ev("keydown", { key: "Enter" }));
+    // Every row carries the tag, so a tag reading would keep the ones matching
+    // "review" anywhere; the column reading keeps those whose title has it.
+    const asColumn = rows.filter((r) => /review/i.test(String(r.cells.title))).length;
+    check("a column shadows a tag of the same name",
+          [st.getVisible().length, st.getVisible().length === asColumn], [asColumn, true]);
+  }
+
+  // --- the vocabulary follows the rows
+  check("a tag that no row carries any more stops being a key",
+        (() => { t.setRows([makeRow(1)]); return shown("daemon:"); })(), 0);
+  t.setRows(view(40).rows);
+  check("and comes back with them", shown("daemon:") > 0, true);
+
+  // --- scoped suggestions
+  // A prefix completes to whole title words, scoped to the tags they sit under.
+  reset();
+  const offered = type("sy").filter((x) => !x.endsWith(":"));
+  check("a bare word completes to title words, scoped by tag", offered.length > 0, true);
+  check("each a tag and a whole word, not the fragment typed",
+        offered.every((x) => /^[^:]+:sy.+/.test(x) && !x.endsWith(":sy")), true);
+  check("no more than five of them", offered.length <= 5, true);
+  check("counts descend", (() => {
+    const n = counts().slice(-offered.length);
+    return n.every((v, i, a) => v > 0 && (i === 0 || a[i - 1] >= v));
+  })(), true);
+  check("and every one of them matches something — the invariant of completing",
+        offered.every((x) => shown(x) > 0), true);
+  const scoped = type("sy").filter((x) => !x.endsWith(":"));
+  check("they are dimmed — a word count is not a value match",
+        box.querySelectorAll(".tv-ac-dim").length, scoped.length);
+  check("a prefix inside a word is not a completion of it",
+        type("yst").filter((x) => !x.endsWith(":")).length, 0);
+  check("and two characters are the least that completes anything",
+        type("s").filter((x) => !x.endsWith(":")).length, 0);
+  check("keys come before the scoped completions",
+        (() => { const l = type("sy"); const k = l.filter((x) => x.endsWith(":")).length;
+                 return l.slice(0, k).every((x) => x.endsWith(":")); })(), true);
+
+  // Exact beats fuzzy: a word that IS a value of some column says so, and the
+  // scoped guesses go entirely rather than crowding it.
+  const exact = type("TODO");
+  check("a word that names a column value completes to it", exact, ["state:TODO"]);
+  check("with the rows behind it", counts(), [Math.round(40 / 5)]);
+  check("and nothing fuzzy beside it", box.querySelectorAll(".tv-ac-dim").length, 0);
+  check("the exact row is not dimmed either",
+        box.querySelectorAll(".tv-ac-item")[0].classes.has("tv-ac-dim"), false);
+  check("a value of a declared list counts too", type("A"), ["priority:A"]);
+  type("sync");
+  check("nothing is preselected when only tags are offered — Enter commits the word",
+        [items().every((x) => !x.endsWith(":")),
+         box.querySelectorAll(".tv-ac-on").length], [true, 0]);
+  check("while a column completion does start highlighted",
+        (() => { type("sta"); return box.querySelectorAll(".tv-ac-on").length; })(), 1);
+
+  reset();
+  b.value = "sy";
+  b.dispatchEvent(new Ev("input"));
+  check("nothing starts highlighted when the first row is an offer",
+        box.querySelectorAll(".tv-ac-on").length, 0);
+  b.dispatchEvent(new Ev("keydown", { key: "ArrowDown" }));
+  check("an arrow steps into the offers", box.querySelectorAll(".tv-ac-on").length, 1);
+  const first = items()[0];
+  b.dispatchEvent(new Ev("keydown", { key: "Enter" }));
+  check("accepting a key completion leaves the value to type", b.value, first);
+  check("and a virtual key offers no value list", items(), []);
+
+  // A tag name is a key like any other: its prefix completes to `tag:'.
+  reset();
+  const keyed = type("sys");
+  check("a tag prefix completes to the tag as a key", keyed[0], "system:");
+  check("with the rows that hold it", counts()[0], shown("system:"));
+  check("and it is not dimmed — a vocabulary key is an exact fact",
+        (() => { type("sys");
+                 return box.querySelectorAll(".tv-ac-item")[0].classes.has("tv-ac-dim"); })(),
+        false);
+  reset();
+  b.value = "sys";
+  b.dispatchEvent(new Ev("input"));
+  b.dispatchEvent(new Ev("keydown", { key: "ArrowDown" }));
+  b.dispatchEvent(new Ev("keydown", { key: "Enter" }));
+  check("accepting it lands the key with the caret past the colon", b.value, "system:");
+  b.value = "system:sy";
+  b.dispatchEvent(new Ev("input"));
+  b.dispatchEvent(new Ev("keydown", { key: "Enter" }));
+  check("and typing a value after it composes end to end",
+        t.getVisible().length > 0, true);
+
+  // --- the contract, on data shaped like the one it was written for
+  {
+    const own = [
+      { key: "title", header: "Headline", type: "text" },
+      { key: "tags", header: "Tags", type: "text" },
+    ];
+    const rows = [
+      { id: "a", cells: { title: "call tanik about the lease", tags: ":contact:" } },
+      { id: "b", cells: { title: "tanik sent the passport scan", tags: ":contact:doc:" } },
+      { id: "c", cells: { title: "tangent worth chasing", tags: ":idea:" } },
+      { id: "d", cells: { title: "nothing to complete here", tags: ":idea:" } },
+    ];
+    const cbox = new El("div");
+    const ct = TableView.mount(cbox, { columns: own, rows });
+    const cb = filterOf(cbox);
+    const offer = (q) => {
+      cb.value = q;
+      cb.dispatchEvent(new Ev("input"));
+      return cbox.querySelectorAll(".tv-ac-label").map((e) => e.text);
+    };
+    const nums = () => cbox.querySelectorAll(".tv-ac-n").map((e) => Number(e.text));
+    const list = offer("tan");
+    check("tan completes to the word it starts, scoped by tag",
+          list.indexOf("contact:tanik") !== -1, true);
+    check("counting the rows tagged contact whose title has it",
+          nums()[list.indexOf("contact:tanik")], 2);
+    check("the other tag's word comes too, and they are ordered by count",
+          list.filter((x) => x.indexOf(":tan") !== -1).sort(),
+          ["contact:tanik", "doc:tanik", "idea:tangent"]);
+    check("each is a whole word, never the fragment",
+          list.every((x) => !x.endsWith(":tan")), true);
+    check("and each one, run, finds the rows it was counted from",
+          (() => {
+            cb.value = "contact:tanik";
+            cb.dispatchEvent(new Ev("keydown", { key: "Enter" }));
+            return ct.getVisible().length;
+          })(), 2);
+  }
+
+  // --- the handle: stripLastToken and getQuery
+  {
+    const asked = [];
+    const h = new El("div");
+    const ht = TableView.mount(h, view(40), { onFilter: (q) => asked.push(q) });
+    const hb = filterOf(h);
+    check("getQuery starts empty", ht.getQuery(), "");
+    hb.value = "glance:";
+    hb.dispatchEvent(new Ev("keydown", { key: "Enter" }));
+    hb.value = "review";
+    hb.dispatchEvent(new Ev("keydown", { key: "Enter" }));
+    check("getQuery is what was last delivered", ht.getQuery(), "glance: review");
+    check("one delivery per commit", asked, ["glance:", "glance: review"]);
+
+    const blurs = hb.blurs || 0;
+    hb.value = "half";                            // typed, uncommitted
+    check("stripLastToken takes the typed text first", ht.stripLastToken(), true);
+    check("leaving the chips", [hb.value, ht.getQuery()], ["", "glance: review"]);
+    check("and delivering once for it", asked.length, 3);
+    check("then the chips, last first", ht.stripLastToken(), true);
+    check("which getQuery follows", ht.getQuery(), "glance:");
+    check("and again", [ht.stripLastToken(), ht.getQuery()], [true, ""]);
+    check("false once there is nothing left", ht.stripLastToken(), false);
+    check("and nothing delivered for it", asked.length, 5);
+    check("focus is the caller's business", (hb.blurs || 0) - blurs, 0);
+  }
+
+  // --- the Backspace ladder: characters, chips, then the table
+  {
+    const l = new El("div");
+    const lt = TableView.mount(l, view(40));
+    const lb = filterOf(l);
+    const back = () => lb.dispatchEvent(new Ev("keydown", { key: "Backspace" }));
+    lb.value = "review";
+    lb.dispatchEvent(new Ev("keydown", { key: "Enter" }));
+    await painted();
+    lb.focus();
+    lb.value = "sync";
+    lb.dispatchEvent(new Ev("keydown", { key: "Enter" }));
+    await painted();
+    lb.focus();
+    lb.value = "half";                            // characters the browser eats
+    check("the ladder starts with two chips and text in the box",
+          [l.querySelectorAll(".tv-chip").length, lb.value], [2, "half"]);
+    lb.value = "";                                // ... down to an empty box
+    const blurs = lb.blurs;
+    back();
+    check("Backspace on the empty box takes the last chip",
+          [l.querySelectorAll(".tv-chip").length, lb.blurs - blurs], [1, 0]);
+    back();
+    check("then the one before it", [l.querySelectorAll(".tv-chip").length, lb.blurs - blurs],
+          [0, 0]);
+    check("with the query emptied as they went", lt.getQuery(), "");
+    back();
+    await painted();
+    check("and with none left it hands the table over",
+          [lb.blurs - blurs, !!l.querySelector(".tv-table tbody tr.tv-sel")], [1, true]);
+  }
 }
 
 async function smoke() {
@@ -788,6 +1198,7 @@ async function smoke() {
 
   if (typeof t.select === "function") {
     check("select() finds a visible row", t.select("h-39"), true);
+    await painted();
     check("and marks it", box.querySelector(".tv-table tbody tr.tv-sel").dataset.id, "h-39");
     check("select() ignores an unknown id", t.select("nope"), false);
     check("getVisible() is the display order", t.getVisible().length, 40);
@@ -811,6 +1222,7 @@ async function smoke() {
     rbox.dispatchEvent(new Ev("input"));          // debounce armed, not yet due
     rbox.dispatchEvent(new Ev("keydown", { key: "Enter" }));
     const rSel = () => remote.querySelector(".tv-table tbody tr.tv-sel");
+    await painted();
     check("Enter flushes onFilter at once", asked, ["sys"]);
     check("and hands the table over without awaiting the producer's reply",
           [rbox.blurs, rbox.value, !!rSel()], [1, "", true]);
@@ -835,6 +1247,7 @@ async function smoke() {
     kbox.dispatchEvent(new Ev("input"));           // debounce armed, not yet due
     kbox.dispatchEvent(new Ev("keydown", { key: "Enter" }));
     const narrowed = kt.getVisible();
+    await painted();
     check("Enter filters without waiting for the debounce",
           narrowed.length > 0 && narrowed.length < 40, true);
     check("and the hint counts the narrowed set",
@@ -851,6 +1264,7 @@ async function smoke() {
 
     const held = kSel().dataset.id;
     kbox.dispatchEvent(new Ev("keydown", { key: "Enter" }));
+    await painted();
     check("a further Enter keeps a selection that is still visible",
           kSel().dataset.id, held);
 
@@ -873,11 +1287,13 @@ async function smoke() {
 
     kbox.value = "no-such-headline";
     kbox.dispatchEvent(new Ev("keydown", { key: "Enter" }));
+    await painted();
     check("Enter with nothing matching selects nothing", kSel(), null);
     kbox.dispatchEvent(new Ev("keydown", { key: "Backspace" }));
 
     // Only Enter touches focus or the selection.
     kt.select(survivor);
+    await painted();
     const quiet = kbox.blurs;
     kbox.value = "system";
     kbox.dispatchEvent(new Ev("input"));
@@ -896,6 +1312,7 @@ async function smoke() {
 
   if (typeof TableView.parseQuery === "function") await filterQuery();
   if (typeof t.getSelection === "function") await cellsChipsPills();
+  if (typeof t.getQuery === "function") await virtualKeys();
 
   if (typeof t.select !== "function") return;
 
@@ -919,7 +1336,9 @@ async function smoke() {
 
   const last = big.getVisible()[499].id;
   check("select() reaches a row with no element", big.select(last), true);
-  check("and scrolls to it", far.querySelector("tbody tr.tv-sel").dataset.id, last);
+  await sleep(400);                       // the viewport eases the whole way there
+  check("and the ease carries the window to it",
+        far.querySelector("tbody tr.tv-sel").dataset.id, last);
 }
 
 measure()

@@ -18,7 +18,10 @@
  *   tv.getSelection();    // { id, col } — col is null for a whole-row selection
  *   tv.getVisible();      // the filtered + sorted rows, in display order
  *
- *   TableView.parseQuery(q, columnKeys)   // SCHEMA.md's filter micro-syntax
+ *   tv.getQuery();        // the query as last delivered
+ *   tv.stripLastToken();  // drop the typed text, else the last chip -> bool
+ *
+ *   TableView.parseQuery(q, keys)         // SCHEMA.md's filter micro-syntax
  *   // -> [{ negated, key, value, quoted, start, end, sep }, ...]
  *
  * Also emits DOM CustomEvents on the container: `tableview-action`
@@ -40,6 +43,33 @@
  *   column is the whole-row selection this had before. Both classes are
  *   re-derived from the same state on every render, so they survive a scroll, an
  *   upsert and a `setRows' that still carries the id.
+ * - Movement is smooth in two places, and neither of them is an overlay. The
+ *   marks crossfade where they are (80ms on the tr and td backgrounds), and
+ *   the viewport eases toward the row rather than jumping to it. An absolutely
+ *   positioned highlight bar was tried and thrown away: it duplicates row
+ *   geometry it cannot own, so collapsed borders, the header's real height and
+ *   sub-pixel metrics drift it off the row it is meant to mark, and every fix
+ *   is another measurement chasing the DOM. The row already knows where it is.
+ * - The ease is one rAF loop that retargets. Each frame it covers 30% of the
+ *   distance left and stops within half a pixel; a new selection moves the
+ *   target rather than queueing a second animation, so a held key converges on
+ *   the latest row instead of replaying a backlog. Any wheel, touch or drag on
+ *   the scroller cancels it — whoever is scrolling outranks it — and a rows,
+ *   filter or sort change cancels it too, the target having been about an
+ *   order that no longer holds.
+ * - That loop is the only one. The window the scroll position implies, the
+ *   selection marks and the ease all run in one frame callback, because two
+ *   schedulers would re-render the same tbody twice a frame and read
+ *   `scrollTop' while the other was writing it.
+ * - `select' updates the state and returns at once — `getSelection' is
+ *   synchronous truth — but the painting it implies coalesces to one animation
+ *   frame. A consumer holding a movement key fires ~30 selects a second; per
+ *   event that is 30 window rewrites, and per frame it is one. The frame
+ *   re-stamps the trs that are already rendered rather than rebuilding them,
+ *   which is what leaves the marks something to crossfade between.
+ * - `prefers-reduced-motion: reduce' turns off both the crossfade and the ease:
+ *   the marks land and the viewport jumps. The coalescing stays, being economy
+ *   rather than motion.
  * - Badge cells render as pills: the palette colour tints the ground, marks a
  *   dot and writes the label, so one hue carries the whole thing in either
  *   scheme.
@@ -64,12 +94,23 @@
  *   highlight the box and a producer can implement the same grammar. Filtering
  *   locally applies the parsed query; with `onFilter' the raw text goes to the
  *   producer and the grammar is its business.
- * - A suggestion list under the box completes it: a bare word suggests column
- *   keys, `key:' suggests that column's value domain (`values', else the badge
- *   palette, else the distinct cell values of the loaded rows), each with the
- *   number of rows behind it. Arrows move, Tab and Enter accept, Esc dismisses;
- *   a click accepts without taking focus. It stays shut when it has nothing to
- *   offer, and inside a quoted token.
+ * - Besides the view's columns, a key may be one the rows imply: SCHEMA calls
+ *   these virtual keys, and the one derivation a producer and a renderer can
+ *   both arrive at is org's — every distinct tag in the `tags' column is a key,
+ *   so `contact:tanik' is tagged `contact' and matching `tanik'. Membership is
+ *   whole-tag (`con:' is not `:contact:'), an empty value is presence alone, and
+ *   a column of the same name shadows the tag.
+ * - A suggestion list under the box completes it. A bare word offers, in order:
+ *   the column keys it opens; the columns whose declared domain holds it as a
+ *   value (`TODO' → `state:TODO'); and, only when nothing exact was found, up
+ *   to three tags whose rows merely contain it, dimmed. Exact beats fuzzy and
+ *   fuzzy never crowds — a scoped count is a substring count and must not dress
+ *   like a value match. After `key:' comes that column's value domain
+ *   (`values', else the badge palette, else the distinct cell values), each
+ *   with the number of rows behind it; a virtual key has no domain to offer.
+ *   Arrows move, Tab and Enter accept, Esc dismisses; a click accepts without
+ *   taking focus. Only a column completion starts highlighted, so Enter still
+ *   commits the word as typed and an arrow is how you step into the offers.
  * - A committed token leaves the box and becomes a chip. The query is always
  *   the chips and the box together — chips are where the finished tokens are
  *   kept, not a second filter — so the box holds only what is still being
@@ -132,8 +173,9 @@
  *             getRows: () => Row[],
  *             getVisible: () => Row[],
  *             select: (id: string, col?: number) => boolean,
- *             getSelection: () => { id: string|null, col: number|null } }} Handle
- *   What `mount' returns.
+ *             getSelection: () => { id: string|null, col: number|null },
+ *             getQuery: () => string,
+ *             stripLastToken: () => boolean }} Handle  What `mount' returns.
  * @typedef {{ search: string, len: number[], cells: string[] }} RowText
  *   A row's cached display data: every cell's text lowercased and joined with
  *   \x1f (free-text filtering searches it), each cell's length (column widths),
@@ -326,6 +368,8 @@
   const CELL_PAD = 24;         // a cell's horizontal padding, both sides
   const PILL_CH = 4;           // a badge pill's dot, gap and ground, in characters
   const DEBOUNCE = 120;        // ms of quiet before a filter keystroke re-renders
+  const EASE = 0.3;            // fraction of the remaining scroll covered per frame
+  const SNAP_PX = 0.5;         // closer than this and the ease is over
 
   /** Run CB on the next frame (or soon, where there are no frames). */
   const frame = (cb) =>
@@ -367,9 +411,11 @@
 .tv-ac-item{display:flex;justify-content:space-between;align-items:baseline;gap:14px;
   padding:3px 10px;white-space:nowrap;cursor:pointer;color:var(--tv-fg)}
 .tv-ac-n{color:var(--tv-muted);font-variant-numeric:tabular-nums}
+/* A scoped tag is a substring count, and reads as one. */
+.tv-ac-dim{opacity:.6;font-style:italic}
 .tv-ac-item:hover{color:var(--tv-accent)}
 .tv-ac-on{background:var(--tv-sel);color:var(--tv-accent)}
-.tv-scroll{overflow:auto}
+.tv-scroll{overflow:auto;position:relative}
 .tv-table{border-collapse:collapse;width:100%}
 .tv-table th,.tv-table td{padding:5px 12px;text-align:left;white-space:nowrap;
   border-bottom:1px solid var(--tv-border)}
@@ -379,7 +425,12 @@
 .tv-table th.tv-sortable:hover{color:var(--tv-accent)}
 .tv-table td.tv-right,.tv-table th.tv-right{text-align:right;font-variant-numeric:tabular-nums}
 .tv-table tbody tr.tv-alt{background:var(--tv-alt)}
-.tv-table tbody tr.tv-sel{background:var(--tv-sel)}
+.tv-table tbody tr.tv-sel{background:var(--tv-sel);box-shadow:inset 2px 0 0 var(--tv-accent)}
+/* The selection is the row, and it crossfades in place — no overlay to keep in
+   step with the rows underneath it. */
+.tv-table tbody tr,.tv-table tbody td{transition:background-color .08s ease-out,
+  box-shadow .08s ease-out}
+.tv-calm .tv-table tbody tr,.tv-calm .tv-table tbody td{transition:none}
 .tv-table tbody td.tv-cell-sel{box-shadow:inset 0 0 0 1px var(--tv-accent);border-radius:3px}
 .tv-table tbody tr{cursor:default}
 .tv-table tbody tr.tv-pad td{padding:0;border:0}
@@ -475,10 +526,58 @@
     }
 
     /** Forget the cached display data, and the value domains read off it. */
-    function clearTexts() { texts.clear(); domains.clear(); }
+    function clearTexts() { texts.clear(); dropDomains(); }
+
+    /** Forget what was read off the rows: value domains, and the tag vocabulary. */
+    function dropDomains() { domains.clear(); vocab = null; wordIndex = null; }
+
+    /**
+     * The virtual keys, and the rows behind each. SCHEMA lets a producer define
+     * keys that are not columns, provided a renderer can derive the same set
+     * from the same view data; the one derivation both sides agree on is org's
+     * — every distinct tag in the `tags' column is a key. Cached and thrown
+     * away with the text cache, since the rows are what it was read off.
+     * @type {{list: string[], ids: Map<string, Set<string>>,
+     *          byRow: Map<string, string[]>}|null}
+     */
+    let vocab = null;
+
+    /** The `tags' column's index, or -1 when the view has none. */
+    function tagsColumn() { return columns().findIndex((c) => c.key === "tags"); }
+
+    /** The `title' column's index, or -1; where a scoped completion finds words. */
+    function titleColumn() { return columns().findIndex((c) => c.key === "title"); }
+
+    /** The tags CELL spells, org-style: `:a:b:' is a and b. @param {string} cell */
+    function tagsIn(cell) { return cell.split(":").filter(Boolean); }
+
+    /**
+     * The tag vocabulary, derived once per row set: the tags themselves, the
+     * rows each holds, and each row's tags. Both directions are kept because
+     * both are asked for on the hot paths — membership when a predicate runs,
+     * and a row's tags when the suggestions count them — and deriving either
+     * from the other per keystroke means splitting cells all over again.
+     */
+    function tagVocab() {
+      if (vocab) return vocab;
+      const at = tagsColumn();
+      const ids = new Map(), byRow = new Map();
+      if (at !== -1)
+        for (const r of state.rows) {
+          const tags = tagsIn(rowText(r).cells[at]);
+          if (!tags.length) continue;
+          byRow.set(r.id, tags);
+          for (const tag of tags) {
+            const held = ids.get(tag);
+            if (held) held.add(r.id); else ids.set(tag, new Set([r.id]));
+          }
+        }
+      vocab = { list: Array.from(ids.keys()).sort(), ids, byRow };
+      return vocab;
+    }
 
     /** Drop the filtered list (and the widths it implies). */
-    function dropOrder() { order = null; widths = null; }
+    function dropOrder() { order = null; widths = null; cancelEase(); }
     /** Drop the sort too: the rows, the columns or the sort keys moved. */
     function dropSorted() { dropOrder(); sorted = null; orderCmp = null; }
 
@@ -533,6 +632,12 @@
     empty.textContent = "no rows";
     scroll.appendChild(table);
     scroll.appendChild(empty);
+    // Read once. A page that asks for less motion gets neither the crossfade
+    // nor the scroll ease — the selection lands and the viewport jumps — while
+    // the coalescing, which is not motion, stays.
+    const calm = typeof matchMedia === "function"
+              && matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (calm) root.className = "tv-root tv-calm";
 
     const hint = document.createElement("div");
     hint.className = "tv-hint";
@@ -550,6 +655,8 @@
     const geom = { row: ROW_H, head: ROW_H };
     const win = { first: -1, last: -1 };
     let remeasuring = false;
+    /** The selected row's index in display order, or -1; what the bar reads. */
+    let selAt = -1;
 
     /**
      * @param {Sort|Sort[]|undefined} sort
@@ -598,6 +705,18 @@
     /** The column keys `parseQuery' resolves predicates against. */
     const columnKeys = () => columns().map((c) => c.key);
 
+    /**
+     * Every key a predicate may name: the columns, then the virtual keys the
+     * rows imply. Columns lead, so a tag sharing a column's name is shadowed by
+     * it — SCHEMA's collision rule, and the reason resolution is one ordered
+     * list rather than two lookups.
+     */
+    function queryKeys() {
+      const keys = columnKeys();
+      for (const tag of tagVocab().list) if (keys.indexOf(tag) === -1) keys.push(tag);
+      return keys;
+    }
+
     /** An ISO-ish date cell, which SCHEMA gives prefix matching. */
     const DATEISH = /^\d{4}-\d{2}(-\d{2})?([ T]\d{2}:\d{2})?$/;
 
@@ -626,12 +745,20 @@
      * @param {Token} tok  @returns {(r: Row) => boolean}
      */
     function tokenTest(tok) {
-      const col = tok.key === null ? null : colByKey(tok.key);
       const v = tok.value.toLowerCase();
-      if (!col)
+      if (tok.key === null)
         // The cached joined string, which is the hot path and the reason the
         // pure-free-text query costs exactly what it did before.
         return v ? (r) => rowText(r).search.includes(v) : () => true;
+      const col = colByKey(tok.key);
+      if (!col) {
+        // A virtual key: carrying the tag, and matching the text beside it.
+        // Membership comes from the vocabulary rather than from the cell, so
+        // `con:' cannot match `:contact:' — the same split built both.
+        const ids = tagVocab().ids.get(tok.key) || new Set();
+        if (!v) return (r) => ids.has(r.id);
+        return (r) => ids.has(r.id) && rowText(r).search.includes(v);
+      }
       const i = columns().indexOf(col);
       // `key:' with nothing after it yet — the half-typed state the suggestion
       // list exists to serve — narrows nothing, whatever the column's type.
@@ -658,7 +785,7 @@
       const groups = new Map();
       /** @type {((r: Row) => boolean)[]} */
       const musts = [];
-      for (const tok of parseQuery(q, columnKeys())) {
+      for (const tok of parseQuery(q, queryKeys())) {
         const test = tokenTest(tok);
         if (tok.negated) musts.push((r) => !test(r));
         else if (tok.key === null) musts.push(test);
@@ -886,27 +1013,32 @@
     function setSelected(id, col) {
       state.selected = id ?? null;
       state.selCol = id === null || id === undefined ? null : clampCol(col);
+      selAt = indexOfSelected();
+      stampSelection();
+    }
+
+    /** Where the selected row sits in display order, or -1. */
+    function indexOfSelected() {
+      if (state.selected === null) return -1;
+      const rows = ordered();
+      // The cached index is right unless the order moved under it.
+      if (selAt >= 0 && rows[selAt] && rows[selAt].id === state.selected) return selAt;
+      return rows.findIndex((r) => r.id === state.selected);
+    }
+
+    /** The `tv-sel' and `tv-cell-sel' classes over the rendered window. */
+    function stampSelection() {
+      const id = state.selected;
       for (let i = 0; i < tbody.children.length; i++) {
         const tr = /** @type {HTMLElement} */ (tbody.children[i]);
         if (tr.dataset.id === undefined) continue;
-        const on = tr.dataset.id === id;
+        const on = id !== null && tr.dataset.id === id;
         tr.classList.toggle("tv-sel", on);
         for (let c = 0; c < tr.children.length; c++)
           tr.children[c].classList.toggle("tv-cell-sel", on && c === state.selCol);
       }
     }
 
-    /**
-     * Scroll the row at index I into view, the way `block: "nearest"' would —
-     * clear of the sticky header, which covers the top of the scroller.
-     */
-    function scrollTo(i) {
-      const rowH = geom.row, port = scroll.clientHeight || 0;
-      const top = geom.head + i * rowH;          // the row's offset in the scroller
-      if (top - geom.head < scroll.scrollTop) scroll.scrollTop = top - geom.head;
-      else if (port && top + rowH > scroll.scrollTop + port)
-        scroll.scrollTop = top + rowH - port;
-    }
 
     /**
      * Select the row with ID, scrolling its place in the (virtual) list into
@@ -922,12 +1054,82 @@
       const rows = ordered();
       const i = rows.findIndex((r) => r.id === id);
       if (i === -1) return false;
-      scrollTo(i);
-      state.selCol = clampCol(col);          // so the redraw stamps the cell too
-      renderRows(true);
-      setSelected(id, col);
+      state.selected = id;
+      state.selCol = clampCol(col);
+      selAt = i;
+      paintSelection();
       return true;
     }
+
+    /**
+     * Repaint the selection on the next frame, once however many times it moved
+     * in between. A consumer holding a movement key fires ~30 of these a
+     * second; each one is a scroll adjustment and a window rewrite, and doing
+     * them per event is what makes held-key movement stutter. The state is
+     * already correct — `getSelection' answers from it synchronously — so the
+     * frame only has to paint where the selection ended up.
+     */
+    function paintSelection() {
+      wantSelection = true;
+      if (selAt >= 0) easeToRow(selAt);
+      schedule();
+    }
+
+    // ---- the frame loop ----------------------------------------------------
+    // One callback drives everything that wants a frame: the window the scroll
+    // position implies, the selection's marks, and the viewport ease. Two
+    // schedulers racing each other would re-render the same tbody twice a
+    // frame and read `scrollTop' while the other was writing it.
+
+    let frameId = 0;
+    let wantWindow = false;      // the scroll moved; re-window if it has to
+    let wantSelection = false;   // the selection moved; re-stamp the marks
+    let easeAt = 0;              // where the viewport is heading
+    let easing = false;
+
+    function schedule() { if (!frameId) frameId = frame(tick); }
+
+    function tick() {
+      frameId = 0;
+      if (easing) {
+        const step = easeAt - scroll.scrollTop;
+        if (Math.abs(step) < SNAP_PX) { scroll.scrollTop = easeAt; easing = false; }
+        else scroll.scrollTop = scroll.scrollTop + step * EASE;
+        wantWindow = true;
+      }
+      // Forced only when the rows themselves changed; a selection that has not
+      // moved the window re-stamps the trs that are already there, which is
+      // what lets the marks crossfade instead of being rebuilt at their new
+      // value.
+      if (wantWindow || wantSelection) renderRows();
+      if (wantSelection) stampSelection();
+      wantWindow = wantSelection = false;
+      if (easing) schedule();
+    }
+
+    /**
+     * Aim the viewport at row I, the way `block: "nearest"' would. Retargeting
+     * rather than queueing: a held key lands a new target every 30ms or so, and
+     * the one loop simply heads for the latest one, so it converges instead of
+     * playing back a backlog. The aim is taken from where the ease is going,
+     * not from where it currently is, or each keypress would re-derive against
+     * a viewport still in flight and creep.
+     */
+    function easeToRow(i) {
+      const from = easing ? easeAt : scroll.scrollTop;
+      const rowH = geom.row, port = scroll.clientHeight || 0;
+      const top = geom.head + i * rowH;
+      let to = from;
+      if (top - geom.head < from) to = top - geom.head;
+      else if (port && top + rowH > from + port) to = top + rowH - port;
+      if (to === from && !easing) return;              // already in view
+      if (calm) { scroll.scrollTop = to; easing = false; return; }
+      easeAt = to;
+      easing = true;
+    }
+
+    /** Give the viewport up: whoever is scrolling it now outranks the ease. */
+    function cancelEase() { easing = false; }
 
     /**
      * Put the selection on the first visible row, unless it is already on one.
@@ -1007,12 +1209,11 @@
       if (cmd) dispatch(cmd, rowOf(state.rows, tr));
     });
 
-    let pending = 0;
-    function scheduleWindow() {
-      if (pending) return;
-      pending = frame(() => { pending = 0; renderRows(); });
-    }
-    scroll.addEventListener("scroll", scheduleWindow);
+    scroll.addEventListener("scroll", () => { wantWindow = true; schedule(); });
+    // A hand on the wheel, a finger on the glass, a drag of the scrollbar: the
+    // ease stops chasing its target and leaves the viewport where it is put.
+    for (const how of ["wheel", "touchmove", "pointerdown", "keydown"])
+      scroll.addEventListener(how, cancelEase);
 
     // ---- chips -------------------------------------------------------------
     // A committed token leaves the box and becomes a chip. The query is the
@@ -1049,7 +1250,7 @@
      */
     function chipUp(all) {
       const v = input.value;
-      const toks = parseQuery(v, columnKeys());
+      const toks = parseQuery(v, queryKeys());
       if (!toks.length) return false;
       const last = toks[toks.length - 1];
       const keep = !all && last.end === v.length ? last : null;
@@ -1071,13 +1272,43 @@
       renderRows(true);
     }
 
+    /** What the last delivery sent; `getQuery' answers with it. */
+    let lastQuery = "";
+
     // With `onFilter', the producer narrows the rows and this hands it the
     // query instead of filtering locally: `state.filter' stays empty, so
     // `order' is `sorted' and the rows given are the rows shown. Either way it
-    // is the whole query — chips and box joined — that travels.
-    function deliver() {
-      if (o.onFilter) o.onFilter(effectiveQuery());
+    // is the whole query — chips and box joined — that travels, and this is the
+    // one place it does. ONFRAME defers the local re-filter to a frame, which
+    // is what a keystroke wants and what an explicit commit does not.
+    function deliver(onFrame) {
+      lastQuery = effectiveQuery();
+      if (o.onFilter) o.onFilter(lastQuery);
+      else if (onFrame) frame(applyFilter);
       else applyFilter();
+    }
+
+    /**
+     * Take off the last unit of the query: what is half-typed in the box if
+     * there is any, else the last chip. Reapplies through the one delivery
+     * point, and leaves focus alone — the caller owns that. False when there
+     * was nothing left to take off, so a consumer can walk the query down and
+     * know when it has hit the end.
+     * @returns {boolean}
+     */
+    function stripLastToken() {
+      if (input.value.trim()) {
+        input.value = "";
+        if (debounce) { clearTimeout(debounce); debounce = 0; }
+        closeAc();
+        deliver();
+        return true;
+      }
+      if (!chips.length) return false;
+      chips.pop();
+      renderChips();
+      deliver();
+      return true;
     }
 
     let debounce = 0;
@@ -1086,8 +1317,7 @@
       debounce = setTimeout(() => {
         debounce = 0;
         chipUp(false);
-        if (o.onFilter) o.onFilter(effectiveQuery());
-        else frame(applyFilter);
+        deliver(true);
       }, DEBOUNCE);
     }
     input.addEventListener("input", () => { armFilter(); openAc(); });
@@ -1098,9 +1328,15 @@
     // never asked, and the list is only ever an aid to typing the grammar.
 
     const AC_MAX = 12;          // suggestions offered at once
+    const SCOPED_MAX = 5;       // scoped completions offered, when nothing exact was found
+    const SCOPED_MIN = 2;       // ... and only past this much typing
     const DOMAIN_MAX = 200;     // distinct values kept before the prefix narrows them
 
-    /** @type {{stage: string, tok: Token, items: {text: string, count: number}[]}|null} */
+    /**
+     * @type {{stage: string, tok: Token,
+     *         items: {text: string, count: number, full: boolean, dim: boolean,
+     *                  pick: boolean}[]}|null}
+     */
     let ac = null;
     let acAt = 0;
 
@@ -1141,7 +1377,7 @@
     function tokenAtCaret() {
       const v = input.value;
       const caret = typeof input.selectionStart === "number" ? input.selectionStart : v.length;
-      for (const t of parseQuery(v, columnKeys()))
+      for (const t of parseQuery(v, queryKeys()))
         if (caret >= t.start && caret <= t.end) return t;
       return null;
     }
@@ -1157,6 +1393,8 @@
       const t = tokenAtCaret();
       if (!t || t.quoted) return null;
       if (t.key !== null) {
+        // A virtual key takes no value list — what follows it is free text over
+        // the rows it scopes, and there is no domain to offer for that.
         const col = colByKey(t.key);
         return col ? { stage: "value", tok: t, col, prefix: t.value } : null;
       }
@@ -1165,30 +1403,161 @@
     }
 
     /**
-     * The suggestions for STAGE: the text each one inserts, and for a value the
-     * number of rows it would match. A key stage carries no count — completing
-     * to `key:' narrows nothing on its own.
-     * @returns {{text: string, count: number}[]}
+     * The suggestions for STAGE: the text each one inserts, the number of rows
+     * behind it, and whether it finishes a token. A column completion does not
+     * — it lands as `key:' with the value still to type, and carries no count
+     * because it narrows nothing on its own.
+     * @returns {{text: string, count: number, full: boolean, dim: boolean,
+     *             pick: boolean}[]}
      */
     function suggestFor(st) {
       const p = st.prefix.toLowerCase();
       const out = [];
       if (!st.col) {
-        for (const k of columnKeys()) {
+        // 1. The keys the word opens — the view's columns, then the keys the
+        //    rows imply. Both are exact facts, so neither is dimmed; the
+        //    columns come first because they are the view's own vocabulary,
+        //    and a tag carries the count of the rows that hold it, a column
+        //    having no one number to show.
+        const keys = columnKeys();
+        for (const k of keys) {
           if (!k.toLowerCase().startsWith(p)) continue;
-          out.push({ text: k + ":", count: -1 });
+          out.push({ text: k + ":", count: -1, full: false, dim: false, pick: true });
           if (out.length === AC_MAX) break;
         }
+        const held = tagVocab().ids;
+        for (const tag of tagVocab().list) {
+          if (out.length === AC_MAX) break;
+          const rows = held.get(tag);
+          if (!rows || keys.indexOf(tag) !== -1 || !tag.startsWith(p)) continue;
+          out.push({ text: tag + ":", count: rows.size, full: false, dim: false,
+                     pick: false });
+        }
+        // 2. The word as a value some column actually has: typing TODO means
+        //    `state:TODO', and that is a fact about the data rather than a
+        //    guess about it.
+        let exact = 0;
+        for (const c of columns()) {
+          const dom = valueOrder(c);
+          const hit = dom && dom.find((v) => String(v).toLowerCase() === p);
+          if (hit === undefined || hit === null) continue;
+          if (out.length === AC_MAX) break;
+          out.push({ text: c.key + ":" + hit, count: domainOf(c).counts.get(p) || 0,
+                     full: true, dim: false, pick: false });
+          exact++;
+        }
+        // 3. Words the rows finish for it, scoped to the tag they were found
+        //    under. Exact beats fuzzy, and fuzzy never crowds: a value match
+        //    makes these redundant, so they go entirely, and otherwise only the
+        //    best few appear and they are dimmed — a scoped count counts a word
+        //    in a title, and must not dress like a value match. A single letter
+        //    completes to most of the store, which says nothing and costs a
+        //    pass over every row to say.
+        if (!exact && p.length >= SCOPED_MIN)
+          for (const hit of scopedCompletions(p).slice(0, SCOPED_MAX)) {
+            if (out.length === AC_MAX) break;
+            out.push({ text: hit.tag + ":" + hit.word, count: hit.count,
+                       full: true, dim: true, pick: false });
+          }
         return out;
       }
       const dom = domainOf(st.col);
       for (const v of dom.list) {
         const lower = String(v).toLowerCase();
         if (!lower.startsWith(p)) continue;
-        out.push({ text: String(v), count: dom.counts.get(lower) || 0 });
+        out.push({ text: String(v), count: dom.counts.get(lower) || 0, full: false,
+                   dim: false, pick: true });
         if (out.length === AC_MAX) break;
       }
       return out;
+    }
+
+    /**
+     * Every title word, sorted, with the tags it appears under and how many
+     * rows each of those pairings covers. Built whole on first use rather than
+     * patched: a prefix query wants sorted words, an upsert can move any of
+     * them, and rebuilding on the next keystroke is both simpler and cheaper
+     * than keeping a sorted structure correct through every row change.
+     * Thrown away with the text cache, which is where it was read from.
+     * A posting is a flat `[tag, count, tag, count, …]' rather than a map:
+     * most words sit under one or two tags, and at this size the allocation of
+     * a map per word costs more than the linear scan of a short array saves.
+     * @type {{words: string[], posts: (string|number)[][]}|null}
+     */
+    let wordIndex = null;
+
+    function titleIndex() {
+      if (wordIndex) return wordIndex;
+      const byRow = tagVocab().byRow;
+      const at = titleColumn();
+      /** @type {Map<string, (string|number)[]>} */
+      const acc = new Map();
+      if (byRow.size && at !== -1)
+        for (const r of state.rows) {
+          const tags = byRow.get(r.id);
+          if (!tags) continue;
+          // A literal split does here what a regex one would: `displayText'
+          // has already turned every run of control characters into a single
+          // space, and the empty strings a double space leaves are skipped.
+          const words = rowText(r).cells[at].split(" ");
+          for (let w = 0; w < words.length; w++) {
+            const word = words[w];
+            // A word twice in one title is still one row; the titles are short
+            // enough that looking back beats a set per row.
+            if (!word || words.indexOf(word) !== w) continue;
+            let post = acc.get(word);
+            if (!post) acc.set(word, (post = []));
+            for (const tag of tags) {
+              let i = 0;
+              while (i < post.length && post[i] !== tag) i += 2;
+              if (i < post.length) post[i + 1] = /** @type {number} */ (post[i + 1]) + 1;
+              else post.push(tag, 1);
+            }
+          }
+        }
+      const words = Array.from(acc.keys()).sort();
+      const built = { words, posts: words.map((w) => acc.get(w) || []) };
+      wordIndex = built;
+      return built;
+    }
+
+    /** The first index in WORDS at or after P. @param {string[]} words */
+    function lowerBound(words, p) {
+      let lo = 0, hi = words.length;
+      while (lo < hi) {
+        const mid = (lo + hi) >> 1;
+        if (words[mid] < p) lo = mid + 1; else hi = mid;
+      }
+      return lo;
+    }
+
+    /**
+     * Scoped completions for the prefix P: title words that begin with it,
+     * each paired with a tag of the rows it was found in. Typing `tan' offers
+     * `contact:tanik' — a completion of the word rather than an echo of the
+     * fragment, so every row offered matches at least the rows it was counted
+     * from, and accepting one can never come back empty.
+     *
+     * The sorted index makes this the prefix range and its postings: a binary
+     * search and a walk to the end of the range, rather than a pass over the
+     * rows per keystroke.
+     * @param {string} p  @returns {{tag: string, word: string, count: number}[]}
+     */
+    function scopedCompletions(p) {
+      const idx = titleIndex();
+      const out = [];
+      for (let i = lowerBound(idx.words, p); i < idx.words.length; i++) {
+        const word = idx.words[i];
+        if (!word.startsWith(p)) break;
+        if (word.length === p.length) continue;   // what was typed completes nothing
+        const post = idx.posts[i];
+        for (let k = 0; k < post.length; k += 2)
+          out.push({ tag: /** @type {string} */ (post[k]),
+                     word, count: /** @type {number} */ (post[k + 1]) });
+      }
+      return out.sort((a, b) => b.count - a.count
+                             || (a.tag === b.tag ? (a.word < b.word ? -1 : 1)
+                                                 : (a.tag < b.tag ? -1 : 1)));
     }
 
     function closeAc() {
@@ -1203,7 +1572,8 @@
       let html = "";
       for (let i = 0; i < ac.items.length; i++) {
         const it = ac.items[i];
-        html += `<div class="tv-ac-item${i === acAt ? " tv-ac-on" : ""}" data-i="${i}">`
+        html += `<div class="tv-ac-item${it.dim ? " tv-ac-dim" : ""}`
+              + `${i === acAt ? " tv-ac-on" : ""}" data-i="${i}">`
               + `<span class="tv-ac-label">${esc(it.text)}</span>`
               + (it.count < 0 ? "" : `<span class="tv-ac-n">${it.count}</span>`)
               + `</div>`;
@@ -1219,13 +1589,19 @@
       const items = suggestFor(st);
       if (!items.length) { closeAc(); return; }
       ac = { stage: st.stage, tok: st.tok, items };
-      acAt = 0;
+      // A column name is what the typist is visibly reaching for, so it starts
+      // highlighted and Enter takes it. Everything else is an offer beside what
+      // they typed — a tag name is very often the word they are actually
+      // searching for — so nothing starts highlighted, Enter commits the word
+      // as written, and an arrow key is how you step into the offers.
+      acAt = items[0] && items[0].pick ? 0 : -1;
       renderAc();
     }
 
     function moveAc(step) {
       if (!ac) return;
-      acAt = (acAt + step + ac.items.length) % ac.items.length;
+      const n = ac.items.length;
+      acAt = acAt < 0 ? (step > 0 ? 0 : n - 1) : (acAt + step + n) % n;
       renderAc();
     }
 
@@ -1235,11 +1611,11 @@
      * for the value; a value lands with a trailing space, ready for the next
      * token. Focus stays in the box either way.
      */
-    function acceptAc(text) {
+    function acceptAc(item) {
       if (!ac) return;
       const v = input.value, t = ac.tok;
       const head = ac.stage === "key" ? (t.negated ? "-" : "") : v.slice(t.start, t.sep + 1);
-      const ins = head + text + (ac.stage === "key" ? "" : " ");
+      const ins = head + item.text + (item.full || ac.stage === "value" ? " " : "");
       input.value = v.slice(0, t.start) + ins + v.slice(t.end);
       const caret = t.start + ins.length;
       if (input.setSelectionRange) input.setSelectionRange(caret, caret);
@@ -1251,7 +1627,7 @@
     acEl.addEventListener("click", (e) => {
       const t = hit(e);
       const item = t && /** @type {HTMLElement|null} */ (t.closest(".tv-ac-item"));
-      if (item && ac) acceptAc(ac.items[Number(item.dataset.i)].text);
+      if (item && ac) acceptAc(ac.items[Number(item.dataset.i)]);
     });
     input.addEventListener("blur", closeAc);
 
@@ -1279,26 +1655,28 @@
     // the first Esc closes the list and the second does what it does here.
     input.addEventListener("keydown", (e) => {
       if (ac) {
-        const taken = e.key === "ArrowDown" || e.key === "ArrowUp"
-                   || e.key === "Tab" || e.key === "Enter" || e.key === "Escape";
-        if (taken) {
+        const arrow = e.key === "ArrowDown" || e.key === "ArrowUp";
+        const accepts = (e.key === "Tab" || e.key === "Enter") && acAt >= 0;
+        if (arrow || accepts || e.key === "Escape") {
           e.preventDefault();
           e.stopPropagation();
           if (e.key === "ArrowDown") moveAc(1);
           else if (e.key === "ArrowUp") moveAc(-1);
           else if (e.key === "Escape") closeAc();
-          else acceptAc(ac.items[acAt].text);
+          else acceptAc(ac.items[acAt]);
           return;
         }
+        // Nothing highlighted: the keys fall through to what they mean with no
+        // list at all, so a typed word is still committed by Enter.
       }
-      // The box empty, Backspace takes the last chip back off — the keyboard
-      // way to undo a commit, since a chip is otherwise a mouse target.
-      if (e.key === "Backspace" && !input.value && chips.length) {
+      // Backspace walks the query down: the browser eats characters while
+      // there are any, then this takes chips off one at a time, and with
+      // nothing left it hands the table over — the same gesture Enter ends on.
+      if (e.key === "Backspace" && !input.value) {
         e.preventDefault();
         e.stopPropagation();
-        chips.pop();
-        renderChips();
-        deliver();
+        if (chips.length) { chips.pop(); renderChips(); deliver(); }
+        else { selectFirstVisible(); input.blur(); }
         return;
       }
       if (e.key !== "Enter" && e.key !== "Escape") return;
@@ -1402,7 +1780,7 @@
         const i = state.rows.findIndex((r) => r.id === row.id);
         if (i === -1) state.rows.push(row); else state.rows[i] = row;
         texts.delete(row.id);
-        domains.clear();
+        dropDomains();
         if (sorted) place(sorted, row, false);
         // Unsorted, `order' is `sorted' filtered, and a row the filter has just
         // started matching has no place to be spliced into: re-derive it (one
@@ -1415,7 +1793,7 @@
       deleteRow(id) {
         state.rows = state.rows.filter((r) => r.id !== id);
         texts.delete(id);
-        domains.clear();
+        dropDomains();
         if (sorted) unplace(sorted, id);
         if (order) unplace(order, id);
         renderRows(true);
@@ -1427,11 +1805,11 @@
           if (op.op === "insert") {
             state.rows.splice(op.index, 0, op.row);
             texts.delete(op.row.id);
-            domains.clear();
+            dropDomains();
           } else if (op.op === "delete") {
             const gone = state.rows[op.index];
             if (gone) texts.delete(gone.id);
-            domains.clear();
+            dropDomains();
             state.rows.splice(op.index, 1);
           } else if (op.op === "reset") {
             state.rows = (op.rows || []).slice();
@@ -1451,6 +1829,13 @@
        * @returns {{id: string|null, col: number|null}}
        */
       getSelection() { return { id: state.selected, col: state.selCol }; },
+      /**
+       * The query as last delivered: the chips and whatever had been committed
+       * with them. What a consumer echoes, or writes into a URL.
+       * @returns {string}
+       */
+      getQuery() { return lastQuery; },
+      stripLastToken,
     };
   }
 

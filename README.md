@@ -315,6 +315,8 @@ hands the query to the producer, and whatever `setRows` delivers is what shows.
 | `getVisible()`     | the rows on display: filtered and sorted, in display order     |
 | `select(id, col?)` | select that row — and optionally one cell of it — and scroll it into view; false if not visible |
 | `getSelection()`   | `{ id, col }`; `col` is `null` for a whole-row selection       |
+| `getQuery()`       | the filter query as last delivered (chips + what was committed) |
+| `stripLastToken()` | drop the typed text, else the last chip, and reapply; false if nothing was left |
 | `el`               | the root element, which also emits the two CustomEvents        |
 
 Rows are **virtualized**: only the scrolled-to window plus a small overscan
@@ -323,6 +325,15 @@ outside the window has no element to click — move the selection with
 `select(id)`, over ids from `getVisible()`, rather than by driving row
 elements. The filter input is built once and never re-created, so focus and
 caret survive typing.
+
+Movement is smooth in two places. The selection marks **crossfade in place**
+(80ms), and the viewport **eases** toward the row rather than jumping — one rAF
+loop that covers 30% of the remaining distance per frame and retargets, so a
+held key converges on the latest row instead of replaying a backlog. Any wheel,
+touch or drag cancels it, and `prefers-reduced-motion: reduce` turns off both.
+`select()` returns at once and `getSelection()` is synchronous truth, but the
+painting it implies coalesces to one animation frame: a consumer holding `n`/`j`
+at ~30 calls a second costs one paint per frame rather than thirty.
 
 **Selection** is a row and, optionally, one cell of it. `select(id, 2)` stamps
 the third column's `td`; `select(id)` selects the whole row, which is what it
@@ -360,21 +371,41 @@ implement the same grammar at the other end. Filtering locally applies the
 parsed query; with `onFilter` the raw text goes to the producer and the grammar
 is its business.
 
-A **suggestion list** under the box completes it: a bare word suggests column
-keys, `key:` suggests that column's value domain — its `values`, else its badge
-palette, else the distinct cell values of the loaded rows — each with the number
-of rows behind it. **Arrows** move, **Tab**/**Enter** accept, **Escape**
-dismisses, a click accepts without taking focus. It stays shut when it has
-nothing to offer, and inside a quoted token.
+A key may also be one the **rows imply** — SCHEMA's virtual keys. The derivation
+a producer and a renderer both arrive at is org's: every distinct tag in the
+`tags` column is a key, so `contact:tanik` means tagged `contact` and matching
+`tanik`. Membership is whole-tag (`con:` is not `:contact:`), an empty value is
+presence alone (`-contact:` is everything untagged), and a column of the same
+name shadows the tag.
+
+A **suggestion list** under the box completes it. A bare word offers, in order:
+
+1. the **keys** it opens — the view's columns, then the tags the rows imply
+   (`boo` → `book:`, with the count of rows holding it);
+2. the columns whose declared domain holds it as a **value** (`TODO` →
+   `state:TODO`) — exact facts about the data;
+3. and, only when nothing exact was found, up to five **word completions**,
+   dimmed: whole title words starting with what was typed, paired with the tags
+   their rows carry (`tan` → `contact:tanik`). Every one of them is a query that
+   finds something, by construction — it was counted from the rows it came from.
+
+Exact beats fuzzy, and fuzzy never crowds. After `key:` comes that column's
+value domain — its `values`, else its badge palette, else the distinct cell
+values — each with the number of rows behind it; a virtual key has no domain to
+offer, so what follows it is ordinary text. **Arrows** move, **Tab**/**Enter**
+accept, **Escape** dismisses, a click accepts without taking focus. Only a
+column name starts highlighted — a tag name is often the word you were actually
+searching for — so Enter still commits the word as typed.
 
 A committed token leaves the box and becomes a **chip** beside it. The query is
 always the chips and the box together — chips are where the finished tokens are
 kept, so the box holds only what is still being typed and a long query stops
 scrolling out of sight. Enter commits the box whole; a settling debounce commits
 only the tokens something follows, so a word is never chipped out from under the
-caret. **Backspace** on an empty box takes the last chip off, a click takes any
-chip off, and `onFilter` is handed the whole query joined — a producer never
-learns that chips exist.
+caret. **Backspace** walks the query down: characters first, then chips one at a time,
+and with nothing left it hands the table over. A click takes any chip off, and
+`onFilter` is handed the whole query joined — a producer never learns that chips
+exist.
 
 **Enter** means one of two things, depending on whether the suggestion list is
 open:
