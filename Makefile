@@ -3,7 +3,7 @@ EMACS ?= emacs
 EL  := table-view.el
 TEST := table-view-test.el
 
-.PHONY: all test compile web-check elisp-check typecheck check clean
+.PHONY: all test compile web-check web-perf elisp-check typecheck check clean
 
 all: compile test
 
@@ -20,6 +20,13 @@ compile:
 ## web/jsconfig.json.
 web-check:
 	cd web && npx --yes -p typescript tsc -p jsconfig.json
+
+## Benchmark and smoke-test the browser renderer headlessly: mount, filter,
+## upsert, delete and scroll over 13,344 synthetic rows, timed and counted
+## (HTML written, listeners attached).  Node only -- the DOM shim is in the
+## driver.  `node web/perf-driver.js OTHER.js ROWS' compares another build.
+web-perf:
+	node web/perf-driver.js
 
 ## Byte-compile the library elisp with warnings promoted to errors (the elisp
 ## analogue of a type check: undefined functions, arity, unused bindings, ...).

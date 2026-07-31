@@ -285,12 +285,48 @@ the visible description, not the raw markup, so columns stay aligned and
 target string) to customise what a followed link does, or set
 `table-view-render-links` to nil to show cells verbatim.
 
+## Browser renderer
+
+[`web/table-view.js`](web/table-view.js) renders the same contract
+([`SCHEMA.md`](SCHEMA.md)) in a browser: one dependency-free file, no build
+step. [`web/demo.html`](web/demo.html) runs it by double-clicking.
+
+```js
+const tv = TableView.mount(document.querySelector("#app"), view, {
+  onAction(command, id, row) { ... },   // like the Emacs handler alist
+  onLink(target, row)        { ... },   // follow an Org link
+});
+```
+
+`mount` returns a live handle:
+
+| Method             | Purpose                                                        |
+|--------------------|----------------------------------------------------------------|
+| `setView(v)`       | replace the whole view (columns, actions, sort, rows)          |
+| `setRows(rows)`    | replace all rows                                               |
+| `upsertRow(row)`   | replace the row with that `id`, else append                    |
+| `deleteRow(id)`    | drop the row with that `id`                                    |
+| `applyDelta(ops)`  | apply windowed insert/delete/reset ops in order                |
+| `getRows()`        | the rows as given, in store order                              |
+| `getVisible()`     | the rows on display: filtered and sorted, in display order     |
+| `select(id)`       | select that row and scroll it into view; false if not visible  |
+| `el`               | the root element, which also emits the two CustomEvents        |
+
+Rows are **virtualized**: only the scrolled-to window plus a small overscan
+has DOM, so a 13k-row view mounts and filters without freezing the tab. A row
+outside the window has no element to click — move the selection with
+`select(id)`, over ids from `getVisible()`, rather than by driving row
+elements. The filter input is built once and never re-created, so focus and
+caret survive typing.
+
 ## Development
 
 ```sh
 make test       # run the ERT suite in batch mode
 make compile    # byte-compile (surfaces warnings)
 make clean      # remove *.elc
+make web-check  # typecheck web/table-view.js (JSDoc + @ts-check, needs Node)
+make web-perf   # benchmark and smoke-test the browser renderer at 13k rows
 ```
 
 Or directly:

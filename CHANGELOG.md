@@ -5,7 +5,31 @@ the rails-to-cosmos ELPA archive publishes date-stamped snapshots.
 
 ## Unreleased
 
+### Added
+- `web/perf-driver.js` + `make web-perf`: a dependency-free Node driver
+  (its own DOM shim) that mounts 13,344 synthetic rows and reports the
+  time, HTML bytes and listener count of a mount, a filter keystroke, an
+  upsert, a delete and a scroll — and doubles as the renderer's smoke
+  test.
+- Browser renderer handle: `select(id)` selects a row and scrolls its
+  place in the virtual list into view (rows outside the rendered window
+  have no element to click), and `getVisible()` returns the filtered and
+  sorted rows in display order.
+
 ### Changed
+- The browser renderer no longer rebuilds itself on every keystroke. The
+  chrome — bar, filter input, table skeleton, hint — is built once at
+  mount; rows are virtualized (the scrolled-to window plus ~15 rows of
+  overscan, between two spacer rows); row and header events are
+  delegated from the scroll container; the filter is debounced 120ms and
+  searches a per-row cached string; the sort comparator is built once
+  per re-sort over a cached sorted list, so filtering never re-sorts and
+  upsert/delete splice the cached lists in place. At 13,344 rows a
+  keystroke went from ~4.4MB of HTML and ~33k listener attaches to
+  ~17KB and none. The filter input keeps focus and caret while typing;
+  streaming updates keep the scroll position; zebra striping comes from
+  a class stamped from the row's global index rather than
+  `:nth-child(even)`, which cannot see past the window.
 - The action-key legend is multiline: `KEY:Label` tokens wrap to the
   displaying window's width (80 in batch) on their own lines below the
   spec `subtitle`. Line 2 keeps only the status (sort / filter / marks /

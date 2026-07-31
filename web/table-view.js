@@ -13,12 +13,33 @@
  *     onLink(target, row)        { ... },   // follow an Org link (default: open http[s])
  *   });
  *   tv.setRows(rows); tv.upsertRow(row); tv.deleteRow(id); tv.applyDelta(ops);
+ *   tv.select(id);        // select a row by id and scroll it into view -> bool
+ *   tv.getVisible();      // the filtered + sorted rows, in display order
  *
  * Also emits DOM CustomEvents on the container: `tableview-action`
  * ({detail:{command,id,row}}) and `tableview-link` ({detail:{target,row}}).
  *
+ * Rendering (renderer-local; SCHEMA.md's "Not part of the contract"):
+ *
+ * - The chrome — bar, title, filter input, action buttons, table skeleton, hint
+ *   — is built once at mount. Updates touch only the row window, the hint text,
+ *   the sort arrows and the buttons' disabled state, so the filter input keeps
+ *   focus and caret while typing.
+ * - Rows are virtualized. `tbody` holds the scrolled-to window plus ~15 rows of
+ *   overscan, between two spacer rows standing in for the height of the rest.
+ *   Rows outside the window have no DOM: drive selection with `select(id)`
+ *   rather than by reaching for row elements. Zebra striping comes from a class
+ *   stamped from the row's global index (`:nth-child` cannot see past the
+ *   window). Column widths come from the widest cell in the filtered set, in
+ *   `ch` — the renderer's font is monospace — so they hold still while
+ *   scrolling.
+ * - Row and header events are delegated from the scroll container, attached
+ *   once. `tr.click()` still selects a rendered row.
+ * - Filter input is debounced 120ms; the row window renders on a rAF.
+ *
  * Type-checked with `// @ts-check` + the JSDoc @typedefs below (no build step);
  * run `make web-check`.  The typedefs are the JS mirror of ../SCHEMA.md.
+ * `make web-perf` benchmarks a 13k-row view headlessly (web/perf-driver.js).
  */
 // @ts-check
 
@@ -47,6 +68,18 @@
  *        | { op: "reset", rows: Row[] }} Op
  * @typedef {{ onAction?: (command: string, id: string, row: Row) => void,
  *             onLink?: (target: string, row: Row | null) => void }} MountOptions
+ * @typedef {{ el: HTMLElement,
+ *             setView: (v: View) => void,
+ *             setRows: (rows: Row[]) => void,
+ *             upsertRow: (row: Row) => void,
+ *             deleteRow: (id: string) => void,
+ *             applyDelta: (ops: Op[]) => void,
+ *             getRows: () => Row[],
+ *             getVisible: () => Row[],
+ *             select: (id: string) => boolean }} Handle  What `mount' returns.
+ * @typedef {{ search: string, len: number[] }} RowText
+ *   A row's cached display data: every cell's text lowercased and joined with
+ *   \x1f (the filter searches it), and each cell's length (column widths).
  */
 
 /** @param {*} root  The global object (`window`, or CommonJS `this`). */
@@ -68,7 +101,10 @@
   function displayText(val) {
     if (val === null || val === undefined) return "";
     let s = typeof val === "string" ? val : String(val);
-    s = s.replace(ORG_LINK, (_, target, desc) => desc || target);
+    // The scan is the hot path (every cell, every re-measure); skip the link
+    // rewrite for the strings that cannot contain one.
+    if (s.indexOf("[[") !== -1)
+      s = s.replace(ORG_LINK, (_, target, desc) => desc || target);
     return s.replace(/[\u0000-\u001f\u007f]+/g, " ");
   }
 
@@ -140,6 +176,16 @@
 
   // ---- component -----------------------------------------------------------
 
+  const OVERSCAN = 15;         // rows rendered above and below the viewport
+  const ROW_H = 30;            // row height until a rendered row can be measured
+  const CELL_PAD = 24;         // a cell's horizontal padding, both sides
+  const DEBOUNCE = 120;        // ms of quiet before a filter keystroke re-renders
+
+  /** Run CB on the next frame (or soon, where there are no frames). */
+  const frame = (cb) =>
+    typeof requestAnimationFrame === "function" ? requestAnimationFrame(cb)
+                                                : setTimeout(cb, 16);
+
   let styleInjected = false;
   function injectStyle() {
     if (styleInjected) return;
@@ -172,9 +218,10 @@
 .tv-table th.tv-sortable{cursor:pointer}
 .tv-table th.tv-sortable:hover{color:var(--tv-accent)}
 .tv-table td.tv-right,.tv-table th.tv-right{text-align:right;font-variant-numeric:tabular-nums}
-.tv-table tbody tr:nth-child(even){background:var(--tv-alt)}
+.tv-table tbody tr.tv-alt{background:var(--tv-alt)}
 .tv-table tbody tr.tv-sel{background:var(--tv-sel)}
 .tv-table tbody tr{cursor:default}
+.tv-table tbody tr.tv-pad td{padding:0;border:0}
 .tv-badge{font-weight:600;color:var(--tv-badge)}
 .tv-link{color:var(--tv-accent);text-decoration:none}
 .tv-link:hover{text-decoration:underline}
@@ -191,6 +238,7 @@
    * @param {Element} container
    * @param {View} view
    * @param {MountOptions} [opts]
+   * @returns {Handle}
    */
   function mount(container, view, opts) {
     injectStyle();
@@ -207,15 +255,111 @@
       sortKeys: normalizeSort(view && view.sort),
     };
 
+    // ---- caches ------------------------------------------------------------
+    // Two row lists stand between the store and the window. `sorted' is every
+    // row in sort order; `order' is `sorted' under the filter, and is what the
+    // window renders from. A filter change re-derives `order' alone, so typing
+    // never re-sorts; upsert and delete splice both in place; a rows or sort
+    // change drops both. A selection change touches neither.
+
+    /** @type {Row[]|null} */
+    let sorted = null;
+    /** @type {Row[]|null} */
+    let order = null;
+    /** The trimmed, lowercased query `order' was filtered by. */
+    let orderQuery = "";
+    /**
+     * The comparator `sorted' is in, for binary-inserting an upsert.
+     * @type {((a: Row, b: Row) => number)|null}
+     */
+    let orderCmp = null;
+    /**
+     * Max display length per column over `order'; null when stale.
+     * @type {number[]|null}
+     */
+    let widths = null;
+    /** @type {Map<string, RowText>} */
+    const texts = new Map();
+
+    /** Cached display data for row R. @param {Row} r  @returns {RowText} */
+    function rowText(r) {
+      let t = texts.get(r.id);
+      if (!t) {
+        const cols = columns(), cs = r.cells || {};
+        const parts = new Array(cols.length), len = new Array(cols.length);
+        for (let i = 0; i < cols.length; i++) {
+          const s = displayText(cs[cols[i].key]);
+          len[i] = s.length;
+          parts[i] = s.toLowerCase();
+        }
+        t = { search: parts.join("\x1f"), len };
+        texts.set(r.id, t);
+      }
+      return t;
+    }
+
+    /** Drop the filtered list (and the widths it implies). */
+    function dropOrder() { order = null; widths = null; }
+    /** Drop the sort too: the rows, the columns or the sort keys moved. */
+    function dropSorted() { dropOrder(); sorted = null; orderCmp = null; }
+
+    // ---- persistent chrome -------------------------------------------------
+    // Built once. Only the tbody window, the hint, the sort arrows and the
+    // buttons' disabled state change afterwards, so the filter input — never
+    // recreated — keeps focus and caret across every update.
+
     const root = document.createElement("div");
     root.className = "tv-root";
     container.innerHTML = "";
     container.appendChild(root);
 
-    // Elements queried from `root' are all HTML (we only build HTML), so type
-    // them as HTMLElement once here instead of casting at every call site.
-    /** @param {string} sel  @returns {NodeListOf<HTMLElement>} */
-    const qsa = (sel) => /** @type {NodeListOf<HTMLElement>} */ (root.querySelectorAll(sel));
+    const bar = document.createElement("div");
+    bar.className = "tv-bar";
+    const titleEl = document.createElement("span");
+    titleEl.className = "tv-title";
+    const input = document.createElement("input");
+    input.className = "tv-filter";
+    input.type = "search";
+    input.placeholder = "filter…";
+    bar.appendChild(titleEl);
+    bar.appendChild(input);
+
+    const scroll = document.createElement("div");
+    scroll.className = "tv-scroll";
+    const table = document.createElement("table");
+    table.className = "tv-table";
+    const colgroup = document.createElement("colgroup");
+    const thead = document.createElement("thead");
+    const headRow = document.createElement("tr");
+    const tbody = document.createElement("tbody");
+    thead.appendChild(headRow);
+    table.appendChild(colgroup);
+    table.appendChild(thead);
+    table.appendChild(tbody);
+    const empty = document.createElement("div");
+    empty.className = "tv-empty";
+    empty.textContent = "no rows";
+    scroll.appendChild(table);
+    scroll.appendChild(empty);
+
+    const hint = document.createElement("div");
+    hint.className = "tv-hint";
+
+    root.appendChild(bar);
+    root.appendChild(scroll);
+    root.appendChild(hint);
+
+    /** Per-column <col>, one per column. @type {HTMLElement[]} */
+    let colEls = [];
+    /** Per-column sort arrow, one per column. @type {HTMLElement[]} */
+    let arrowEls = [];
+    /** The action buttons. @type {HTMLButtonElement[]} */
+    let btnEls = [];
+
+    // Measured geometry and the window currently in the tbody.
+    const geom = { row: ROW_H, head: ROW_H };
+    const win = { first: -1, last: -1 };
+    let remeasuring = false;
 
     /**
      * @param {Sort|Sort[]|undefined} sort
@@ -233,37 +377,247 @@
     function actions() { return state.view.actions || []; }
     function colByKey(k) { return columns().find((c) => c.key === k); }
 
-    function visibleRows() {
-      let rows = state.rows;
+    // ---- order: filter, sort, widths ---------------------------------------
+
+    /**
+     * One comparator for the whole sort chain, built once per re-sort: each
+     * column's comparator is resolved here, then reused for every comparison.
+     * @returns {((a: Row, b: Row) => number)|null}
+     */
+    function chainComparator() {
+      /** @type {{key: string, cmp: (a: Cell|undefined, b: Cell|undefined) => number, sign: number}[]} */
+      const keys = [];
+      for (const sk of state.sortKeys) {
+        const col = colByKey(sk.column);
+        if (col) keys.push({ key: sk.column, cmp: comparator(col), sign: sk.ascending ? 1 : -1 });
+      }
+      if (!keys.length) return null;
+      if (keys.length === 1) {
+        const k = keys[0];
+        return (a, b) => k.sign * k.cmp((a.cells || {})[k.key], (b.cells || {})[k.key]);
+      }
+      return (a, b) => {
+        for (const k of keys) {
+          const c = k.cmp((a.cells || {})[k.key], (b.cells || {})[k.key]);
+          if (c) return k.sign * c;
+        }
+        return 0;
+      };
+    }
+
+    /** The rows to display: sorted, then filtered. Cached. @returns {Row[]} */
+    function ordered() {
+      if (order) return order;
+      if (!sorted) {
+        orderCmp = chainComparator();
+        sorted = state.rows.slice();     // never sort the store itself
+        if (orderCmp) sorted.sort(orderCmp);
+      }
       const q = state.filter.trim().toLowerCase();
-      if (q) {
-        rows = rows.filter((r) =>
-          columns().some((c) =>
-            displayText((r.cells || {})[c.key]).toLowerCase().includes(q)));
+      order = q ? sorted.filter((r) => rowText(r).search.includes(q)) : sorted.slice();
+      orderQuery = q;
+      widths = null;
+      return order;
+    }
+
+    /** Whether ROW passes the current filter. @param {Row} r */
+    function matches(r) { return !orderQuery || rowText(r).search.includes(orderQuery); }
+
+    /**
+     * Column widths in characters: the widest cell in the filtered set, and the
+     * header (plus its sort arrow). @returns {number[]}
+     */
+    function colWidths() {
+      if (widths) return widths;
+      const cols = columns(), primary = state.sortKeys[0];
+      const w = cols.map((c) =>
+        String(c.header || c.key).length + (primary && primary.column === c.key ? 2 : 0));
+      for (const r of ordered()) {
+        const len = rowText(r).len;
+        for (let i = 0; i < w.length; i++) if (len[i] > w[i]) w[i] = len[i];
       }
-      if (state.sortKeys.length) {
-        rows = rows.slice().sort((ra, rb) => {
-          for (const sk of state.sortKeys) {
-            const col = colByKey(sk.column);
-            if (!col) continue;
-            const cmp = comparator(col)(
-              (ra.cells || {})[sk.column], (rb.cells || {})[sk.column]);
-            if (cmp) return sk.ascending ? cmp : -cmp;
-          }
-          return 0;
-        });
+      widths = w;
+      return w;
+    }
+
+    /** Widen the cached widths for ROW (an upsert can only add text). */
+    function growWidths(r) {
+      if (!widths) return;
+      const len = rowText(r).len;
+      for (let i = 0; i < widths.length; i++) if (len[i] > widths[i]) widths[i] = len[i];
+    }
+
+    function applyWidths() {
+      const w = colWidths();
+      for (let i = 0; i < colEls.length; i++) {
+        // `ch' is exact in the monospace face the renderer sets; a consumer that
+        // overrides it with a proportional font gets a hint, and the table's own
+        // min-content width still wins.
+        const px = `calc(${w[i]}ch + ${CELL_PAD}px)`;
+        if (colEls[i].style.width !== px) colEls[i].style.width = px;
       }
-      return rows;
+    }
+
+    // ---- rendering ---------------------------------------------------------
+
+    /** Rebuild the colgroup and the header row (mount, and a view change). */
+    function renderHead() {
+      colgroup.innerHTML = "";
+      headRow.innerHTML = "";
+      colEls = [];
+      arrowEls = [];
+      for (const c of columns()) {
+        const col = document.createElement("col");
+        colgroup.appendChild(col);
+        colEls.push(col);
+
+        const th = document.createElement("th");
+        th.className = (c.sortable === true ? "tv-sortable" : "")
+          + (c.align === "right" ? " tv-right" : "");
+        th.dataset.key = c.key;
+        th.textContent = String(c.header || c.key);
+        const arrow = document.createElement("span");
+        arrow.className = "tv-arrow";
+        th.appendChild(arrow);
+        headRow.appendChild(th);
+        arrowEls.push(arrow);
+      }
+      renderArrows();
+    }
+
+    /** Point the sort arrow at the primary sort column, and hide the rest. */
+    function renderArrows() {
+      const primary = state.sortKeys[0], cols = columns();
+      for (let i = 0; i < arrowEls.length; i++) {
+        const on = !!primary && primary.column === cols[i].key;
+        arrowEls[i].textContent = on ? (primary.ascending ? "▲" : "▼") : "";
+        arrowEls[i].style.display = on ? "" : "none";   // no empty arrow's margin
+      }
+    }
+
+    /** Rebuild the action buttons (mount, and a view change). */
+    function renderActions() {
+      for (const b of btnEls) b.remove();
+      btnEls = actions().map((a) => {
+        const b = document.createElement("button");
+        b.className = "tv-btn";
+        b.dataset.cmd = a.command;
+        b.title = a.key || "";
+        b.textContent = a.label || a.command;
+        b.disabled = state.selected === null;
+        bar.appendChild(b);
+        return b;
+      });
+    }
+
+    /**
+     * A row's <tr>. I is its index in the display order: zebra striping is
+     * stamped from it, since `:nth-child' sees only the window.
+     * @param {Row} r  @param {number} i  @returns {string}
+     */
+    function rowHTML(r, i) {
+      const cols = columns(), cs = r.cells || {};
+      let tds = "";
+      for (const c of cols)
+        tds += `<td class="${c.align === "right" ? "tv-right" : ""}">${cellHTML(c, cs[c.key])}</td>`;
+      const cls = (i % 2 ? " tv-alt" : "") + (r.id === state.selected ? " tv-sel" : "");
+      return `<tr class="${cls}" data-id="${esc(r.id)}">${tds}</tr>`;
+    }
+
+    /** A spacer row H pixels tall, standing in for the rows outside the window. */
+    function padHTML(h) {
+      return `<tr class="tv-pad" style="height:${h}px"><td colspan="${columns().length}"></td></tr>`;
+    }
+
+    /**
+     * Render the window of rows around the scroll position, with the hint,
+     * widths and empty state that go with it. FORCE redraws even when the
+     * window has not moved (the rows themselves changed).
+     * @param {boolean} [force]
+     */
+    function renderRows(force) {
+      const rows = ordered();
+      const total = rows.length;
+      const rowH = geom.row;
+      const port = scroll.clientHeight || rowH * 20;   // before layout: a screenful
+      // Row I sits at geom.head + I * rowH in the scroller; the overscan covers
+      // the rounding and the band the sticky header hides.
+      const top = Math.max(0, (scroll.scrollTop || 0) - geom.head);
+      const first = Math.max(0, Math.floor(top / rowH) - OVERSCAN);
+      const last = Math.min(total, first + Math.ceil(port / rowH) + OVERSCAN * 2);
+      if (!force && first === win.first && last === win.last) return;
+      win.first = first;
+      win.last = last;
+
+      let html = first > 0 ? padHTML(first * rowH) : "";
+      for (let i = first; i < last; i++) html += rowHTML(rows[i], i);
+      if (last < total) html += padHTML((total - last) * rowH);
+      tbody.innerHTML = html;
+
+      applyWidths();
+      table.style.display = total ? "" : "none";
+      empty.style.display = total ? "none" : "";
+      hint.textContent = hintText(total);
+      measure();
+    }
+
+    /** Re-read the row and header heights the spacers are sized from. */
+    function measure() {
+      const tr = /** @type {HTMLElement|null} */ (tbody.querySelector("tr[data-id]"));
+      if (!tr || typeof tr.getBoundingClientRect !== "function") return;
+      const head = thead.getBoundingClientRect().height;
+      if (head > 0) geom.head = head;
+      const h = tr.getBoundingClientRect().height;
+      if (h > 0 && Math.abs(h - geom.row) > 0.5 && !remeasuring) {
+        geom.row = h;                      // the spacers are wrong; redraw once
+        remeasuring = true;
+        renderRows(true);
+        remeasuring = false;
+      }
+    }
+
+    function hintText(shown) {
+      const total = state.rows.length;
+      const count = shown === total ? `${total} rows` : `${shown}/${total} rows`;
+      const s = state.sortKeys[0];
+      const sort = s ? `sort ${s.column} ${s.ascending ? "asc" : "desc"}` : "unsorted";
+      return `${count} · ${sort}`;
+    }
+
+    /** @param {string|null} id */
+    function setSelected(id) {
+      state.selected = id ?? null;
+      for (let i = 0; i < tbody.children.length; i++) {
+        const tr = /** @type {HTMLElement} */ (tbody.children[i]);
+        if (tr.dataset.id !== undefined) tr.classList.toggle("tv-sel", tr.dataset.id === id);
+      }
+      const has = id !== null && id !== undefined;
+      for (const b of btnEls) b.disabled = !has;
+    }
+
+    /**
+     * Scroll the row at index I into view, the way `block: "nearest"' would —
+     * clear of the sticky header, which covers the top of the scroller.
+     */
+    function scrollTo(i) {
+      const rowH = geom.row, port = scroll.clientHeight || 0;
+      const top = geom.head + i * rowH;          // the row's offset in the scroller
+      if (top - geom.head < scroll.scrollTop) scroll.scrollTop = top - geom.head;
+      else if (port && top + rowH > scroll.scrollTop + port)
+        scroll.scrollTop = top + rowH - port;
     }
 
     function toggleSort(key) {
       const col = colByKey(key);
       if (!col || col.sortable !== true) return;
       const primary = state.sortKeys[0];
-      if (primary && primary.column === key)
-        state.sortKeys = [{ column: key, ascending: !primary.ascending }];
-      else state.sortKeys = [{ column: key, ascending: true }];
-      render();
+      state.sortKeys = (primary && primary.column === key)
+        ? [{ column: key, ascending: !primary.ascending }]
+        : [{ column: key, ascending: true }];
+      dropSorted();
+      scroll.scrollTop = 0;
+      renderArrows();
+      renderRows(true);
     }
 
     function dispatch(command, row) {
@@ -284,108 +638,102 @@
       return a && a.command;
     }
 
-    function render() {
-      const cols = columns();
-      const rows = visibleRows();
-      const sel = state.selected;
-      const primary = state.sortKeys[0];
+    /** Where an event landed (clicks always land on an element).
+     * @param {Event} e  @returns {Element|null} */
+    const hit = (e) => /** @type {Element|null} */ (e.target);
+    /** @param {Row[]} rows  @param {HTMLElement} tr */
+    const rowOf = (rows, tr) => rows.find((r) => r.id === tr.dataset.id);
 
-      const head = cols.map((c) => {
-        const right = c.align === "right" ? " tv-right" : "";
-        const sortable = c.sortable === true ? " tv-sortable" : "";
-        let arrow = "";
-        if (primary && primary.column === c.key)
-          arrow = `<span class="tv-arrow">${primary.ascending ? "▲" : "▼"}</span>`;
-        return `<th class="${sortable}${right}" data-key="${esc(c.key)}">${esc(c.header || c.key)}${arrow}</th>`;
-      }).join("");
+    // ---- events (delegated, attached once) ---------------------------------
 
-      const body = rows.length
-        ? rows.map((r) => {
-            const tds = cols.map((c) => {
-              const right = c.align === "right" ? " tv-right" : "";
-              return `<td class="${right}">${cellHTML(c, (r.cells || {})[c.key])}</td>`;
-            }).join("");
-            const selCls = r.id === sel ? " tv-sel" : "";
-            return `<tr class="${selCls}" data-id="${esc(r.id)}">${tds}</tr>`;
-          }).join("")
-        : "";
+    scroll.addEventListener("click", (e) => {
+      const t = hit(e);
+      if (!t) return;
+      const a = /** @type {HTMLElement|null} */ (t.closest("a.tv-link"));
+      if (a) {
+        e.preventDefault();
+        const tr = /** @type {HTMLElement|null} */ (a.closest("tr[data-id]"));
+        followLink(a.dataset.target, (tr && rowOf(state.rows, tr)) || null);
+        return;
+      }
+      const th = /** @type {HTMLElement|null} */ (t.closest("th[data-key]"));
+      if (th) { toggleSort(th.dataset.key); return; }
+      const tr = /** @type {HTMLElement|null} */ (t.closest("tr[data-id]"));
+      if (tr) setSelected(tr.dataset.id ?? null);
+    });
 
-      root.innerHTML = `
-        <div class="tv-bar">
-          <span class="tv-title">${esc(state.view.title || "Table")}</span>
-          <input class="tv-filter" type="search" placeholder="filter…" value="${esc(state.filter)}">
-          ${actions().map((a) =>
-            `<button class="tv-btn" data-cmd="${esc(a.command)}" title="${esc(a.key || "")}" disabled>${esc(a.label || a.command)}</button>`).join("")}
-        </div>
-        <div class="tv-scroll">
-          ${rows.length
-            ? `<table class="tv-table"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`
-            : `<div class="tv-empty">no rows</div>`}
-        </div>
-        <div class="tv-hint">${esc(hintText(rows.length))}</div>`;
+    scroll.addEventListener("dblclick", (e) => {
+      const t = hit(e);
+      const tr = t && /** @type {HTMLElement|null} */ (t.closest("tr[data-id]"));
+      if (!tr) return;
+      const cmd = defaultCommand();
+      if (cmd) dispatch(cmd, rowOf(state.rows, tr));
+    });
 
-      wire();
+    bar.addEventListener("click", (e) => {
+      const t = hit(e);
+      const b = t && /** @type {HTMLElement|null} */ (t.closest(".tv-btn[data-cmd]"));
+      if (!b) return;
+      dispatch(b.dataset.cmd, state.rows.find((r) => r.id === state.selected));
+    });
+
+    let pending = 0;
+    function scheduleWindow() {
+      if (pending) return;
+      pending = frame(() => { pending = 0; renderRows(); });
+    }
+    scroll.addEventListener("scroll", scheduleWindow);
+
+    /** Adopt the filter box's text: re-filter, and redraw from the top. */
+    function applyFilter() {
+      const v = input.value;
+      if (v === state.filter) return;
+      state.filter = v;
+      dropOrder();                       // `sorted' stands: only the filter moved
+      scroll.scrollTop = 0;
+      renderRows(true);
     }
 
-    function hintText(shown) {
-      const total = state.rows.length;
-      const count = shown === total ? `${total} rows` : `${shown}/${total} rows`;
-      const s = state.sortKeys[0];
-      const sort = s ? `sort ${s.column} ${s.ascending ? "asc" : "desc"}` : "unsorted";
-      return `${count} · ${sort}`;
+    let debounce = 0;
+    input.addEventListener("input", () => {
+      if (debounce) clearTimeout(debounce);
+      debounce = setTimeout(() => { debounce = 0; frame(applyFilter); }, DEBOUNCE);
+    });
+
+    // ---- streaming ---------------------------------------------------------
+
+    /**
+     * Move ROW to where it now belongs in the cached list ARR, or leave it out
+     * when FILTERED and the query excludes it. No re-sort, no re-filter.
+     * @param {Row[]} arr  @param {Row} row  @param {boolean} filtered
+     */
+    function place(arr, row, filtered) {
+      const at = arr.findIndex((r) => r.id === row.id);
+      if (at !== -1) arr.splice(at, 1);
+      if (filtered && !matches(row)) return;
+      if (!orderCmp) {                     // unsorted: mirror the store's order
+        if (at === -1) arr.push(row); else arr.splice(at, 0, row);
+        return;
+      }
+      let lo = 0, hi = arr.length;         // after its equals, like a stable sort
+      while (lo < hi) {
+        const mid = (lo + hi) >> 1;
+        if (orderCmp(row, arr[mid]) < 0) hi = mid; else lo = mid + 1;
+      }
+      arr.splice(lo, 0, row);
     }
 
-    /** @param {string|null} id */
-    function setSelected(id) {
-      state.selected = id;
-      qsa(".tv-table tbody tr")
-        .forEach((tr) => tr.classList.toggle("tv-sel", tr.dataset.id === id));
-      const has = id !== null && id !== undefined;
-      /** @type {NodeListOf<HTMLButtonElement>} */ (root.querySelectorAll(".tv-btn[data-cmd]"))
-        .forEach((b) => (b.disabled = !has));
+    /** Drop the row with ID from the cached list ARR. @param {Row[]} arr */
+    function unplace(arr, id) {
+      const at = arr.findIndex((r) => r.id === id);
+      if (at !== -1) arr.splice(at, 1);
     }
 
-    function wire() {
-      const filter = /** @type {HTMLInputElement} */ (root.querySelector(".tv-filter"));
-      filter.addEventListener("input", () => { state.filter = filter.value; render(); });
+    titleEl.textContent = state.view.title || "Table";
+    renderHead();
+    renderActions();
+    renderRows(true);
 
-      qsa("th[data-key]")
-        .forEach((th) => th.addEventListener("click", () => toggleSort(th.dataset.key)));
-
-      qsa(".tv-btn[data-cmd]")
-        .forEach((b) => b.addEventListener("click", () => {
-          const row = state.rows.find((r) => r.id === state.selected);
-          dispatch(b.dataset.cmd, row);
-        }));
-
-      qsa(".tv-table tbody tr")
-        .forEach((tr) => {
-          tr.addEventListener("click", (e) => {
-            if (/** @type {HTMLElement} */ (e.target).classList.contains("tv-link")) return;
-            setSelected(tr.dataset.id ?? null);
-          });
-          tr.addEventListener("dblclick", () => {
-            const row = state.rows.find((r) => r.id === tr.dataset.id);
-            const cmd = defaultCommand();
-            if (cmd) dispatch(cmd, row);
-          });
-        });
-
-      qsa(".tv-link")
-        .forEach((a) => a.addEventListener("click", (e) => {
-          e.preventDefault();
-          const tr = a.closest("tr");
-          const row = tr && state.rows.find((r) => r.id === tr.dataset.id);
-          followLink(a.dataset.target, row);
-        }));
-
-      // Re-apply selection state to freshly rendered rows.
-      setSelected(state.selected);
-    }
-
-    render();
-
-    // ---- streaming API -----------------------------------------------------
     return {
       el: root,
       /** @param {View} v */
@@ -394,32 +742,79 @@
         state.rows = (v && v.rows) ? v.rows.slice() : [];
         state.sortKeys = normalizeSort(v && v.sort);
         state.selected = null;
-        render();
+        texts.clear();
+        dropSorted();
+        titleEl.textContent = state.view.title || "Table";
+        renderHead();
+        renderActions();
+        scroll.scrollTop = 0;
+        renderRows(true);
       },
       /** @param {Row[]} rows */
-      setRows(rows) { state.rows = (rows || []).slice(); render(); },
+      setRows(rows) {
+        state.rows = (rows || []).slice();
+        texts.clear();
+        dropSorted();
+        renderRows(true);
+      },
       /** @param {Row} row */
       upsertRow(row) {
         const i = state.rows.findIndex((r) => r.id === row.id);
         if (i === -1) state.rows.push(row); else state.rows[i] = row;
-        render();
+        texts.delete(row.id);
+        if (sorted) place(sorted, row, false);
+        // Unsorted, `order' is `sorted' filtered, and a row the filter has just
+        // started matching has no place to be spliced into: re-derive it (one
+        // linear pass, no sort).
+        if (order && orderCmp) { place(order, row, true); growWidths(row); }
+        else if (order) dropOrder();
+        renderRows(true);
       },
       /** @param {string} id */
       deleteRow(id) {
         state.rows = state.rows.filter((r) => r.id !== id);
-        if (state.selected === id) state.selected = null;
-        render();
+        texts.delete(id);
+        if (sorted) unplace(sorted, id);
+        if (order) unplace(order, id);
+        renderRows(true);
+        if (state.selected === id) setSelected(null);   // and disable the actions
       },
       /** @param {Op[]} ops */
       applyDelta(ops) {
         for (const op of ops || []) {
-          if (op.op === "insert") state.rows.splice(op.index, 0, op.row);
-          else if (op.op === "delete") state.rows.splice(op.index, 1);
-          else if (op.op === "reset") state.rows = (op.rows || []).slice();
+          if (op.op === "insert") {
+            state.rows.splice(op.index, 0, op.row);
+            texts.delete(op.row.id);
+          } else if (op.op === "delete") {
+            const gone = state.rows[op.index];
+            if (gone) texts.delete(gone.id);
+            state.rows.splice(op.index, 1);
+          } else if (op.op === "reset") {
+            state.rows = (op.rows || []).slice();
+            texts.clear();
+          }
         }
-        render();
+        dropSorted();
+        renderRows(true);
       },
       getRows() { return state.rows.slice(); },
+      getVisible() { return ordered().slice(); },
+      /**
+       * Select the row with ID, scrolling its place in the (virtual) list into
+       * view. Rows outside the rendered window have no element to click, so
+       * this is how a consumer moves the selection. False when no visible row
+       * has that id — a filtered-out row does not steal the selection.
+       * @param {string} id  @returns {boolean}
+       */
+      select(id) {
+        const rows = ordered();
+        const i = rows.findIndex((r) => r.id === id);
+        if (i === -1) return false;
+        scrollTo(i);
+        renderRows(true);
+        setSelected(id);
+        return true;
+      },
     };
   }
 
