@@ -84,9 +84,9 @@
  * - `prefers-reduced-motion: reduce' turns off both the crossfade and the ease:
  *   the marks land and the viewport jumps. The coalescing stays, being economy
  *   rather than motion.
- * - Three roles, three shapes, so a glance tells them apart: a state is a
+ * - Three roles, three readings, so a glance tells them apart: a state is a
  *   filled pill in its palette colour, an applied filter is a golden chip, and
- *   a tag is an outlined ghost chip in the muted ink. The multi-valued column's
+ *   a tag is small muted lowercase text with no box at all. The multi-valued column's
  *   cells render a chip per value, split by the one splitter the vocabulary
  *   uses, and the dropdown wears a tag the same way wherever it names one. It
  *   is presentation only: what is searched, sorted and measured is still the
@@ -390,7 +390,9 @@
       const raw = displayText(val);
       const tags = tagsIn(raw);
       if (!tags.length) return esc(raw);
-      return tags.map((t) => `<span class="tv-tag">${esc(t)}</span>`).join(" ");
+      return `<span class="tv-tags">`
+           + tags.map((t) => `<span class="tv-tag">${esc(t)}</span>`).join(" · ")
+           + `</span>`;
     }
     if (col.type === "badge") {
       const raw = displayText(val);
@@ -541,7 +543,6 @@
   const ROW_H = 30;            // row height until a rendered row can be measured
   const CELL_PAD = 24;         // a cell's horizontal padding, both sides
   const PILL_CH = 2;           // a badge pill's ground, in characters
-  const TAG_CH = 2;            // a tag chip's ground and the gap after it
   const DEBOUNCE = 120;        // ms of quiet before a filter keystroke re-renders
   const SETTLE = 200;          // ms of quiet before the rows are taken to have settled
   const LONG_PRESS = 500;      // ms of a still finger before it means the row action
@@ -668,13 +669,19 @@
 .tv-table tbody td.tv-cell-sel{box-shadow:inset 0 0 0 1px var(--tv-accent);border-radius:3px}
 .tv-table tbody tr{cursor:default}
 .tv-table tbody tr.tv-pad td{padding:0;border:0}
-/* The third role: outlined, unfilled, in the muted ink the palette already
-   carries — dark #A4C2EB, light #667071, both clear of the text floor. A
-   filled pill is a state, a golden chip is an applied filter, and this is
-   neither. */
-.tv-tag{display:inline-block;padding:0 6px;border-radius:999px;font-size:11px;
-  border:1px solid currentColor;color:var(--tv-muted)}
-.tv-ac-label .tv-tag{margin-right:1px}
+/* The third role, and the quietest: no box at all. A filled pill is a state, a
+   golden chip is an applied filter, and a tag is small muted text — which is
+   what a tag is, a word the row happens to carry. Several of them separate on a
+   middot rather than on the colons the cell spells them with; the colons are
+   the storage, not the reading. The ink is the muted one the palette already
+   carries (dark #A4C2EB, light #667071), both clear of the text floor. */
+.tv-tag,.tv-tags{color:var(--tv-muted);font-size:.92em}
+.tv-tags .tv-tag{font-size:inherit;color:inherit}   /* never compound the two */
+/* Shown in the form a query spells them, so what is read is what is typed: the
+   vocabulary lowercases, and a key typed in any other case is free text. Done
+   in the stylesheet rather than in the markup, so the text a copy takes is the
+   text the file holds. */
+.tv-tag{text-transform:lowercase}
 .tv-pill{display:inline-block;padding:0 8px;border-radius:999px;
   font-weight:600;color:var(--tv-ink,var(--tv-badge));
   background:color-mix(in srgb,var(--tv-badge) 15%,transparent)}
@@ -1256,11 +1263,9 @@
       // A badge cell draws a pill around its text, whose padding the cached
       // length knows nothing about.
       for (let i = 0; i < cols.length; i++) if (cols[i].type === "badge") w[i] += PILL_CH;
-      // A tag cell draws a chip round each of its values, and the raw text the
-      // widths were measured from spelled them with colons instead. The same
-      // approximation the pill allowance is: enough ground for the chip.
-      const multi = multiColumn();
-      if (multi !== -1) w[multi] += TAG_CH;
+      // A tag cell needs no allowance: `:a:b:' and `a · b' are the same length,
+      // `:a:' is longer than `a', and the smaller type shrinks it further — the
+      // rendering never outgrows the raw text the widths were measured from.
       widths = w;
       return w;
     }
@@ -2368,13 +2373,12 @@
         // Nothing highlighted: the keys fall through to what they mean with no
         // list at all, so a typed word is still committed by Enter.
       }
-      // Backspace walks the query down: the browser eats characters while there
-      // are any, then this takes chips off one at a time. Where it stops
-      // depends on what the box is. On the page it is the last rung of the
-      // same ladder Enter ends on, and hands the table over. In the palette it
-      // stops at the bottom and stays there: the box was summoned, and a key
-      // that erases should not be the one that dismisses it — leaving is
-      // RET's, Escape's or the backdrop's to say, all of which say it plainly.
+      // Backspace walks the query down, and how far depends on where the box
+      // is. On the page it is the last rung of the ladder Enter ends on: the
+      // browser eats the characters, this takes the chips off one at a time,
+      // and with none left it hands the table over. In the palette it goes no
+      // further than the characters — the chips are elsewhere, on the page
+      // behind the overlay, and a key cannot reach past what it is editing.
       if (e.key === "Backspace" && !input.value) {
         e.preventDefault();
         e.stopPropagation();
@@ -2382,8 +2386,13 @@
         // typed characters and then stops here — taking a chip off is a
         // decision, and a row of them should not vanish under a resting finger.
         if (e.repeat) return;
+        // In the palette the applied parts are not this key's to take. It edits
+        // what is typed and nothing else, and with nothing typed it does
+        // nothing at all — a chip is removed by its own click, or by the key
+        // the consumer binds over the table, where the chips are on show.
+        if (palette) return;
         if (chips.length) { chips.pop(); renderChips(); deliver(); }
-        else if (!palette) handOver();
+        else handOver();
         return;
       }
       if (e.key !== "Enter" && e.key !== "Escape") return;

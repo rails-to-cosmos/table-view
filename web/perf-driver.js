@@ -34,6 +34,53 @@ const timed = (fn) => () => { const t = now(); try { fn(); } finally { work += n
 const sleep = (ms) => new Promise((done) => realTimeout(done, ms));
 /** Wait out a coalesced selection paint (one rAF). */
 const painted = () => sleep(20);
+
+/**
+ * A media-query stub that reads the query instead of sniffing a word out of
+ * it. `reduce' and `no-preference' are different answers to one feature, and a
+ * stub matching on the feature name alone answers yes to both — so a renderer
+ * asking the wrong question passes. PREFS maps feature to the value in force.
+ * The returned function is `matchMedia'; its `flip' changes a preference and
+ * notifies whatever listened, which is how the system-theme path gets run.
+ */
+function mediaStub(prefs) {
+  const asked = new Map();
+  const parse = (q) => /\((prefers-[\w-]+):\s*([\w-]+)\)/.exec(String(q));
+  const holds = (m) => !!m && (prefs[m[1]] || "no-preference") === m[2];
+  const query = (q) => {
+    let list = asked.get(String(q));
+    if (!list) {
+      list = { media: String(q), matches: false, listeners: [],
+               addEventListener(_type, fn) { this.listeners.push(fn); },
+               removeEventListener(_type, fn) {
+                 const i = this.listeners.indexOf(fn);
+                 if (i !== -1) this.listeners.splice(i, 1);
+               } };
+      asked.set(String(q), list);
+    }
+    list.matches = holds(parse(list.media));
+    return list;
+  };
+  query.flip = (feature, value) => {
+    prefs[feature] = value;
+    for (const list of asked.values()) {
+      const was = list.matches;
+      list.matches = holds(parse(list.media));
+      if (list.matches !== was) for (const fn of list.listeners.slice()) fn(list);
+    }
+  };
+  return query;
+}
+
+/** A MutationObserver stub that keeps what it was told to watch. */
+class Watcher {
+  constructor(cb) { this.cb = cb; this.target = null; this.opts = null; Watcher.made.push(this); }
+  observe(target, opts) { this.target = target; this.opts = opts; }
+  disconnect() { this.opts = null; }
+  /** What the browser does when the attribute moves. */
+  fire(records) { this.cb(records || [{ type: "attributes" }], this); }
+}
+Watcher.made = [];
 const sync = (fn) => { const t = now(); try { return fn(); } finally { work += now() - t; } };
 global.setTimeout = (fn, ms) => realTimeout(timed(fn), ms);
 global.clearTimeout = (id) => realClear(id);
@@ -111,7 +158,9 @@ class El {
     this.classes = new Set();
     this.style = {};
     this.on = new Map();
-    this.value = "";
+    this._value = "";
+    this._selStart = 0;
+    this._selEnd = 0;
     this.disabled = false;
     this.scrollTop = 0;
     this.clientHeight = 0;
@@ -148,6 +197,21 @@ class El {
     if (i !== -1) { this.childNodes.splice(i, 1); c.parentNode = null; }
   }
   remove() { if (this.parentNode) this.parentNode.removeChild(this); }
+  // A real caret. Setting the text puts it at the end, the way typing does;
+  // a consumer that wants it elsewhere says so. Without this every caret the
+  // renderer reads is `value.length' and every check about where the caret is
+  // asserts the same fallback twice.
+  get value() { return this._value; }
+  set value(v) {
+    this._value = String(v);
+    this._selStart = this._selEnd = this._value.length;
+  }
+  get selectionStart() { return this._selStart; }
+  set selectionStart(n) { this._selStart = n; }
+  get selectionEnd() { return this._selEnd; }
+  set selectionEnd(n) { this._selEnd = n; }
+  setSelectionRange(a, b) { this._selStart = a; this._selEnd = b; }
+  select() { this._selStart = 0; this._selEnd = this._value.length; }
   get textContent() { return this.childNodes.map((c) => c.textContent).join(""); }
   set textContent(t) {
     this.childNodes.length = 0;
@@ -182,7 +246,7 @@ class El {
     this.blurs = (this.blurs || 0) + 1;
     this.dispatchEvent(new Ev("blur"));      // a browser fires one; listeners rely on it
   }
-  select() {} scrollIntoView() {}
+  scrollIntoView() {}
   getBoundingClientRect() { return { height: ROW_PX, width: 0 }; }
   /** A row is one line tall; anything else is what its children add up to. */
   get offsetHeight() {
@@ -775,7 +839,7 @@ async function cellsChipsPills() {
 
   // --- reduced motion: no crossfade, no ease, still coalesced
   {
-    global.matchMedia = (q) => ({ matches: q.indexOf("reduced-motion") !== -1 });
+    global.matchMedia = mediaStub({ "prefers-reduced-motion": "reduce" });
     const quiet = new El("div");
     const qt = TableView.mount(quiet, view(40));
     delete global.matchMedia;
@@ -1448,7 +1512,7 @@ async function virtualKeys() {
     const inkOf = (el) => /--tv-ink:(#[0-9a-f]{6})/i.exec(el.attrs.get("style") || "")[1];
     const bright = [{ value: "GO", color: "#B6E63E" }, { value: "OK", color: "#9ece6a" }];
     const shape = (dark) => {
-      global.matchMedia = (q) => ({ matches: dark && q.indexOf("dark") !== -1 });
+      global.matchMedia = mediaStub({ "prefers-color-scheme": dark ? "dark" : "light" });
       const el = new El("div");
       TableView.mount(el, {
         columns: [{ key: "state", header: "S", type: "badge", badges: bright }],
@@ -1474,17 +1538,22 @@ async function virtualKeys() {
 
     // A theme flip redraws, so the ink follows.
     {
-      let observed = null;
-      global.MutationObserver = class { constructor(cb) { observed = cb; } observe() {} };
-      global.matchMedia = () => ({ matches: false });
+      Watcher.made.length = 0;
+      global.MutationObserver = Watcher;
+      global.matchMedia = mediaStub({ "prefers-color-scheme": "light" });
       const flip = new El("div");
       TableView.mount(flip, {
         columns: [{ key: "state", header: "S", type: "badge", badges: bright }],
         rows: [{ id: "b0", cells: { state: "GO" } }],
       });
       const before = inkOf(flip.querySelector(".tv-pill"));
-      global.matchMedia = (q) => ({ matches: q.indexOf("dark") !== -1 });
-      observed();                                   // the data-theme attribute moved
+      global.matchMedia = mediaStub({ "prefers-color-scheme": "dark" });
+      const watching = Watcher.made[Watcher.made.length - 1];
+      check("the renderer watches the root for a theme attribute",
+            [watching.target === document.documentElement,
+             (watching.opts.attributeFilter || []).indexOf("data-theme") !== -1],
+            [true, true]);
+      watching.fire();                              // the data-theme attribute moved
       const after = inkOf(flip.querySelector(".tv-pill"));
       check("a theme flip redraws the badges with the other theme's ink",
             [before !== after, after.toLowerCase()], [true, "#b6e63e"]);
@@ -1663,23 +1732,23 @@ async function virtualKeys() {
     pb.dispatchEvent(new Ev("keydown", { key: "Enter" }));
     await painted();
     pt.openFilter();
-    check("two chips to walk off", chipsOf().length, 2);
+    check("two chips on the page behind it", chipsOf().length, 2);
     const blurs = pb.blurs || 0;
+    const held = pt.getQuery();
     pb.dispatchEvent(new Ev("keydown", { key: "Backspace" }));
     pb.dispatchEvent(new Ev("keydown", { key: "Backspace" }));
-    check("Backspace takes them, one press each", [chipsOf().length, shown()], [0, true]);
-    pb.dispatchEvent(new Ev("keydown", { key: "Backspace" }));
-    check("and with none left it does nothing at all — a key that erases is not"
-          + " the one that leaves",
-          [shown(), pb.focused, (pb.blurs || 0) - blurs], [true, true, 0]);
+    check("Backspace does not reach them — they are not what it is editing",
+          [chipsOf().length, shown()], [2, true]);
     for (let i = 0; i < 4; i++) {
       pb.dispatchEvent(new Ev("keydown", { key: "Backspace" }));
       pb.dispatchEvent(new Ev("keydown", { key: "Backspace", repeat: true }));
     }
     check("however many times it is pressed, or held",
           [shown(), pb.focused, chipsOf().length, (pb.blurs || 0) - blurs],
-          [true, true, 0, 0]);
-    check("and the query is still empty rather than something odd", pt.getQuery(), "");
+          [true, true, 2, 0]);
+    check("and the applied query is exactly as it was", pt.getQuery(), held);
+    check("nor is there a rung left that would take one",
+          chipsOf().length > 0 && shown(), true);
 
     // The ways out still work from exactly that state.
     pb.dispatchEvent(new Ev("keydown", { key: "Escape" }));
@@ -1762,14 +1831,11 @@ async function virtualKeys() {
       check("and again per commit", asked, ["review", "review sync"]);
 
       lt.openFilter();
-      lb.dispatchEvent(new Ev("keydown", { key: "Backspace" }));
-      check("a chip strip delivers too — the applied filter did change",
-            asked.pop(), "review");
-      lb.dispatchEvent(new Ev("keydown", { key: "Backspace" }));
-      check("one per strip", asked.pop(), "");
-      lb.dispatchEvent(new Ev("keydown", { key: "Backspace" }));
-      check("and the bottom rung, which changes nothing, says nothing",
-            asked.length, 2);
+      const said = asked.length;
+      for (let i = 0; i < 3; i++)
+        lb.dispatchEvent(new Ev("keydown", { key: "Backspace" }));
+      check("and Backspace delivers nothing either, having nothing to change",
+            [asked.length - said, live.querySelectorAll(".tv-chip").length], [0, 2]);
     }
 
     // --- clicking off is the Escape gesture
@@ -2084,7 +2150,7 @@ async function virtualKeys() {
     // --- the cell
     const cell = tagCell();
     const chips = cell.querySelectorAll(".tv-tag").map((e) => e.text);
-    check("a multi-valued cell renders a chip per value",
+    check("a multi-valued cell renders one tag per value",
           chips, TAGS[0].split(":").filter(Boolean));
     check("split exactly as the vocabulary splits it", (() => {
       b.value = "tag:";
@@ -2094,17 +2160,54 @@ async function virtualKeys() {
       return chips.every((c) => vocab.indexOf(c) !== -1);
     })(), true);
     check("and the raw colons are gone from it", cell.text.indexOf(":"), -1);
+    check("several of them read apart on a middot",
+          cell.querySelector(".tv-tags").text, chips.join(" · "));
     check("a single-valued column is untouched",
           box.querySelectorAll(".tv-table tbody tr[data-id]")[0]
             .children[columns.findIndex((c) => c.key === "title")]
             .querySelectorAll(".tv-tag").length, 0);
 
     // --- the style
-    check("the ghost is outlined and unfilled",
-          [css.indexOf("border:1px solid currentColor") !== -1,
-           /\.tv-tag\{[^}]*background/.test(css)], [true, false]);
-    check("in the palette's muted ink, which both themes already carry",
-          /\.tv-tag\{[^}]*color:var\(--tv-muted\)/.test(css), true);
+    // The quietest of the three roles wears nothing: no box of any kind.
+    const tagRule = css.slice(css.indexOf(".tv-tag,.tv-tags{"));
+    const decl = tagRule.slice(0, tagRule.indexOf("}"));
+    for (const box of ["border", "background", "padding", "border-radius"])
+      check(`a tag draws no ${box}`, decl.indexOf(box) !== -1, false);
+    check("it is muted ink at a smaller size, and that is all",
+          [decl.indexOf("color:var(--tv-muted)") !== -1,
+           decl.indexOf("font-size:.92em") !== -1], [true, true]);
+    check("and the two never compound their size",
+          css.indexOf(".tv-tags .tv-tag{font-size:inherit") !== -1, true);
+
+    // Shown in the form a query spells them, without the markup losing the form
+    // the file holds.
+    check("tags are lowercased for reading",
+          css.indexOf(".tv-tag{text-transform:lowercase}") !== -1, true);
+    {
+      const mixed = new El("div");
+      const mt = TableView.mount(mixed, {
+        columns: [{ key: "title", header: "H", type: "text" },
+                  { key: "tag", header: "T", type: "text" }],
+        rows: [{ id: "a", cells: { title: "one", tag: ":MixedCase:Work:" } },
+               { id: "b", cells: { title: "two", tag: ":MixedCase:" } },
+               { id: "c", cells: { title: "three", tag: ":other:" } }],
+      });
+      const mb = filterOf(mixed);
+      check("the markup keeps the case the file wrote, for copies and for search",
+            mixed.querySelectorAll(".tv-tag").map((e) => e.text).slice(0, 2),
+            ["MixedCase", "Work"]);
+      const shown = (q) => {
+        mb.value = q;
+        mb.dispatchEvent(new Ev("keydown", { key: "Enter" }));
+        const n = mt.getVisible().length;
+        mb.dispatchEvent(new Ev("keydown", { key: "Backspace" }));
+        return n;
+      };
+      check("and the form on screen is the form that queries",
+            [shown("mixedcase:"), shown("tag:mixedcase")], [2, 2]);
+      check("the raw case still matching as a value, as it always did",
+            shown("tag:MixedCase"), 2);
+    }
     // The floor, with this file's own WCAG, on every ground a tag sits on.
     const rgbOf = (h) => { h = h.replace("#", "");
       return [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16)); };
@@ -2125,7 +2228,7 @@ async function virtualKeys() {
     b.value = "sys";
     b.dispatchEvent(new Ev("input"));
     const keyRow = box.querySelectorAll(".tv-ac-item")[0];
-    check("a tag-key row wears the tag as a chip",
+    check("a tag-key row wears the tag in the same muted hand",
           [keyRow.querySelectorAll(".tv-tag").map((e) => e.text),
            keyRow.querySelector(".tv-ac-label").text], [["system"], "system:"]);
     b.value = "sy";
@@ -2136,7 +2239,7 @@ async function virtualKeys() {
           [scoped[0].querySelectorAll(".tv-tag").length,
            scoped[0].querySelector(".tv-ac-label").text.indexOf(
              scoped[0].querySelector(".tv-tag").text + ":")], [1, 0]);
-    check("column-key rows carry no chip", (() => {
+    check("column-key rows wear none of it", (() => {
       b.value = "sta";
       b.dispatchEvent(new Ev("input"));
       return box.querySelectorAll(".tv-ac-item")[0].querySelectorAll(".tv-tag").length;
@@ -2167,6 +2270,49 @@ async function virtualKeys() {
       box.querySelector("th[data-key=scheduled]").click();
       return first;
     })(), "NEXT");
+  }
+
+  // --- the preferences, asked properly
+  {
+    const calm = (value) => {
+      global.matchMedia = mediaStub({ "prefers-reduced-motion": value });
+      const el = new El("div");
+      TableView.mount(el, view(10));
+      delete global.matchMedia;
+      return el.querySelector(".tv-root").classes.has("tv-calm");
+    };
+    check("reduce is honoured", calm("reduce"), true);
+    check("and no-preference is not — they are different answers",
+          calm("no-preference"), false);
+
+    const badged = {
+      columns: [{ key: "state", header: "S", type: "badge",
+                  badges: [{ value: "GO", color: "#B6E63E" }] }],
+      rows: [{ id: "a", cells: { state: "GO" } }],
+    };
+    const inkIn = (el) => /--tv-ink:(#[0-9a-f]{6})/i
+      .exec(el.querySelector(".tv-pill").attrs.get("style"))[1].toLowerCase();
+    const scheme = (value) => {
+      global.matchMedia = mediaStub({ "prefers-color-scheme": value });
+      const el = new El("div");
+      TableView.mount(el, badged);
+      delete global.matchMedia;
+      return inkIn(el);
+    };
+    check("dark is read as dark", scheme("dark"), "#b6e63e");
+    check("and light as light, the ink moving to suit", scheme("light") !== "#b6e63e", true);
+
+    // The system changing its mind under a running page — a path no check could
+    // reach while the stub had no way to notify anyone.
+    const flip = mediaStub({ "prefers-color-scheme": "light" });
+    global.matchMedia = flip;
+    const live = new El("div");
+    TableView.mount(live, badged);
+    const before = inkIn(live);
+    flip.flip("prefers-color-scheme", "dark");
+    check("the system turning dark redraws what depended on it",
+          [before !== "#b6e63e", inkIn(live)], [true, "#b6e63e"]);
+    delete global.matchMedia;
   }
 
   // --- the paginator
@@ -2622,13 +2768,11 @@ async function smoke() {
   t.applyDelta([{ op: "delete", index: 0 }, { op: "insert", index: 0, row: makeRow(999) }]);
   check("apply-delta keeps the count", t.getRows().length, 40);
 
-  if (typeof t.select === "function") {
-    check("select() finds a visible row", t.select("h-39"), true);
-    await painted();
-    check("and marks it", box.querySelector(".tv-table tbody tr.tv-sel").dataset.id, "h-39");
-    check("select() ignores an unknown id", t.select("nope"), false);
-    check("getVisible() is the display order", t.getVisible().length, 40);
-  }
+  check("select() finds a visible row", t.select("h-39"), true);
+  await painted();
+  check("and marks it", box.querySelector(".tv-table tbody tr.tv-sel").dataset.id, "h-39");
+  check("select() ignores an unknown id", t.select("nope"), false);
+  check("getVisible() is the display order", t.getVisible().length, 40);
 
   {
     // onFilter: the producer narrows, the renderer shows what it is given.
@@ -2736,11 +2880,22 @@ async function smoke() {
   t.setView(view(5));
   check("setView reloads", hint(), "5 rows · sort scheduled asc" + ACT);
 
-  if (typeof TableView.parseQuery === "function") await filterQuery();
-  if (typeof t.getSelection === "function") await cellsChipsPills();
-  if (typeof t.getQuery === "function") await virtualKeys();
+  // The surface itself, asserted rather than felt for. A guard that skips a
+  // section when its entry point is missing is a suite that cannot report the
+  // one failure that matters most — a renamed or dropped export.
+  console.log("\n== the handle");
+  for (const name of ["setView", "setRows", "upsertRow", "deleteRow", "applyDelta",
+                      "getRows", "getVisible", "select", "getSelection", "getQuery",
+                      "stripLastToken", "openFilter", "closeFilter", "selectStep",
+                      "nextPage", "previousPage", "pageInfo"])
+    check(`handle exposes ${name}`, typeof t[name], "function");
+  check("handle exposes el", !!t.el && typeof t.el === "object", true);
+  for (const name of ["mount", "parseQuery", "displayText", "comparator"])
+    check(`TableView exposes ${name}`, typeof TableView[name], "function");
 
-  if (typeof t.select !== "function") return;
+  await filterQuery();
+  await cellsChipsPills();
+  await virtualKeys();
 
   console.log("\n== the window");
   const far = new El("div");

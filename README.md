@@ -398,9 +398,9 @@ the way `table-view.el` prints its legend: the keys are the interface, and a
 consumer binds them and dispatches the command (`onAction`, or the
 `tableview-action` event). A double click still runs the default action.
 
-**Three roles, three shapes.** A *state* is a filled pill in its palette colour;
-an *applied filter* is a golden chip; a *tag* is an outlined ghost chip in the
-muted ink. The multi-valued column's cells render a chip per value — split by
+**Three roles, three readings.** A *state* is a filled pill in its palette
+colour; an *applied filter* is a golden chip; a *tag* is small muted lowercase
+text with no box at all, several separating on a middot. The multi-valued column's cells render a chip per value — split by
 the same splitter the tag vocabulary uses — and the suggestion list wears a tag
 the same way wherever it names one. Presentation only: what is searched, sorted
 and measured is still the text you sent.
@@ -483,7 +483,7 @@ ladder then ends one step further out:
 | **RET** | commit the token, dissolve, hand the table over |
 | **RET** on an empty box | dissolve and hand over |
 | **Escape** | close the list → drop the typed text → dissolve |
-| **Backspace** on an empty box | take a chip → … → then nothing: it erases, and erasing is not leaving |
+| **Backspace** on an empty box | nothing — the chips are on the page behind, not in the box being edited |
 
 The palette also **filters on commit alone**: typing moves the suggestion list
 and nothing else, and RET or a chip strip is what reaches the rows. Narrowing a

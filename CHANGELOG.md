@@ -52,12 +52,15 @@ the rails-to-cosmos ELPA archive publishes date-stamped snapshots.
   column cost the whole column its prefix matching. It now weighs
   evidence the way multi-valued detection does: dates for, cells that
   could not be dates against, and anything that might be one abstaining.
-- Browser renderer: tags have a visual identity of their own — an
-  outlined ghost chip in the muted ink, distinct from the filled pill a
-  state renders as and the golden chip an applied filter renders as. The
-  multi-valued column's cells show a chip per value and the suggestion
-  list wears a tag the same way; applied-filter chips stay uniformly
-  golden, filter identity outranking tag identity there.
+- Browser renderer: tags have a reading of their own — small muted text,
+  lowercased, several separating on a middot, with no box of any kind.
+  That completes a three-role grammar: a filled pill is a state, a golden
+  chip is an applied filter, and a tag is neither. The multi-valued
+  column's cells show one per value and the suggestion list wears a tag
+  the same way; applied-filter chips stay uniformly golden, filter
+  identity outranking tag identity there. The lowercasing is presentation
+  (a stylesheet transform), so a copy takes the case the file holds while
+  what is shown is the form a query spells.
 - Browser renderer: **paging**. `pageSize` shows the filtered, sorted set
   a page at a time, with the window, spacers, scroll band and
   `getVisible()` all operating inside the page — column widths still
@@ -101,10 +104,13 @@ the rails-to-cosmos ELPA archive publishes date-stamped snapshots.
   100+ still wins) holding the input and its completions. Every ladder
   ends one step further out: RET commits and dissolves, Escape goes list
   → typed text → dissolve, and a click on the backdrop is Escape.
-  Backspace walks the chips off and then stops — inside the palette a key
-  that erases is not the one that leaves, so an emptied box stays open
-  and focused however often it is pressed. On the page, where there is no
-  overlay to dismiss, Backspace still ends by handing the table over. Applied chips render in the theme's
+  Backspace goes no further than the characters: the applied chips are on
+  the page behind the overlay, not in the box being edited, so the key
+  cannot reach them and an emptied box is a stable no-op however often it
+  is pressed. Chips are removed there by their own click, or by the key a
+  consumer binds over the table. On the page, where the box and the chips
+  sit together, Backspace still walks the chips off and ends by handing
+  the table over. Applied chips render in the theme's
   selection golden, black on `#FFD600`. It supersedes `omnibox`, which
   stays for consumers that want the control on the page.
 - Browser renderer: `omnibox: true` mount option — the filter becomes the
