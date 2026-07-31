@@ -265,6 +265,26 @@ the rails-to-cosmos ELPA archive publishes date-stamped snapshots.
   keymap; nothing else moves focus or the selection.
 
 ### Changed
+- **Browser renderer: sorting follows SCHEMA on all three points it used
+  to differ.** A column's `compare` now outranks its `values`/`badges`
+  order, and `"string"` joins `"number"` and `"natural"` as a comparator
+  name — a column naming both no longer silently sorts by the value
+  order. Empty cells sort last on every column type and stay last when
+  the direction reverses, rather than leading an ascending text sort;
+  `direction: "asc-nulls-first"` and `"desc-nulls-first"` are the
+  spelling that asks for the other rule, and `direction` is now read at
+  all, outranking `ascending` when both are given.
+- **Browser renderer: `applyDelta` indices count in the window, as SCHEMA
+  says.** With a local sort, filter or page in force the ops splice
+  against the displayed order and no longer land on whatever row happened
+  to sit at that index in the store; with nothing reordering the rows the
+  two readings coincide and the mapping costs nothing. The domain caches
+  drop once per batch instead of once per op.
+- **Browser renderer: a column may declare `multi: true`.** The
+  cell-shape heuristic stays as the fallback for producers that say
+  nothing, but a column that declares itself is believed — which is the
+  only way to get tag keys, scoped completions and value counts out of a
+  multi-valued column whose cells are not org-shaped.
 - **Browser renderer: Enter in the filter box commits the typed token to
   a chip before handing the table over.** With the suggestion list
   closed, Enter chips whatever is typed, delivers the query once, then

@@ -76,7 +76,21 @@ function probe(box, handle) {
   const items = () => box.querySelectorAll(".tv-ac-label").map((e) => e.text);
   const counts = () => box.querySelectorAll(".tv-ac-n").map((e) => Number(e.text));
   const chipsOf = () => box.querySelectorAll(".tv-chip").map((c) => c.text.replace("×", ""));
-  return { box, handle, b, reset, press, type, shown, items, counts, chipsOf };
+  /** Commit a query without clearing what is already applied. */
+  const commit = (q) => { b().value = q; press("Enter"); };
+  return { box, handle, b, reset, press, commit, type, shown, items, counts, chipsOf };
+}
+
+/**
+ * Mount a fixture and hand back a probe over it. ROWS is a row count for the
+ * standard fixture or a whole view; PORT, when given, is the scroller height
+ * the geometry checks need.
+ */
+function driver(rows, opts, port) {
+  const box = new El("div");
+  const handle = TableView.mount(box, typeof rows === "number" ? view(rows) : rows, opts);
+  if (port) box.querySelector(".tv-scroll").clientHeight = port;
+  return probe(box, handle);
 }
 
 // ---- colour ----------------------------------------------------------------
@@ -434,6 +448,120 @@ const view = (n) => ({
   rows: Array.from({ length: n }, (_, i) => makeRow(i)),
 });
 
+
+/**
+ * SCHEMA's ordering rules: which comparator wins, where the blanks land, and
+ * whose indices a delta is counted in.
+ */
+async function sortOrder() {
+  console.log("\n== ordering");
+  const cols = [
+    { key: "name", label: "Name" },
+    { key: "state", label: "State", values: ["TODO", "DONE"], compare: "string" },
+  ];
+  const rows = [
+    { id: "1", cells: { name: "pear", state: "TODO" } },
+    { id: "2", cells: { name: "", state: "DONE" } },
+    { id: "3", cells: { name: "apple", state: "TODO" } },
+    { id: "4", cells: { name: "fig", state: "" } },
+  ];
+  /** Mount the ordering fixture under SORT and read column KEY off the window. */
+  const order = (sort, key) => {
+    const box = new El("div");
+    const h = TableView.mount(box, { title: "order", columns: cols, rows, sort });
+    return h.getVisible().map((r) => r.cells[key]);
+  };
+
+  // --- g: an explicit comparator outranks a value order
+  // `values' would sort TODO before DONE. `compare' is named on the same
+  // column, and SCHEMA gives it precedence, so the sort is alphabetical and
+  // DONE leads. Reading it the other way would put TODO first.
+  check("a named comparator beats the column's value order",
+        order({ column: "state", ascending: true }, "state").slice(0, 2),
+        ["DONE", "TODO"]);
+  check("without one, the value order still rules",
+        order({ column: "state", ascending: true }, "state").slice(0, 2)[0] !== "TODO", true);
+
+  // --- h: blanks go last, and stay last when the sort reverses
+  check("ascending puts the blank name last",
+        order({ column: "name", ascending: true }, "name"),
+        ["apple", "fig", "pear", ""]);
+  check("descending puts it last as well",
+        order({ column: "name", ascending: false }, "name"),
+        ["pear", "fig", "apple", ""]);
+  check("a blank in a column with a value order sorts last too",
+        order({ column: "state", ascending: true }, "state")[3], "");
+
+  // The direction strings are the only spelling that asks for the other rule.
+  check("asc-nulls-first leads with the blank",
+        order({ column: "name", direction: "asc-nulls-first" }, "name"),
+        ["", "apple", "fig", "pear"]);
+  check("desc-nulls-first leads with it and reverses the rest",
+        order({ column: "name", direction: "desc-nulls-first" }, "name"),
+        ["", "pear", "fig", "apple"]);
+  check("a bare direction string still sorts", 
+        order({ column: "name", direction: "desc" }, "name")[0], "pear");
+  check("direction outranks ascending",
+        order({ column: "name", direction: "desc", ascending: true }, "name")[0], "pear");
+
+  // --- i: a delta is counted in the window, not the store
+  // The store order is pear, blank, apple, fig; sorted ascending the window
+  // reads apple, fig, pear, blank. Deleting window index 0 must take apple,
+  // which sits at store index 2 -- a store-indexed delete would take pear.
+  const box = new El("div");
+  const h = TableView.mount(box, {
+    title: "order", columns: cols, rows, sort: { column: "name", ascending: true },
+  });
+  h.applyDelta([{ op: "delete", index: 0 }]);
+  check("a delete indexes the window, not the store",
+        h.getRows().map((r) => r.cells.name), ["pear", "", "fig"]);
+  h.applyDelta([{ op: "insert", index: 0, row: { id: "9", cells: { name: "acorn", state: "DONE" } } }]);
+  check("an insert lands where the window says",
+        h.getVisible().map((r) => r.cells.name), ["acorn", "fig", "pear", ""]);
+  check("an index past the end appends",
+        (h.applyDelta([{ op: "insert", index: 99, row: { id: "8", cells: { name: "zed", state: "DONE" } } }]),
+         h.getRows().length), 5);
+
+  // --- j: a column that declares itself multi-valued outranks the shapes
+  const tagCols = [
+    { key: "title", label: "Title" },
+    { key: "tags", label: "Tags", multi: true },
+  ];
+  const tagRows = [
+    { id: "1", cells: { title: "one", tags: "web, api" } },
+    { id: "2", cells: { title: "two", tags: "web" } },
+  ];
+  const decl = new El("div");
+  const d = TableView.mount(decl, { title: "t", columns: tagCols, rows: tagRows });
+  // Nothing here is org-shaped, so the heuristic would have found no tag column
+  // at all and offered no key for it. The declaration is what supplies one.
+  const db = decl.querySelector(".tv-filter");
+  db.value = "we";
+  db.dispatchEvent(new Ev("input"));
+  check("a declared multi column is offered as a key",
+        decl.querySelectorAll(".tv-ac-label").map((e) => e.text).some((x) => /^web|tag/.test(x)),
+        true);
+
+  // Undeclared, the shapes still decide -- the fallback keeps working.
+  const guess = new El("div");
+  const g = TableView.mount(guess, {
+    title: "t",
+    columns: [{ key: "title", label: "Title" }, { key: "tags", label: "Tags" }],
+    rows: [{ id: "1", cells: { title: "one", tags: ":web:api:" } },
+           { id: "2", cells: { title: "two", tags: ":web:" } }],
+  });
+  check("undeclared, the cell shapes still find it",
+        g.getVisible().length, 2);
+
+  // With nothing reordering the rows the window is the store, and the two
+  // readings agree -- the mapping has to be invisible in the common case.
+  const plain = new El("div");
+  const p = TableView.mount(plain, { title: "order", columns: cols, rows });
+  p.applyDelta([{ op: "delete", index: 0 }]);
+  check("with no sort the window is the store",
+        p.getRows().map((r) => r.cells.name), ["", "apple", "fig"]);
+}
+
 // ---- benchmark -------------------------------------------------------------
 
 const results = [];
@@ -554,7 +682,7 @@ async function filterQuery() {
   // Local semantics, by column type.
   const box = new El("div");
   const q = TableView.mount(box, view(40));
-  const { reset, shown } = probe(box, q);
+  const { reset, shown, type, items, counts } = probe(box, q);
   const all = shown("");
   check("the fixture is 40 rows", all, 40);
   check("badge predicates match a value exactly", shown("state:DONE"), 8);
@@ -588,15 +716,6 @@ async function filterQuery() {
   shown("");
 
   // The suggestion list.
-  const items = () => Array.from(box.querySelectorAll(".tv-ac-label")).map((e) => e.text);
-  const counts = () => Array.from(box.querySelectorAll(".tv-ac-n")).map((e) => Number(e.text));
-  const type = (query) => {
-    reset();
-    const b = filterOf(box);
-    b.value = query;
-    b.dispatchEvent(new Ev("input"));
-    return items();
-  };
   check("a bare word suggests the column keys it opens", type("sta"), ["state:"]);
   // A bare word offers the keys it opens: the view's columns, then the tags
   // the rows imply, both spelled `key:'.
@@ -929,14 +1048,8 @@ async function cellsChipsPills() {
         rowOf(id).children[2].querySelectorAll(".tv-pill").length, 0);
 
   // --- chips
-  const box2 = new El("div");
-  const t2 = TableView.mount(box2, view(40));
-  const b2 = filterOf(box2);
-  const chipText = () => box2.querySelectorAll(".tv-chip").map((c) => c.text.replace("×", ""));
-  const commit = (q) => {
-    b2.value = q;
-    b2.dispatchEvent(new Ev("keydown", { key: "Enter" }));
-  };
+  const { box: box2, handle: t2, b: b2El, commit, chipsOf: chipText } = driver(40);
+  const b2 = b2El();
   commit("state:DONE");
   check("Enter moves the token out of the box and into a chip",
         [chipText(), b2.value], [["state:DONE"], ""]);
@@ -1998,9 +2111,8 @@ async function virtualKeys() {
 
   // --- where the browser eats C-n, the list says so rather than going quiet
   {
-    const box = new El("div");
-    TableView.mount(box, view(40));
-    const b = filterOf(box);
+    const { box, b: bEl } = driver(40);
+    const b = bEl();
     const open = () => { b.value = "sy"; b.dispatchEvent(new Ev("input")); };
     const note = () => box.querySelectorAll(".tv-ac-note").map((e) => e.text);
     const items = () => box.querySelectorAll(".tv-ac-item").length;
@@ -2948,6 +3060,7 @@ async function smoke() {
   await filterQuery();
   await cellsChipsPills();
   await virtualKeys();
+  await sortOrder();
 
   console.log("\n== the window");
   // The header and a row measure differently, and everything below sums over

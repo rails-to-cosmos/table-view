@@ -202,10 +202,12 @@
  *             sortable?: boolean,
  *             badges?: Badge[],
  *             values?: string[],
+ *             multi?: boolean,
  *             compare?: string }} Column
  * @typedef {{ key?: string, command: string, label?: string }} Action
  * @typedef {{ column: string, ascending?: boolean, direction?: string }} Sort
- * @typedef {{ column: string, ascending: boolean }} SortKey  A normalized sort key (internal).
+ * @typedef {{ column: string, ascending: boolean, nullsFirst: boolean }} SortKey
+ *          A normalized sort key (internal).
  * @typedef {{ id: string, cells?: Record<string, Cell> }} Row
  * @typedef {{ title?: string,
  *             columns: Column[],
@@ -524,6 +526,8 @@
     if (compare === "natural" || compare === "version")
       return (a, b) =>
         displayText(a).localeCompare(displayText(b), undefined, { numeric: true });
+    if (compare === "string" || compare === "text")
+      return (a, b) => displayText(a).localeCompare(displayText(b));
     const order = valueOrder(col);
     if (order) {
       const pos = (v) => {
@@ -868,6 +872,10 @@
       if (multiAt !== undefined) return multiAt;
       const cols = columns();
       multiAt = -1;
+      // A column that says what it is settles the question; the shapes below
+      // are how the answer is guessed when nobody said.
+      const declared = cols.findIndex((c) => c.multi === true);
+      if (declared !== -1) return (multiAt = declared);
       for (let i = 0; i < cols.length && multiAt === -1; i++) {
         let shaped = 0, contrary = 0, seen = 0;
         for (const r of state.rows) {
@@ -1038,12 +1046,25 @@
      * @param {Sort|Sort[]|undefined} sort
      * @returns {SortKey[]}
      */
+    /**
+     * Read SCHEMA's sort list into sort keys.  A `direction' string wins over
+     * `ascending' and is the only way to ask for nulls first: bare "asc" and
+     * "desc" put empty cells last whatever the column type.
+     */
     function normalizeSort(sort) {
       if (!sort) return [];
       const list = Array.isArray(sort) ? sort : [sort];
       return list
         .filter((s) => s && s.column)
-        .map((s) => ({ column: s.column, ascending: s.ascending !== false }));
+        .map((s) => {
+          const dir = String(s.direction || "").toLowerCase();
+          const desc = dir ? dir.slice(0, 4) === "desc" : s.ascending === false;
+          return {
+            column: s.column,
+            ascending: !desc,
+            nullsFirst: dir.indexOf("nulls-first") !== -1,
+          };
+        });
     }
 
     function columns() { return state.view.columns || []; }
@@ -1058,21 +1079,38 @@
      * @returns {((a: Row, b: Row) => number)|null}
      */
     function chainComparator() {
-      /** @type {{key: string, cmp: (a: Cell|undefined, b: Cell|undefined) => number, sign: number}[]} */
+      /** @type {{key: string, cmp: (a: Cell|undefined, b: Cell|undefined) => number, sign: number, nullsFirst: boolean}[]} */
       const keys = [];
       for (const sk of state.sortKeys) {
         const col = colByKey(sk.column);
-        if (col) keys.push({ key: sk.column, cmp: comparator(col), sign: sk.ascending ? 1 : -1 });
+        if (col)
+          keys.push({
+            key: sk.column,
+            cmp: comparator(col),
+            sign: sk.ascending ? 1 : -1,
+            nullsFirst: !!sk.nullsFirst,
+          });
       }
       if (!keys.length) return null;
-      if (keys.length === 1) {
-        const k = keys[0];
-        return (a, b) => k.sign * k.cmp((a.cells || {})[k.key], (b.cells || {})[k.key]);
-      }
+      /**
+       * Rank one key.  Empty cells are settled before the comparator runs and
+       * outside the direction sign, so reversing the sort does not drag the
+       * blanks along with it.
+       */
+      const rank = (k, a, b) => {
+        const av = (a.cells || {})[k.key];
+        const bv = (b.cells || {})[k.key];
+        const ae = displayText(av) === "";
+        const be = displayText(bv) === "";
+        if (ae !== be) return (ae ? 1 : -1) * (k.nullsFirst ? -1 : 1);
+        if (ae) return 0;
+        return k.sign * k.cmp(av, bv);
+      };
+      if (keys.length === 1) return (a, b) => rank(keys[0], a, b);
       return (a, b) => {
         for (const k of keys) {
-          const c = k.cmp((a.cells || {})[k.key], (b.cells || {})[k.key]);
-          if (c) return k.sign * c;
+          const c = rank(k, a, b);
+          if (c) return c;
         }
         return 0;
       };
@@ -1720,8 +1758,8 @@
       if (!col || col.sortable !== true) return;
       const primary = state.sortKeys[0];
       state.sortKeys = (primary && primary.column === key)
-        ? [{ column: key, ascending: !primary.ascending }]
-        : [{ column: key, ascending: true }];
+        ? [{ column: key, ascending: !primary.ascending, nullsFirst: false }]
+        : [{ column: key, ascending: true, nullsFirst: false }];
       page = 0;                          // a different order, read from the top
       dropSorted();
       scroll.scrollTop = 0;
@@ -2569,21 +2607,33 @@
       /** @param {Op[]} ops */
       applyDelta(ops) {
         for (const op of ops || []) {
-          if (op.op === "insert") {
-            state.rows.splice(op.index, 0, op.row);
-            texts.delete(op.row.id);
-            dropDomains();
-          } else if (op.op === "delete") {
-            const gone = state.rows[op.index];
-            if (gone) texts.delete(gone.id);
-            dropDomains();
-            state.rows.splice(op.index, 1);
-          } else if (op.op === "reset") {
+          if (op.op === "reset") {
             state.rows = (op.rows || []).slice();
             clearTexts();
+            dropSorted();
+            continue;
           }
+          // SCHEMA counts delta indices in the window, which is the order the
+          // rows are displayed in; with no local sort, filter or page that is
+          // the store's own order, so the mapping costs nothing there.  Each
+          // op is placed against the window the ops before it left behind.
+          const win = paged();
+          const store = (row) => state.rows.findIndex((r) => r.id === row.id);
+          if (op.op === "insert") {
+            const at = op.index < win.length ? store(win[op.index]) : -1;
+            state.rows.splice(at === -1 ? state.rows.length : at, 0, op.row);
+            texts.delete(op.row.id);
+          } else if (op.op === "delete") {
+            const gone = win[op.index];
+            const at = gone ? store(gone) : -1;
+            if (at !== -1) {
+              texts.delete(gone.id);
+              state.rows.splice(at, 1);
+            }
+          }
+          dropSorted();
         }
-        dropSorted();
+        dropDomains();
         renderRows(true);
       },
       getRows() { return state.rows.slice(); },
