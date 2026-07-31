@@ -105,7 +105,7 @@
  *   the marks land and the viewport jumps. The coalescing stays, being economy
  *   rather than motion.
  * - Three roles, three readings, so a glance tells them apart: a state is a
- *   filled pill in its palette colour, an applied filter is a golden chip, and
+ *   filled pill in its palette colour, an applied filter is a frost chip, and
  *   a tag is small muted lowercase text with no box at all. The multi-valued column's
  *   cells render a chip per value, split by the one splitter the vocabulary
  *   uses, and the dropdown wears a tag the same way wherever it names one. It
@@ -170,7 +170,7 @@
  *   off and then stops: it erases, and erasing is not leaving. It also filters
  *   on commit alone — typing moves the suggestion list and nothing else, and
  *   RET or a chip strip is what reaches the rows. The bar modes keep their
- *   120ms debounce. The chips are the theme's selection golden, which is the
+ *   120ms debounce. The chips are the theme's frost, which is the
  *   association its own ivy and company faces make. It supersedes `omnibox',
  *   which stays for consumers that want the control resident.
  * - `omnibox: true' makes the filter the bar: no title, the
@@ -405,7 +405,7 @@
   function cellHTML(col, val, dark, asTags) {
     // A multi-valued cell is a list of values, and reads as one: a ghost chip
     // each, outlined rather than filled, so it is neither a state badge (a
-    // filled pill) nor an applied filter (a golden chip). Three roles, three
+    // filled pill) nor an applied filter (a frost chip). Three roles, three
     // shapes. Only the presentation changes — what is searched, sorted and
     // measured is still the text the producer sent.
     if (asTags) {
@@ -608,6 +608,9 @@
   function injectStyle() {
     if (styleInjected) return;
     styleInjected = true;
+    // The applied-filter identity, spelled once. Swapping it is one edit here;
+    // the palettes below carry only how much of it each theme wants.
+    const FROST = "#D0E1F9";
     const css = `
 /* Both palettes are danneskjold-theme's, mapped role for role from
    /home/akatovda/sync/stuff/danneskjold-theme/danneskjold-theme.el — its
@@ -616,9 +619,9 @@
    floor in this context, the hue held: light muted #7F8C8D -> #667071 (3.5:1
    -> 5.1:1 on white) and light accent #4CB5F5 -> #31769F (2.3:1 -> 5.0:1, it
    is link text here). The selected row takes the theme's highlight face
-   (#F0FFF0) rather than its golden: golden is the applied filter's colour, on
-   the chips, and the cursor row is a second thing that must not read as the
-   first.
+   (#F0FFF0) rather than its golden: the cursor row is its own role and must
+   not read as either the applied filter (frost, on the chips) or a state
+   pill.
 
    Borders are the exception and stay hairlines: they carry no information, so
    contrast is not a goal for them and a visible rule only adds noise. Light
@@ -627,16 +630,18 @@
    against 1.80:1) — the quieter of the two. Every rule is 1px. */
 .tv-root{--tv-fg:#000000;--tv-muted:#667071;--tv-bg:#FFFFFF;--tv-alt:#F8F8FF;
   --tv-border:#E3E6EA;--tv-accent:#31769F;--tv-sel:#F0FFF0;--tv-hover:#FAFAFA;
+  --tv-frost:${FROST};--tv-chip-wash:45%;--tv-chip-edge:95%;
   color:var(--tv-fg);background:var(--tv-bg);font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
   border:1px solid var(--tv-border);border-radius:8px;overflow:hidden;display:flex;flex-direction:column;max-height:100%}
 @media (prefers-color-scheme:dark){.tv-root{--tv-fg:#FFFFFF;--tv-muted:#A4C2EB;--tv-bg:#000000;
   --tv-alt:#21252B;--tv-border:#2a2d3d;--tv-accent:#4CB5F5;--tv-sel:#373D4F;
-  --tv-hover:#1F1F1F;}}
+  --tv-hover:#1F1F1F;--tv-chip-wash:18%;--tv-chip-edge:34%;}}
 :root[data-theme="dark"] .tv-root{--tv-fg:#FFFFFF;--tv-muted:#A4C2EB;--tv-bg:#000000;
   --tv-alt:#21252B;--tv-border:#2a2d3d;--tv-accent:#4CB5F5;--tv-sel:#373D4F;
-  --tv-hover:#1F1F1F;}
+  --tv-hover:#1F1F1F;--tv-chip-wash:18%;--tv-chip-edge:34%;}
 :root[data-theme="light"] .tv-root{--tv-fg:#000000;--tv-muted:#667071;--tv-bg:#FFFFFF;--tv-alt:#F8F8FF;
-  --tv-border:#E3E6EA;--tv-accent:#31769F;--tv-sel:#F0FFF0;--tv-hover:#FAFAFA}
+  --tv-border:#E3E6EA;--tv-accent:#31769F;--tv-sel:#F0FFF0;--tv-hover:#FAFAFA;
+  --tv-chip-wash:45%;--tv-chip-edge:95%}
 .tv-bar{display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:1px solid var(--tv-border);flex-wrap:wrap}
 .tv-title{font-weight:600;font-size:14px;margin-right:auto}
 .tv-filter{font:inherit;padding:4px 8px;border:1px solid var(--tv-border);border-radius:6px;
@@ -665,11 +670,13 @@
   background:var(--tv-alt);border:1px solid var(--tv-border);
   box-shadow:0 10px 30px #0007}
 .tv-panel .tv-filter{font-size:15px;padding:7px 11px;width:100%}
-/* Applied parts, in the theme's own selection colour — the association its
-   ivy and company faces already make. Black on golden either way, which is
-   where the contrast is (about 15:1), so this one pair is not theme-split. */
-.tv-pal .tv-chip{background:#FFD600;color:#000000;border-color:#E0BC00}
-.tv-pal .tv-chip:hover{border-color:#000000;color:#000000}
+/* The applied filter's identity: the theme's frost, washed over whatever the
+   page's ground is, with ordinary foreground for ink. Why frost and why a wash
+   rather than the solid it was: CHANGELOG, "chips are a frost wash". */
+.tv-pal .tv-chip{color:var(--tv-fg);
+  background:color-mix(in srgb,var(--tv-frost) var(--tv-chip-wash),transparent);
+  border-color:color-mix(in srgb,var(--tv-frost) var(--tv-chip-edge),transparent)}
+.tv-pal .tv-chip:hover{border-color:var(--tv-accent);color:var(--tv-accent)}
 .tv-chips{display:flex;flex-wrap:wrap;gap:5px;align-items:center}
 .tv-chip{display:inline-flex;align-items:center;gap:5px;padding:1px 4px 1px 8px;
   border-radius:999px;font-size:12px;cursor:pointer;color:var(--tv-fg);
@@ -714,7 +721,7 @@
 .tv-table tbody tr{cursor:default}
 .tv-table tbody tr.tv-pad td{padding:0;border:0}
 /* The third role, and the quietest: no box at all. A filled pill is a state, a
-   golden chip is an applied filter, and a tag is small muted text — which is
+   frost chip is an applied filter, and a tag is small muted text — which is
    what a tag is, a word the row happens to carry. Several of them separate on a
    middot rather than on the colons the cell spells them with; the colons are
    the storage, not the reading. The ink is the muted one the palette already

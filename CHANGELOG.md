@@ -54,10 +54,10 @@ the rails-to-cosmos ELPA archive publishes date-stamped snapshots.
   could not be dates against, and anything that might be one abstaining.
 - Browser renderer: tags have a reading of their own — small muted text,
   lowercased, several separating on a middot, with no box of any kind.
-  That completes a three-role grammar: a filled pill is a state, a golden
+  That completes a three-role grammar: a filled pill is a state, a frost
   chip is an applied filter, and a tag is neither. The multi-valued
   column's cells show one per value and the suggestion list wears a tag
-  the same way; applied-filter chips stay uniformly golden, filter
+  the same way; applied-filter chips stay uniformly frost, filter
   identity outranking tag identity there. The lowercasing is presentation
   (a stylesheet transform), so a copy takes the case the file holds while
   what is shown is the form a query spells.
@@ -110,9 +110,9 @@ the rails-to-cosmos ELPA archive publishes date-stamped snapshots.
   is pressed. Chips are removed there by their own click, or by the key a
   consumer binds over the table. On the page, where the box and the chips
   sit together, Backspace still walks the chips off and ends by handing
-  the table over. Applied chips render in the theme's
-  selection golden, black on `#FFD600`. It supersedes `omnibox`, which
-  stays for consumers that want the control on the page.
+  the table over. Applied chips render in the theme's frost (see the
+  entry under Changed). It supersedes `omnibox`, which stays for
+  consumers that want the control on the page.
 - Browser renderer: `omnibox: true` mount option — the filter becomes the
   bar's centrepiece: no title, no placeholder, the input takes the full
   width, and the applied chips move to a row of their own beneath it that
@@ -272,6 +272,21 @@ the rails-to-cosmos ELPA archive publishes date-stamped snapshots.
   entries above; this is the shape they refine.)
 
 ### Changed
+- **Browser renderer: applied-filter chips are a frost wash, not a solid
+  golden slab.** The role's colour moves from the theme's selection
+  golden (`#FFD600` with black ink) to its **frost** (`#D0E1F9`,
+  danneskjold's own link colour): the chip ground is frost at a low alpha
+  over the theme's background, the hairline is the same frost at a little
+  more, and the ink is the ordinary `--tv-fg` rather than black. A solid
+  golden chip was the loudest thing on the page, and with a default
+  filter resident from boot it took the attention the table wants; frost
+  is calm by nature and still an identity, being used for applied filters
+  and nothing else. The alpha is theme-split (`.45` light, `.18` dark)
+  because frost is pale enough that a sixth of it reads over black while
+  it takes nearly half to read over white. The three-role grammar reads
+  filled pill = state, frost chip = applied filter, bare muted text =
+  tag. Remove affordance, click-to-drop and the Backspace ladder are
+  unchanged.
 - **Browser renderer: a column's completion domain merges its `values`
   with its badge palette** instead of letting the first shadow the
   second — declared values in their own order, then any badge value they

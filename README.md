@@ -424,7 +424,7 @@ consumer binds them and dispatches the command (`onAction`, or the
 `tableview-action` event). A double click still runs the default action.
 
 **Three roles, three readings.** A *state* is a filled pill in its palette
-colour; an *applied filter* is a golden chip; a *tag* is small muted lowercase
+colour; an *applied filter* is a frost chip; a *tag* is small muted lowercase
 text with no box at all, several separating on a middot. The multi-valued column's cells render a chip per value — split by
 the same splitter the tag vocabulary uses — and the suggestion list wears a tag
 the same way wherever it names one. Presentation only: what is searched, sorted
@@ -533,10 +533,12 @@ table as each character lands animates something the typist is looking away
 from, and every half-written token is a query of its own. The resident bar and
 omnibox modes keep their 120 ms debounce.
 
-The applied chips render in the theme's golden (black on `#FFD600`), the
-association its own `ivy-current-match` and `company-tooltip-selection` faces
-make. That is the *applied filter's* colour; the cursor row takes the theme's
-secondary highlight instead, so the two never read as one thing. `initialQuery`, `getQuery()` and `stripLastToken()` behave exactly
+The applied chips render in the theme's **frost**, washed over the page rather
+than laid on it, with the ordinary `--tv-fg` for ink. Frost is the applied
+filter's colour and nothing else's, so no two of the three roles read as one
+thing. Swapping it is a one-line edit: `FROST` in `injectStyle`, which every
+palette mixes from. The reasoning behind the colour and the two strengths is in
+the CHANGELOG, under "chips are a frost wash". `initialQuery`, `getQuery()` and `stripLastToken()` behave exactly
 as they do elsewhere — the chips are the same state, only styled. The overlay
 sits at `z-index` 90/91, leaving 100 and up for a consumer's own modal.
 

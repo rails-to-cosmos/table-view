@@ -115,10 +115,56 @@ const ratio = (a, b) => {
 /** A blended toward B by T, back as hex. */
 const mixed = (a, b, t) => "#" + rgb(a)
   .map((v, i) => Math.round(v + (rgb(b)[i] - v) * t).toString(16).padStart(2, "0")).join("");
+/**
+ * The custom properties RULE declares, read out of the stylesheet the renderer
+ * actually emitted — the way the badge-ink block reads its grounds. Literals
+ * here would be a second copy of the palette, and a second copy passes while
+ * the first one drifts. Hex values and percentages both, since a strength is
+ * as much a palette decision as a colour.
+ * @param {string} rule  the selector text, up to and including its `{'
+ */
+function paletteIn(rule) {
+  const css = document.head.children.map((e) => e.text).join("");
+  const at = css.indexOf(rule);
+  if (at === -1) return {};
+  const decl = css.slice(at + rule.length, css.indexOf("}", at));
+  const out = {};
+  for (const m of decl.matchAll(/--tv-([\w-]+):\s*(#[0-9a-fA-F]{3,8}|[0-9.]+%)/g))
+    out[m[1]] = m[2];
+  return out;
+}
+
+/**
+ * The chip colours THEME actually paints, resolved: the frost it washes (which
+ * cascades from the base rule) composited onto that theme's own ground at the
+ * strength the theme asks for. What `color-mix' with `transparent' does, done
+ * here so the assertion is about the painted colour rather than its spelling.
+ * @param {"light"|"dark"} theme
+ */
+function chipIn(theme) {
+  const p = paletteIn(`:root[data-theme="${theme}"] .tv-root{`);
+  const frost = p.frost || paletteIn(".tv-root{").frost;
+  const ground = p.bg || paletteIn(".tv-root{").bg;
+  const pct = (v) => Number(String(v).replace("%", "")) / 100;
+  const washPct = pct(p["chip-wash"]), edgePct = pct(p["chip-edge"]);
+  return { frost, ground, washPct, edgePct,
+           wash: mixed(ground, frost, washPct),
+           edge: mixed(ground, frost, edgePct) };
+}
+
+/** A hex colour's channels on 0..1 with their extrema — what hue and sat share. */
+const chroma = (h) => {
+  const [r, g, b] = rgb(h).map((v) => v / 255);
+  return { r, g, b, mx: Math.max(r, g, b), mn: Math.min(r, g, b) };
+};
+/** Saturation 0..1, for telling a pale wash from a saturated accent. */
+const sat = (h) => {
+  const { mx, mn } = chroma(h);
+  return mx === 0 ? 0 : (mx - mn) / mx;
+};
 /** Hue in degrees, for asserting that a lightness-only change kept one. */
 const hue = (h) => {
-  const [r, g, b] = rgb(h).map((v) => v / 255);
-  const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+  const { r, g, b, mx, mn } = chroma(h);
   if (mx === mn) return 0;
   const d = mx - mn;
   const x = mx === r ? (g - b) / d + (g < b ? 6 : 0)
@@ -1760,17 +1806,6 @@ async function virtualKeys() {
     // The floors, checked with an implementation of WCAG that is this file's
     // own — the renderer's must agree with something, not with itself.
 
-    // Read out of the stylesheet the renderer actually emitted, the way the
-    // badge-ink block reads its grounds. Literals here would be a second copy
-    // of the palette, and a second copy passes while the first one drifts.
-    const paletteIn = (rule) => {
-      const at = css.indexOf(rule);
-      const decl = css.slice(at + rule.length, css.indexOf("}", at));
-      const out = {};
-      for (const m of decl.matchAll(/--tv-([\w-]+):\s*(#[0-9a-fA-F]{3,8})/g))
-        out[m[1]] = m[2];
-      return out;
-    };
     const light = paletteIn(".tv-root{");
     const dark = paletteIn("@media (prefers-color-scheme:dark){.tv-root{");
     check("both palettes were found in the sheet",
@@ -2129,18 +2164,84 @@ async function virtualKeys() {
     veil().dispatchEvent(new Ev("mousedown"));
     check("a click on the backdrop puts it away", shown(), false);
 
-    // --- golden chips, and the floor they have to clear
-    check("palette chips are the theme's primary highlight, golden on black",
-          css.indexOf(".tv-pal .tv-chip{background:#FFD600;color:#000000") !== -1, true);
-    check("which the cursor row is not, so the two roles read apart",
-          css.indexOf("--tv-sel:#FFD600") === -1, true);
+    // --- frost chips: the hue is the identity, the volume is low
+    // The chip wears the theme's frost as a wash: a fraction of it over
+    // whatever the theme's own background is, a hairline of more of the same,
+    // and the ordinary foreground for ink. Every value below is read out of
+    // the emitted sheet, so swapping the identity swaps what is asserted —
+    // what is pinned here is that it stays pale, stays a wash, and stays
+    // apart from the accent.
+    // Both properties come off `--tv-frost', so the identity is one constant:
+    // asserted as a shape rather than as a colour, since the colour is read
+    // from the sheet below.
+    check("both chip properties mix the one frost var with the page",
+          (css.match(/color-mix\(in srgb,var\(--tv-frost\) var\(--tv-chip-\w+\),transparent\)/g)
+           || []).length, 2);
+    check("and the ink is the theme's own foreground",
+          /\.tv-pal \.tv-chip\{color:var\(--tv-fg\)/.test(css), true);
+    check("the rule is still one rule — the strengths live with the palettes",
+          css.split(".tv-pal .tv-chip{").length, 2);
     check("and the selected row is a background and nothing else",
           /\.tv-table tbody tr\.tv-sel\{background:var\(--tv-sel\)\}/.test(css), true);
     check("no stripe, no border, no shadow on it",
           /tr\.tv-sel\{[^}]*(border|box-shadow)/.test(css), false);
-    check("which clears the text floor by a distance", ratio("#000000", "#FFD600") >= 7, true);
-    check("and is one pair for both themes — the contrast is in the pair",
-          css.split(".tv-pal .tv-chip{").length, 2);
+
+    // What the browser paints, per theme, resolved from the sheet: the frost
+    // cascades from the base rule and each theme says how much of it it wants.
+    const L = chipIn("light"), D = chipIn("dark");
+    const FROST = L.frost;
+    check("both themes resolve a chip colour from the one frost var",
+          [L.frost === D.frost, !!FROST, L.ground !== D.ground], [true, true, true]);
+    check("the cursor row is a different role and never wears it",
+          [paletteIn(':root[data-theme="light"] .tv-root{').sel !== FROST,
+           paletteIn(':root[data-theme="dark"] .tv-root{').sel !== FROST], [true, true]);
+    // Frost is pale, so the two strengths are far apart on purpose: a sixth of
+    // it reads over black, and it takes nearly half to read over white. Both
+    // stay under the half that would make the chip a panel.
+    check("both themes ask for a modest amount of it",
+          [L.washPct > 0 && L.washPct <= 0.5, D.washPct > 0 && D.washPct <= 0.25],
+          [true, true]);
+    check("and the pale hue needs more of itself over white than over black",
+          L.washPct > D.washPct, true);
+    check("the hairline takes more than the ground, in both",
+          [L.edgePct > L.washPct, D.edgePct > D.washPct], [true, true]);
+    check("light ink clears the text floor on its tint",
+          ratio(paletteIn(':root[data-theme="light"] .tv-root{').fg, L.wash) >= 4.5, true);
+    check("dark ink clears it on its own",
+          ratio(paletteIn(':root[data-theme="dark"] .tv-root{').fg, D.wash) >= 4.5, true);
+    check("and both clear the stricter one too, the ink being ordinary text",
+          [ratio(L.ground === "#FFFFFF" ? "#000000" : "#FFFFFF", L.wash) >= 7,
+           ratio(D.ground === "#000000" ? "#FFFFFF" : "#000000", D.wash) >= 7], [true, true]);
+    // A wash is a wash: the tint has to sit nearer its own ground than the
+    // solid frost, or it is a slab again. Measured as a distance to each
+    // rather than as an absolute, because contrast against a black ground
+    // exaggerates any lift at all. This is what caps the light strength — at
+    // 55% the tint crosses over and is nearer the solid than the page.
+    check("each tint sits nearer its ground than the solid frost",
+          [ratio(L.ground, L.wash) < ratio(L.wash, FROST),
+           ratio(D.ground, D.wash) < ratio(D.wash, FROST)], [true, true]);
+    check("and the solid is a long way off in the dark, where the wash bites",
+          ratio(D.wash, FROST) > 5, true);
+    // Integer compositing moves a hue by a degree; the point is that it is the
+    // same colour, not that the arithmetic is exact.
+    check("the hue survives the wash, so it still reads as the frost",
+          [Math.abs(hue(L.wash) - hue(FROST)) <= 3,
+           Math.abs(hue(D.wash) - hue(FROST)) <= 6], [true, true]);
+
+    // Frost and the link accent are both blue; they have to stay tellable
+    // apart, or an applied filter reads as a link. What separates them is
+    // saturation, not lightness: against the dark accent frost is only 1.7:1,
+    // which would pass a luminance test while looking like the same colour.
+    const satFrost = sat(FROST);
+    check("frost is a pale blue, not a saturated one", satFrost <= 0.25, true);
+    for (const theme of ["light", "dark"]) {
+      const accent = paletteIn(`:root[data-theme="${theme}"] .tv-root{`).accent;
+      const satAccent = sat(accent);
+      check(`${theme}: the chip frost and the link accent are different colours`,
+            FROST.toLowerCase() !== accent.toLowerCase(), true);
+      check(`${theme}: the accent is saturated where frost is washed out`,
+            [satAccent >= 0.5, satAccent - satFrost >= 0.4], [true, true]);
+    }
 
     // --- restoration and the handle work the same here
     const back = new El("div");
@@ -2164,7 +2265,7 @@ async function virtualKeys() {
            omni.querySelectorAll(".tv-veil").length,
            omni.querySelector(".tv-root").classes.has("tv-pal")],
           [["tv-bar", "tv-chips", "tv-scroll", "tv-hint"], 0, false]);
-    check("and its chips are not golden",
+    check("and it is the omnibox, not the palette",
           omni.querySelector(".tv-root").classes.has("tv-omni"), true);
   }
 
@@ -2395,7 +2496,7 @@ async function virtualKeys() {
           R.shown("title:sentence"), 2);
   }
 
-  // --- three roles, three shapes: filled pill, golden chip, ghost tag
+  // --- three roles, three shapes: filled pill, frost chip, ghost tag
   {
     const css = document.head.children.map((e) => e.text).join("");
     const T = driver(40, { pageSize: 0 });
@@ -2493,10 +2594,8 @@ async function virtualKeys() {
     b.dispatchEvent(new Ev("keydown", { key: "Enter" }));
     await painted();
     const chip = box.querySelector(".tv-chip");
-    check("an applied filter is a golden chip, whatever it names",
+    check("an applied filter is a frost chip, whatever it names",
           [!!chip, chip.querySelectorAll(".tv-tag").length], [true, 0]);
-    check("one rule for all of them, not one per token",
-          css.indexOf(".tv-pal .tv-chip{background:#FFD600;color:#000000") !== -1, true);
 
     // --- and none of it moved the data
     b.dispatchEvent(new Ev("keydown", { key: "Backspace" }));
