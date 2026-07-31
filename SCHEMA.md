@@ -131,9 +131,13 @@ A shared micro-syntax for the filter box, so producers filtering server-side
 whitespace (`&` accepted as an alias); each token is:
 
 - `key:value` — a field predicate, **only when `key` is a column `key`** of
-  the view (`=` accepted as an alias for `:`). Otherwise the token is free
-  text — org cell text like `:work:` or `=code=` never turns into a
-  predicate by accident.
+  the view (`=` accepted as an alias for `:`) **or a producer-defined
+  virtual key**. Otherwise the token is free text — org cell text like
+  `:work:` or `=code=` never turns into a predicate by accident. Virtual
+  keys must be derivable identically by producer and renderer from the view
+  data (e.g. glance: every distinct org tag in the `tags` column is a key;
+  `contact:tanik` = tagged `contact` AND matching `tanik`). Columns shadow
+  virtual keys on collision.
 - `"quoted text"` — free text containing spaces.
 - `-token` — negation of either form.
 - anything else — free text, case-insensitive substring over the row's cells.
