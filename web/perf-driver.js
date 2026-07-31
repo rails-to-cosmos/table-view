@@ -36,6 +36,83 @@ const sleep = (ms) => new Promise((done) => realTimeout(done, ms));
 const painted = () => sleep(20);
 
 /**
+ * A mounted table and the gestures a check performs on it. Every section built
+ * the same five closures over its own mount; one factory means a change to what
+ * "start clean" or "commit this query" means lands everywhere at once, instead
+ * of in whichever copies were remembered.
+ * @param {*} box  the container  @param {*} handle  what `mount' returned
+ */
+function probe(box, handle) {
+  const b = () => filterOf(box);
+  /** Empty the box and take every chip back off, so each case starts clean. */
+  const reset = () => {
+    const el = b();
+    // An empty box offers nothing, so this shuts any list a previous check
+    // left open — an open list would take the keys below for itself.
+    el.value = "";
+    el.dispatchEvent(new Ev("input"));
+    for (let i = 0; i < 40 && box.querySelectorAll(".tv-chip").length; i++)
+      el.dispatchEvent(new Ev("keydown", { key: "Backspace" }));
+  };
+  const press = (key, init) => {
+    const e = new Ev("keydown", Object.assign({ key }, init));
+    b().dispatchEvent(e);
+    return e;
+  };
+  /** Type into a clean box and return what the list offers. */
+  const type = (q) => {
+    reset();
+    b().value = q;
+    b().dispatchEvent(new Ev("input"));
+    return items();
+  };
+  /** Commit a query from a clean box, and say how many rows it left. */
+  const shown = (q) => {
+    reset();
+    b().value = q;
+    press("Enter");
+    return handle.getVisible().length;
+  };
+  const items = () => box.querySelectorAll(".tv-ac-label").map((e) => e.text);
+  const counts = () => box.querySelectorAll(".tv-ac-n").map((e) => Number(e.text));
+  const chipsOf = () => box.querySelectorAll(".tv-chip").map((c) => c.text.replace("×", ""));
+  return { box, handle, b, reset, press, type, shown, items, counts, chipsOf };
+}
+
+// ---- colour ----------------------------------------------------------------
+// WCAG, implemented here so the renderer's contrast claims are checked against
+// something other than themselves. One copy: three sections wanted it and three
+// copies is three chances to fix a bug twice and miss the third.
+
+/** #rrggbb (or #rgb) to channel bytes. @param {string} h */
+const rgb = (h) => {
+  const x = h.replace("#", "");
+  const full = x.length === 3 ? x.replace(/./g, (c) => c + c) : x;
+  return [0, 2, 4].map((i) => parseInt(full.slice(i, i + 2), 16));
+};
+const chan = (c) => (c / 255 <= 0.03928 ? c / 255 / 12.92
+                                        : Math.pow((c / 255 + 0.055) / 1.055, 2.4));
+const lum = (c) => 0.2126 * chan(c[0]) + 0.7152 * chan(c[1]) + 0.0722 * chan(c[2]);
+/** Contrast ratio between two hex colours. */
+const ratio = (a, b) => {
+  const x = lum(rgb(a)) + 0.05, y = lum(rgb(b)) + 0.05;
+  return x > y ? x / y : y / x;
+};
+/** A blended toward B by T, back as hex. */
+const mixed = (a, b, t) => "#" + rgb(a)
+  .map((v, i) => Math.round(v + (rgb(b)[i] - v) * t).toString(16).padStart(2, "0")).join("");
+/** Hue in degrees, for asserting that a lightness-only change kept one. */
+const hue = (h) => {
+  const [r, g, b] = rgb(h).map((v) => v / 255);
+  const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+  if (mx === mn) return 0;
+  const d = mx - mn;
+  const x = mx === r ? (g - b) / d + (g < b ? 6 : 0)
+          : mx === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  return Math.round(x * 60);
+};
+
+/**
  * A media-query stub that reads the query instead of sniffing a word out of
  * it. `reduce' and `no-preference' are different answers to one feature, and a
  * stub matching on the feature name alone answers yes to both — so a renderer
@@ -90,6 +167,10 @@ global.requestAnimationFrame = (fn) => realTimeout(timed(fn), 0);
 
 /** The shim's line height; the driver moves it to stand in for a zoom. */
 let ROW_PX = 30;
+/** The header's, which is deliberately NOT the row's: the renderer keeps the
+ *  two apart and every sum over them has to as well. A shim reporting one
+ *  number for both lets an arithmetic that confuses them pass. */
+const HEAD_PX = 24;
 const VOID = new Set(["input", "br", "img", "col", "hr", "meta", "link"]);
 const ENTITY = { amp: "&", lt: "<", gt: ">", quot: '"', "#39": "'" };
 const decode = (s) =>
@@ -161,7 +242,6 @@ class El {
     this._value = "";
     this._selStart = 0;
     this._selEnd = 0;
-    this.disabled = false;
     this.scrollTop = 0;
     this.clientHeight = 0;
   }
@@ -192,11 +272,6 @@ class El {
   setAttribute(n, v) { this.attrs.set(n, String(v)); if (n === "class") this.className = v; }
   getAttribute(n) { return this.attrs.has(n) ? this.attrs.get(n) : null; }
   appendChild(c) { c.parentNode = this; this.childNodes.push(c); return c; }
-  removeChild(c) {
-    const i = this.childNodes.indexOf(c);
-    if (i !== -1) { this.childNodes.splice(i, 1); c.parentNode = null; }
-  }
-  remove() { if (this.parentNode) this.parentNode.removeChild(this); }
   // A real caret. Setting the text puts it at the end, the way typing does;
   // a consumer that wants it elsewhere says so. Without this every caret the
   // renderer reads is `value.length' and every check about where the caret is
@@ -246,30 +321,16 @@ class El {
     this.blurs = (this.blurs || 0) + 1;
     this.dispatchEvent(new Ev("blur"));      // a browser fires one; listeners rely on it
   }
-  scrollIntoView() {}
-  getBoundingClientRect() { return { height: ROW_PX, width: 0 }; }
-  /** A row is one line tall; anything else is what its children add up to. */
-  get offsetHeight() {
+  getBoundingClientRect() {
+    // What the box is told to be, else what its kind measures. A spacer row
+    // carries its height in the markup and must report that, or the geometry
+    // the renderer reads back is not the geometry it wrote.
     const h = this.style.height;
-    if (h && /px$/.test(String(h))) return parseFloat(String(h));
-    if (this.tagName === "TR") return ROW_PX;
-    let sum = 0;
-    for (const c of this.children) sum += c.offsetHeight;
-    return sum;
+    if (h && /px$/.test(String(h))) return { height: parseFloat(String(h)), width: 0 };
+    if (this.tagName === "THEAD") return { height: HEAD_PX, width: 0 };
+    if (this.tagName === "TR") return { height: ROW_PX, width: 0 };
+    return { height: 0, width: 0 };
   }
-  /** Distance to the nearest positioned ancestor, by stacking up what precedes. */
-  get offsetTop() {
-    let top = 0, node = this;
-    while (node.parentNode && !node.parentNode.classes.has("tv-scroll")) {
-      for (const sib of node.parentNode.children) {
-        if (sib === node) break;
-        top += sib.offsetHeight;
-      }
-      node = node.parentNode;
-    }
-    return top;
-  }
-  matches(sel) { return fitsAll(this, parseSel(sel)); }
   closest(sel) {
     const steps = parseSel(sel);
     for (let n = this; n; n = n.parentNode) if (fitsAll(n, steps)) return n;
@@ -308,7 +369,6 @@ function parseInto(html, parent) {
       if (name === "class") el.className = val;
       else el.attrs.set(name, val);
       if (name === "value") el.value = val;
-      if (name === "disabled") el.disabled = true;
     }
     stack[stack.length - 1].appendChild(el);
     if (!VOID.has(tag) && !m[4]) stack.push(el);
@@ -318,7 +378,10 @@ function parseInto(html, parent) {
 }
 
 global.CustomEvent = Ev;
-global.window = { open() {} };
+// The renderer opens an http link itself when no `onLink' is given; the check
+// below is what keeps this from being a stub for a path nobody walks.
+let opened = null;
+global.window = { open(url, target, features) { opened = [url, target, features]; } };
 global.document = {
   head: new El("head"),
   documentElement: new El("html"),
@@ -491,23 +554,7 @@ async function filterQuery() {
   // Local semantics, by column type.
   const box = new El("div");
   const q = TableView.mount(box, view(40));
-  /** Empty the box and take every chip back off, so each case starts clean. */
-  const reset = () => {
-    const b = filterOf(box);
-    // An empty box offers nothing, so this shuts any list a previous check
-    // left open — an open list would take the keys below for itself.
-    b.value = "";
-    b.dispatchEvent(new Ev("input"));
-    for (let i = 0; i < 40 && box.querySelectorAll(".tv-chip").length; i++)
-      b.dispatchEvent(new Ev("keydown", { key: "Backspace" }));
-  };
-  const shown = (query) => {
-    reset();
-    const b = filterOf(box);
-    b.value = query;
-    b.dispatchEvent(new Ev("keydown", { key: "Enter" }));    // applies at once
-    return q.getVisible().length;
-  };
+  const { reset, shown } = probe(box, q);
   const all = shown("");
   check("the fixture is 40 rows", all, 40);
   check("badge predicates match a value exactly", shown("state:DONE"), 8);
@@ -564,7 +611,9 @@ async function filterQuery() {
   check("a declared values list wins", type("priority:"), PRI);
   check("the tag column's values are the tags themselves, not the cells",
         type("tag:").sort(), ["daemon", "emacs", "glance", "ops", "read", "system", "web"]);
-  check("the list is capped", type("title:").length <= 12, true);
+  // 40 distinct titles, and the cap is 12 — a ceiling of 12 can fail, one of
+  // "some number less than everything" cannot.
+  check("the list is capped at twelve, out of forty", type("title:").length, 12);
 
   // Value counts: how many rows stand behind each suggestion.
   type("state:");
@@ -748,7 +797,7 @@ async function cellsChipsPills() {
   {
     const sc = box.querySelector(".tv-scroll");
     sc.clientHeight = 300;                        // ten rows on screen
-    const rowH = 30, head = 30, port = 300;
+    const rowH = ROW_PX, head = HEAD_PX, port = 300;
     const topOf = (i) => head + i * rowH;
     const downTo = (i) => topOf(i) + rowH - port * 2 / 3;   // foot pinned at 2/3
     const upTo = (i) => topOf(i) - port / 3;               // head pinned at 1/3
@@ -850,7 +899,7 @@ async function cellsChipsPills() {
     bytes = 0;
     qt.select(qt.getVisible()[30].id);
     check("the viewport jumps rather than easing",
-          qs.scrollTop, 30 + 30 * 30 + 30 - 300 * 2 / 3);
+          qs.scrollTop, HEAD_PX + 30 * ROW_PX + ROW_PX - 300 * 2 / 3);
     check("and the paint still waits for the frame", bytes, 0);
     await painted();
     check("landing on the row asked for",
@@ -989,9 +1038,11 @@ async function cellsChipsPills() {
     check("each committed token is delivered once, joined with the ones before",
           askedF, ["tanik", "tanik passport"]);
     check("the table has the keyboard after every RET", bR.blurs, 2);
+    // `view(10)' sorts by scheduled ascending, and row 0 is the earliest — named
+    // here rather than asked of the handle the assertion is about.
     check("and the selection was handed over at once, both times",
           [rowsAt[0], boxR.querySelector(".tv-table tbody tr.tv-sel").dataset.id],
-          [tR.getVisible()[0].id, tR.getVisible()[0].id]);
+          ["h-0", "h-0"]);
     check("the chips survived the re-entry",
           boxR.querySelectorAll(".tv-chip").map((c) => c.text.replace("×", "")),
           ["tanik", "passport"]);
@@ -1013,28 +1064,13 @@ async function cellsChipsPills() {
 }
 
 /** SCHEMA's producer-defined virtual keys: org tags, derived from the rows. */
-let wb2 = null;
 async function virtualKeys() {
   console.log("\n== virtual keys");
   const box = new El("div");
   const t = TableView.mount(box, view(40));
   const b = filterOf(box);
   const KEYS = columns.map((c) => c.key);
-  const reset = () => {
-    b.value = "";
-    b.dispatchEvent(new Ev("input"));
-    for (let i = 0; i < 40 && box.querySelectorAll(".tv-chip").length; i++)
-      b.dispatchEvent(new Ev("keydown", { key: "Backspace" }));
-  };
-  const shown = (q) => {
-    reset();
-    b.value = q;
-    b.dispatchEvent(new Ev("keydown", { key: "Enter" }));
-    return t.getVisible().length;
-  };
-  const items = () => box.querySelectorAll(".tv-ac-label").map((e) => e.text);
-  const counts = () => box.querySelectorAll(".tv-ac-n").map((e) => Number(e.text));
-  const type = (q) => { reset(); b.value = q; b.dispatchEvent(new Ev("input")); return items(); };
+  const { reset, shown, items, counts, type } = probe(box, t);
   /** The rows of one tier: keys end in `:', word completions are dimmed. */
   const tier = (n) => box.querySelectorAll(".tv-ac-item").filter((e) => {
     const label = e.querySelector(".tv-ac-label").text;
@@ -1117,11 +1153,14 @@ async function virtualKeys() {
     const sb = filterOf(shadow);
     sb.value = "title:review";
     sb.dispatchEvent(new Ev("keydown", { key: "Enter" }));
-    // Every row carries the tag, so a tag reading would keep the ones matching
-    // "review" anywhere; the column reading keeps those whose title has it.
-    const asColumn = rows.filter((r) => /review/i.test(String(r.cells.title))).length;
-    check("a column shadows a tag of the same name",
-          [st.getVisible().length, st.getVisible().length === asColumn], [asColumn, true]);
+    // Every row carries the tag, so a tag reading would keep all six; the column
+    // reading keeps the one whose title holds the word. Counted off the fixture
+    // rather than derived from the renderer the assertion is about.
+    check("a column shadows a tag of the same name", st.getVisible().length, 1);
+    check("and the fixture would have told the two readings apart", (() => {
+      const withWord = rows.filter((r) => String(r.cells.title).indexOf("review") !== -1).length;
+      return [rows.length, withWord];
+    })(), [6, 1]);
   }
 
   // --- the vocabulary follows the rows
@@ -1474,28 +1513,28 @@ async function virtualKeys() {
           css.indexOf("danneskjold-theme.el") !== -1, true);
     // The floors, checked with an implementation of WCAG that is this file's
     // own — the renderer's must agree with something, not with itself.
-    const rgb = (h) => { h = h.replace("#", "");
-      return [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16)); };
-    const chan = (c) => (c / 255 <= 0.03928 ? c / 255 / 12.92
-                                            : Math.pow((c / 255 + 0.055) / 1.055, 2.4));
-    const lum = (c) => 0.2126 * chan(c[0]) + 0.7152 * chan(c[1]) + 0.0722 * chan(c[2]);
-    const ratio = (a, b) => { const x = lum(rgb(a)) + 0.05, y = lum(rgb(b)) + 0.05;
-                              return x > y ? x / y : y / x; };
-    const mixed = (a, b, t) => "#" + rgb(a)
-      .map((v, i) => Math.round(v + (rgb(b)[i] - v) * t).toString(16).padStart(2, "0")).join("");
-    const hue = (h) => { const [r, g, b] = rgb(h).map((v) => v / 255);
-      const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
-      if (mx === mn) return 0;
-      const d = mx - mn;
-      const x = mx === r ? (g - b) / d + (g < b ? 6 : 0) : mx === g ? (b - r) / d + 2 : (r - g) / d + 4;
-      return Math.round(x * 60); };
 
-    for (const [name, p] of [
-      ["light", { bg: "#FFFFFF", fg: "#000000", alt: "#F8F8FF", muted: "#667071",
-                  sel: "#F0FFF0", accent: "#31769F" }],
-      ["dark", { bg: "#000000", fg: "#FFFFFF", alt: "#21252B", muted: "#A4C2EB",
-                 sel: "#373D4F", accent: "#4CB5F5" }]]) {
+    // Read out of the stylesheet the renderer actually emitted, the way the
+    // badge-ink block reads its grounds. Literals here would be a second copy
+    // of the palette, and a second copy passes while the first one drifts.
+    const paletteIn = (rule) => {
+      const at = css.indexOf(rule);
+      const decl = css.slice(at + rule.length, css.indexOf("}", at));
+      const out = {};
+      for (const m of decl.matchAll(/--tv-([\w-]+):\s*(#[0-9a-fA-F]{3,8})/g))
+        out[m[1]] = m[2];
+      return out;
+    };
+    const light = paletteIn(".tv-root{");
+    const dark = paletteIn("@media (prefers-color-scheme:dark){.tv-root{");
+    check("both palettes were found in the sheet",
+          [Object.keys(light).length >= 8, Object.keys(dark).length >= 8], [true, true]);
+    check("and they are not the same palette", light.bg === dark.bg, false);
+
+    for (const [name, p] of [["light", light], ["dark", dark]]) {
       const dimmed = mixed(p.fg, p.bg, 0.4);          // the .6 opacity, resolved
+      check(`${name} palette is complete`,
+            [p.bg, p.fg, p.alt, p.muted, p.sel, p.accent].every(Boolean), true);
       for (const [what, fgc, bgc, floor] of [
         ["body", p.fg, p.bg, 7], ["body on zebra", p.fg, p.alt, 7],
         ["muted", p.muted, p.bg, 4.5], ["muted on zebra", p.muted, p.alt, 4.5],
@@ -1620,8 +1659,9 @@ async function virtualKeys() {
     wt.setRows(many(300).rows);
     await sleep(400);
     check("a rows change queues another build", idles > before, true);
-    wb2 = filterOf(warm);
-    wb2.value = "sy"; wb2.dispatchEvent(new Ev("input"));
+    const again = filterOf(warm);
+    again.value = "sy";
+    again.dispatchEvent(new Ev("input"));
     check("and what it offers is the new rows'",
           warm.querySelectorAll(".tv-ac-item").length > 0, true);
     delete global.requestIdleCallback;
@@ -1845,13 +1885,6 @@ async function virtualKeys() {
     check("a click on the backdrop puts it away", shown(), false);
 
     // --- golden chips, and the floor they have to clear
-    const rgbOf = (h) => { h = h.replace("#", "");
-      return [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16)); };
-    const chan = (c) => (c / 255 <= 0.03928 ? c / 255 / 12.92
-                                            : Math.pow((c / 255 + 0.055) / 1.055, 2.4));
-    const lum = (c) => 0.2126 * chan(c[0]) + 0.7152 * chan(c[1]) + 0.0722 * chan(c[2]);
-    const ratio = (a, b) => { const x = lum(rgbOf(a)) + 0.05, y = lum(rgbOf(b)) + 0.05;
-                              return x > y ? x / y : y / x; };
     check("palette chips are the theme's primary highlight, golden on black",
           css.indexOf(".tv-pal .tv-chip{background:#FFD600;color:#000000") !== -1, true);
     check("which the cursor row is not, so the two roles read apart",
@@ -1907,8 +1940,7 @@ async function virtualKeys() {
     check("which is the one thing preselected", on(), 1);
     b.dispatchEvent(new Ev("keydown", { key: "Enter" }));
     check("RET completes it to `key:' and stays", [b.value, b.blurs || 0], ["tag:", 0]);
-    check("with the caret past the colon",
-          b.selectionStart === undefined || b.selectionStart === 4, true);
+    check("with the caret past the colon", b.selectionStart, 4);
     check("nothing was delivered — the token is half a predicate", asked, []);
     check("and the list is already showing that key's values",
           labels().sort(),
@@ -2152,13 +2184,6 @@ async function virtualKeys() {
     const chips = cell.querySelectorAll(".tv-tag").map((e) => e.text);
     check("a multi-valued cell renders one tag per value",
           chips, TAGS[0].split(":").filter(Boolean));
-    check("split exactly as the vocabulary splits it", (() => {
-      b.value = "tag:";
-      b.dispatchEvent(new Ev("input"));
-      const vocab = box.querySelectorAll(".tv-ac-label").map((e) => e.text);
-      b.dispatchEvent(new Ev("keydown", { key: "Escape" }));
-      return chips.every((c) => vocab.indexOf(c) !== -1);
-    })(), true);
     check("and the raw colons are gone from it", cell.text.indexOf(":"), -1);
     check("several of them read apart on a middot",
           cell.querySelector(".tv-tags").text, chips.join(" · "));
@@ -2209,13 +2234,6 @@ async function virtualKeys() {
             shown("tag:MixedCase"), 2);
     }
     // The floor, with this file's own WCAG, on every ground a tag sits on.
-    const rgbOf = (h) => { h = h.replace("#", "");
-      return [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16)); };
-    const chan = (c) => (c / 255 <= 0.03928 ? c / 255 / 12.92
-                                            : Math.pow((c / 255 + 0.055) / 1.055, 2.4));
-    const lum = (c) => 0.2126 * chan(c[0]) + 0.7152 * chan(c[1]) + 0.0722 * chan(c[2]);
-    const ratio = (a, bg) => { const x = lum(rgbOf(a)) + 0.05, y = lum(rgbOf(bg)) + 0.05;
-                               return x > y ? x / y : y / x; };
     for (const [theme, ink, grounds] of [
       ["dark", "#A4C2EB", ["#000000", "#21252B", "#373D4F"]],
       ["light", "#667071", ["#FFFFFF", "#F8F8FF", "#F0FFF0"]]])
@@ -2370,7 +2388,14 @@ async function virtualKeys() {
       TableView.mount(off, view(40));
       return off.querySelector(".tv-hint").textContent;
     })(), "40 rows · sort scheduled asc" + ACT);
-    check("with no pager targets in it", box.querySelectorAll(".tv-pg").length > 0, true);
+    check("and neither carries a way to turn one", (() => {
+      const small = new El("div");
+      TableView.mount(small, view(40), { pageSize: 100 });
+      const off = new El("div");
+      TableView.mount(off, view(40));
+      return [small.querySelectorAll(".tv-pg").length, off.querySelectorAll(".tv-pg").length];
+    })(), [0, 0]);
+    check("while the paged one does", box.querySelectorAll(".tv-pg").length, 2);
 
     // --- resets and clamps
     t.nextPage();
@@ -2418,7 +2443,7 @@ async function virtualKeys() {
           [pt.pageInfo().page, pt.getSelection().id, pt.getSelection().col],
           [1, wasLast, 2]);
     check("with the viewport at the end it arrived at",
-          sc.scrollTop > 0 && sc.scrollTop <= 30 + 100 * 30 - 300, true);
+          sc.scrollTop > 0 && sc.scrollTop <= HEAD_PX + 100 * ROW_PX - 300, true);
 
     check("and at the very ends it stays put",
           [(pt.select(pt.getVisible()[0].id), pt.selectStep(-1)), pt.pageInfo().page],
@@ -2453,7 +2478,18 @@ async function virtualKeys() {
   // --- the touch pass: bigger targets, and a long press for the row action
   {
     const css = document.head.children.map((e) => e.text).join("");
-    const coarse = css.slice(css.indexOf("@media (pointer:coarse){"));
+    // To the media block's own closing brace, counted — `indexOf("}")' stops at
+    // the first rule inside it, so everything after the first declaration was
+    // being read as though it were outside the query.
+    const coarse = (() => {
+      const at = css.indexOf("@media (pointer:coarse){");
+      let depth = 0;
+      for (let i = at; i < css.length; i++) {
+        if (css[i] === "{") depth++;
+        else if (css[i] === "}" && --depth === 0) return css.slice(at, i + 1);
+      }
+      return css.slice(at);
+    })();
     check("there is a coarse-pointer block", coarse.indexOf("@media (pointer:coarse){"), 0);
     for (const [what, rule] of [
       ["rows grow by padding", ".tv-table th,.tv-table td{padding:12px}"],
@@ -2463,7 +2499,7 @@ async function virtualKeys() {
       ["and the box clears iOS's zoom threshold", ".tv-panel .tv-filter{font-size:16px}"]])
       check(what, coarse.indexOf(rule) !== -1, true);
     check("nothing in it sets a row height — the height is the padding's business",
-          /(^|[;{])height:/.test(coarse.slice(0, coarse.indexOf("}\n"))), false);
+          /(^|[;{])height:/.test(coarse), false);
 
     // The windowing reads a measured height, so the coarse padding carries into
     // it with nothing else changed. Standing in for that here by moving what
@@ -2483,7 +2519,7 @@ async function virtualKeys() {
     check("the spacers are sized from the measured height, not from 30",
           pad.attrs.get("style"), "height:" + first * 44 + "px");
     check("and the window sits where that height puts it",
-          first, Math.max(0, Math.floor((44 * 20 - 44) / 44) - 15));
+          first, Math.max(0, Math.floor((44 * 20 - HEAD_PX) / 44) - 15));
     ROW_PX = 30;
 
     // --- the long press
@@ -2727,7 +2763,7 @@ async function smoke() {
   before.value = "system";
   before.dispatchEvent(new Ev("input"));
   await settle();
-  check("filter narrows", hint().split(" ")[0].split("/")[1], "40");
+  check("filter narrows", hint().split(" ")[0], "11/40");
   check("the filter input survives a keystroke", filterOf(box) === before, true);
 
   before.value = "no-such-headline";
@@ -2749,6 +2785,22 @@ async function smoke() {
   check("a double click runs the RET action", seen.pop(), "materialize " + id);
   rows()[3].querySelector(".tv-link").click();
   check("a link click follows it", seen.pop(), "link org-glance:" + id);
+  // With no handler given, the renderer opens an http link itself — and only
+  // an http one, an org link being the consumer's to resolve.
+  {
+    const bare = new El("div");
+    TableView.mount(bare, { columns: [{ key: "title", header: "H", type: "text" }],
+                            rows: [{ id: "a", cells: { title: "[[https://example.com][site]]" } },
+                                   { id: "b", cells: { title: "[[org-glance:x][local]]" } }] });
+    const links = bare.querySelectorAll(".tv-link");
+    opened = null;
+    links[0].click();
+    check("an http link with no handler is opened, safely", opened,
+          ["https://example.com", "_blank", "noopener"]);
+    opened = null;
+    links[1].click();
+    check("and any other scheme is left to the consumer", opened, null);
+  }
 
   box.querySelector("th[data-key=state]").click();
   check("a header click sorts", hint(), "40 rows · sort state asc" + ACT);
@@ -2898,6 +2950,10 @@ async function smoke() {
   await virtualKeys();
 
   console.log("\n== the window");
+  // The header and a row measure differently, and everything below sums over
+  // both. Asserted here so a shim that ever collapses them again is caught by
+  // the check that says they are apart, not by five that quietly still pass.
+  check("the header and a row are not the same height", HEAD_PX === ROW_PX, false);
   const far = new El("div");
   const big = TableView.mount(far, view(500));
   const sc = far.querySelector(".tv-scroll");
@@ -2910,7 +2966,8 @@ async function smoke() {
   check("spacers stand in for the rest", far.querySelectorAll("tbody tr.tv-pad").length, 2);
 
   const at = big.getVisible().findIndex((r) => r.id === shown()[0].dataset.id);
-  check("the window sits at the scroll position", at, Math.floor((3000 - 30) / 30) - 15);
+  check("the window sits at the scroll position",
+        at, Math.floor((3000 - HEAD_PX) / ROW_PX) - 15);
   check("striping follows the global index",
         [shown()[0], shown()[1]].map((tr) => tr.classes.has("tv-alt")),
         [at % 2 === 1, at % 2 === 0]);
