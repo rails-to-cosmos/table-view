@@ -452,7 +452,7 @@ ladder then ends one step further out:
 | **RET** | commit the token, dissolve, hand the table over |
 | **RET** on an empty box | dissolve and hand over |
 | **Escape** | close the list → drop the typed text → dissolve |
-| **Backspace** on an empty box | take a chip → … → dissolve |
+| **Backspace** on an empty box | take a chip → … → then nothing: it erases, and erasing is not leaving |
 | click on the backdrop | as Escape |
 
 The applied chips render in the theme's selection golden (black on `#FFD600`),

@@ -30,8 +30,11 @@ the rails-to-cosmos ELPA archive publishes date-stamped snapshots.
   80vw)`, hairline border, `z-index` 90/91 so a consumer's own modal at
   100+ still wins) holding the input and its completions. Every ladder
   ends one step further out: RET commits and dissolves, Escape goes list
-  → typed text → dissolve, Backspace goes chips → dissolve, and a click
-  on the backdrop is Escape. Applied chips render in the theme's
+  → typed text → dissolve, and a click on the backdrop is Escape.
+  Backspace walks the chips off and then stops — inside the palette a key
+  that erases is not the one that leaves, so an emptied box stays open
+  and focused however often it is pressed. On the page, where there is no
+  overlay to dismiss, Backspace still ends by handing the table over. Applied chips render in the theme's
   selection golden, black on `#FFD600`. It supersedes `omnibox`, which
   stays for consumers that want the control on the page.
 - Browser renderer: `omnibox: true` mount option — the filter becomes the

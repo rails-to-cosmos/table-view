@@ -138,8 +138,8 @@
  *   all — and `openFilter()' raises a centred overlay holding the control, the
  *   way a minibuffer or a Telescope prompt appears. Every ladder ends one step
  *   further out: RET commits and dissolves, Escape goes list, then text, then
- *   dissolve, Backspace goes chips then dissolve, and a click on the backdrop
- *   is Escape. The chips are the theme's selection golden, which is the
+ *   dissolve, and a click on the backdrop is Escape. Backspace walks the chips
+ *   off and then stops: it erases, and erasing is not leaving. The chips are the theme's selection golden, which is the
  *   association its own ivy and company faces make. It supersedes `omnibox',
  *   which stays for consumers that want the control resident.
  * - `omnibox: true' makes the filter the bar: no title, no placeholder, the
@@ -2123,9 +2123,13 @@
         // Nothing highlighted: the keys fall through to what they mean with no
         // list at all, so a typed word is still committed by Enter.
       }
-      // Backspace walks the query down: the browser eats characters while
-      // there are any, then this takes chips off one at a time, and with
-      // nothing left it hands the table over — the same gesture Enter ends on.
+      // Backspace walks the query down: the browser eats characters while there
+      // are any, then this takes chips off one at a time. Where it stops
+      // depends on what the box is. On the page it is the last rung of the
+      // same ladder Enter ends on, and hands the table over. In the palette it
+      // stops at the bottom and stays there: the box was summoned, and a key
+      // that erases should not be the one that dismisses it — leaving is
+      // RET's, Escape's or the backdrop's to say, all of which say it plainly.
       if (e.key === "Backspace" && !input.value) {
         e.preventDefault();
         e.stopPropagation();
@@ -2134,7 +2138,7 @@
         // decision, and a row of them should not vanish under a resting finger.
         if (e.repeat) return;
         if (chips.length) { chips.pop(); renderChips(); deliver(); }
-        else handOver();
+        else if (!palette) handOver();
         return;
       }
       if (e.key !== "Enter" && e.key !== "Escape") return;

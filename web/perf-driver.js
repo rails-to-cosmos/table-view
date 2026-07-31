@@ -1641,18 +1641,38 @@ async function virtualKeys() {
     pb.dispatchEvent(new Ev("keydown", { key: "Escape" }));
     check("the third dissolves it", shown(), false);
 
-    // --- the Backspace ladder ends there too
+    // --- the Backspace ladder stops at the bottom here, rather than leaving
     pt.openFilter();
     pb.value = "sync";
     pb.dispatchEvent(new Ev("keydown", { key: "Enter" }));
     await painted();
     pt.openFilter();
     check("two chips to walk off", chipsOf().length, 2);
+    const blurs = pb.blurs || 0;
     pb.dispatchEvent(new Ev("keydown", { key: "Backspace" }));
     pb.dispatchEvent(new Ev("keydown", { key: "Backspace" }));
     check("Backspace takes them, one press each", [chipsOf().length, shown()], [0, true]);
     pb.dispatchEvent(new Ev("keydown", { key: "Backspace" }));
-    check("and with none left it dissolves rather than merely blurring", shown(), false);
+    check("and with none left it does nothing at all — a key that erases is not"
+          + " the one that leaves",
+          [shown(), pb.focused, (pb.blurs || 0) - blurs], [true, true, 0]);
+    for (let i = 0; i < 4; i++) {
+      pb.dispatchEvent(new Ev("keydown", { key: "Backspace" }));
+      pb.dispatchEvent(new Ev("keydown", { key: "Backspace", repeat: true }));
+    }
+    check("however many times it is pressed, or held",
+          [shown(), pb.focused, chipsOf().length, (pb.blurs || 0) - blurs],
+          [true, true, 0, 0]);
+    check("and the query is still empty rather than something odd", pt.getQuery(), "");
+
+    // The ways out still work from exactly that state.
+    pb.dispatchEvent(new Ev("keydown", { key: "Escape" }));
+    check("Escape leaves from the emptied box", shown(), false);
+    pt.openFilter();
+    pb.dispatchEvent(new Ev("keydown", { key: "Backspace" }));
+    pb.dispatchEvent(new Ev("keydown", { key: "Enter" }));
+    await painted();
+    check("and so does RET", [shown(), pb.blurs > blurs], [false, true]);
 
     // --- clicking off is the Escape gesture
     pt.openFilter();
@@ -1930,7 +1950,8 @@ async function virtualKeys() {
     check("with the query emptied as they went", lt.getQuery(), "");
     back();
     await painted();
-    check("and with none left it hands the table over",
+    check("and with none left it hands the table over — the page's box has no"
+          + " further step to take",
           [lb.blurs - blurs, !!l.querySelector(".tv-table tbody tr.tv-sel")], [1, true]);
   }
 
