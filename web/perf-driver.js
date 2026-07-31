@@ -514,7 +514,11 @@ async function filterQuery() {
   b.dispatchEvent(new Ev("keydown", { key: "Escape" }));
   b.value = "system";
   b.dispatchEvent(new Ev("keydown", { key: "Enter" }));
-  check("Enter with the list closed still hands the table over",
+  check("Enter with the list closed and text typed commits and keeps the box",
+        [(b.blurs || 0) - blurs, b.value, box.querySelectorAll(".tv-chip").length],
+        [0, "", 1]);
+  b.dispatchEvent(new Ev("keydown", { key: "Enter" }));
+  check("Enter on the empty box is the one that hands the table over",
         [(b.blurs || 0) - blurs > 0,
          !!box.querySelector(".tv-table tbody tr.tv-sel")], [true, true]);
 }
@@ -642,6 +646,61 @@ async function cellsChipsPills() {
   check("a chip shows its token verbatim, quotes and negation and all",
         chipText(), ["tags:web", "-priority:A", '"two words"']);
 
+  // --- the flow the semantics exist for: type, RET, type, RET, RET.
+  // Each RET with text commits a token and leaves the keyboard in the box; the
+  // one on the empty box is the gesture that says the query is done.
+  {
+    const boxF = new El("div");
+    const tF = TableView.mount(boxF, view(40));
+    const bF = filterOf(boxF);
+    const sel = () => boxF.querySelector(".tv-table tbody tr.tv-sel");
+    const chipsOf = () => boxF.querySelectorAll(".tv-chip").map((c) => c.text.replace("×", ""));
+
+    bF.value = "review";
+    bF.dispatchEvent(new Ev("keydown", { key: "Enter" }));
+    check("the first token chips, and the box keeps the keyboard",
+          [chipsOf(), bF.value, bF.blurs || 0, sel()], [["review"], "", 0, null]);
+    bF.value = "sync";
+    bF.dispatchEvent(new Ev("keydown", { key: "Enter" }));
+    check("the second joins it, still without handing over",
+          [chipsOf(), bF.blurs || 0, sel()], [["review", "sync"], 0, null]);
+    const both = tF.getVisible().length;
+
+    // The same two tokens typed as one query filter identically.
+    const boxW = new El("div");
+    const tW = TableView.mount(boxW, view(40));
+    const bW = filterOf(boxW);
+    bW.value = "review sync";
+    bW.dispatchEvent(new Ev("keydown", { key: "Enter" }));
+    check("two tokens built up one RET at a time AND together",
+          [both > 0, both < 40, tW.getVisible().length], [true, true, both]);
+
+    bF.dispatchEvent(new Ev("keydown", { key: "Enter" }));
+    check("and the RET on the empty box hands the table over",
+          [bF.blurs, sel().dataset.id], [1, tF.getVisible()[0].id]);
+    check("with the filter still as it was chipped", tF.getVisible().length, both);
+  }
+
+  // --- the same flow remotely: exactly one delivery per committed token
+  {
+    const askedF = [];
+    const boxR = new El("div");
+    const tR = TableView.mount(boxR, view(10), { onFilter: (q) => askedF.push(q) });
+    const bR = filterOf(boxR);
+    bR.value = "tanik";
+    bR.dispatchEvent(new Ev("keydown", { key: "Enter" }));
+    bR.value = "passport";
+    bR.dispatchEvent(new Ev("keydown", { key: "Enter" }));
+    check("each committed token is delivered once, joined with the ones before",
+          askedF, ["tanik", "tanik passport"]);
+    check("and the box still has the keyboard", bR.blurs || 0, 0);
+    bR.dispatchEvent(new Ev("keydown", { key: "Enter" }));
+    check("the empty-box RET asks the producer nothing further", askedF.length, 2);
+    check("and hands over the rows it already has, rather than awaiting a reply",
+          [boxR.querySelector(".tv-table tbody tr.tv-sel").dataset.id, bR.blurs],
+          [tR.getVisible()[0].id, 1]);
+  }
+
   // --- remote mode gets the joined query
   const asked = [];
   const box4 = new El("div");
@@ -744,18 +803,19 @@ async function smoke() {
     rbox.value = "sys";
     rbox.dispatchEvent(new Ev("input"));          // debounce armed, not yet due
     rbox.dispatchEvent(new Ev("keydown", { key: "Enter" }));
+    const rSel = () => remote.querySelector(".tv-table tbody tr.tv-sel");
     check("Enter flushes onFilter at once", asked, ["sys"]);
-    check("and blurs the box", rbox.focused, false);
-    check("with no selection yet — the producer has not answered",
-          remote.querySelector(".tv-table tbody tr.tv-sel"), null);
+    check("and keeps the box, for the next token", rbox.blurs || 0, 0);
+    check("selecting nothing — the keyboard is still in the box", rSel(), null);
     await settle();
     check("and the pending debounce does not fire a second time", asked, ["sys"]);
     rt.setRows([makeRow(3), makeRow(4)]);          // the producer's answer
-    check("the answer hands the table the first row",
-          remote.querySelector(".tv-table tbody tr.tv-sel").dataset.id, "h-3");
-    rt.setRows([makeRow(5), makeRow(6)]);          // a later, unasked-for setRows
-    check("a later setRows does not move the selection again",
-          remote.querySelector(".tv-table tbody tr.tv-sel"), null);
+    check("the producer's answer selects nothing of its own accord", rSel(), null);
+    rbox.dispatchEvent(new Ev("keydown", { key: "Enter" }));   // the box is empty now
+    check("Enter on the empty box hands over at once, over the rows it has",
+          rSel().dataset.id, "h-3");
+    check("without asking the producer anything further", asked, ["sys"]);
+    check("and blurs", rbox.blurs, 1);
   }
 
   {
@@ -776,9 +836,8 @@ async function smoke() {
           narrowed.length > 0 && narrowed.length < 40, true);
     check("and the hint counts the narrowed set",
           kHint(), `${narrowed.length}/40 rows · sort scheduled asc` + ACT);
-    check("Enter blurs the filter box", kbox.focused, false);
-    check("and hands the table the first visible row",
-          kSel().dataset.id, narrowed[0].id);
+    check("Enter with something typed keeps the box", kbox.blurs || 0, 0);
+    check("and selects nothing — the query is still being built", kSel(), null);
     check("the key stops at the input", seenUp, []);
 
     // Enter committed the box, so the token is a chip and the box is empty.
@@ -786,20 +845,25 @@ async function smoke() {
           keyed.querySelectorAll(".tv-chip").map((c) => c.text), ["system×"]);
     check("and left the box empty", kbox.value, "");
 
+    kbox.dispatchEvent(new Ev("keydown", { key: "Enter" }));   // the done gesture
+    check("Enter on the empty box hands the table the first visible row",
+          kSel().dataset.id, narrowed[0].id);
+    check("and blurs", kbox.blurs, 1);
+
     const held = kSel().dataset.id;
     kbox.dispatchEvent(new Ev("keydown", { key: "Enter" }));
-    check("a second Enter keeps a selection that is still visible",
+    check("a further Enter keeps a selection that is still visible",
           kSel().dataset.id, held);
 
     // A row that survives the query, so "the selection stayed put" is visible
     // below rather than vacuously true.
     const survivor = narrowed[narrowed.length - 1].id;
 
+    const blurs = kbox.blurs;
     kbox.value = "half-typed";
     kbox.dispatchEvent(new Ev("keydown", { key: "Escape" }));
     check("Escape drops what is half-typed", kbox.value, "");
     check("and leaves the chips standing", kt.getVisible().length, narrowed.length);
-    const blurs = kbox.blurs;
     check("without blurring — there was something to drop", kbox.blurs - blurs, 0);
     kbox.dispatchEvent(new Ev("keydown", { key: "Escape" }));
     check("Escape on an empty box blurs instead", kbox.blurs - blurs, 1);
@@ -809,8 +873,9 @@ async function smoke() {
           [keyed.querySelectorAll(".tv-chip").length, kt.getVisible().length], [0, 40]);
 
     kbox.value = "no-such-headline";
-    kbox.dispatchEvent(new Ev("keydown", { key: "Enter" }));
-    check("Enter with nothing matching selects nothing", kSel(), null);
+    kbox.dispatchEvent(new Ev("keydown", { key: "Enter" }));   // chips it
+    kbox.dispatchEvent(new Ev("keydown", { key: "Enter" }));   // hands over
+    check("handing over with nothing matching selects nothing", kSel(), null);
     kbox.dispatchEvent(new Ev("keydown", { key: "Backspace" }));
 
     // Only Enter touches focus or the selection.

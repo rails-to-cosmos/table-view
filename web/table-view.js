@@ -77,15 +77,20 @@
  *   tokens something follows, so a word is never chipped out from under the
  *   caret. Backspace on an empty box takes the last chip off, a click takes any
  *   chip off, and `onFilter' is handed the whole query joined.
- * - Enter in the filter box, with no list open, commits it at once (cancelling
- *   the pending debounce, so the query is delivered exactly once), blurs the
- *   box, and puts the selection on the first visible row unless it is already
- *   on one — under `onFilter' that last step waits for the producer's
- *   `setRows'. Escape walks out one step at a time: it closes the list if one
- *   is open, else drops what is half-typed, else blurs. Both keys stop there
- *   rather than bubbling into a consumer's own keymap. Nothing else moves focus
- *   or the selection: a debounce firing on its own leaves both where the typist
- *   left them.
+ * - Enter means one of three things, and which one depends on what is open and
+ *   what is typed. With the suggestion list open it accepts a suggestion. With
+ *   the list closed and something typed it commits that token — cancelling the
+ *   pending debounce, so the query is delivered exactly once — and leaves the
+ *   keyboard in the box, because a query is built a token at a time. With the
+ *   list closed and the box empty it is the gesture that says the query is
+ *   done: the table takes the selection and the box gives up focus, and nothing
+ *   is delivered, the chips being applied already. So `/ tanik RET passport RET
+ *   RET' is two ANDed tokens and a selected row, with two queries sent.
+ * - Escape walks out one step at a time: it closes the list if one is open,
+ *   else drops what is half-typed, else blurs. Both keys stop there rather than
+ *   bubbling into a consumer's own keymap. Nothing else moves focus or the
+ *   selection: a debounce firing on its own leaves both where the typist left
+ *   them.
  *
  * Type-checked with `// @ts-check` + the JSDoc @typedefs below (no build step);
  * run `make web-check`.  The typedefs are the JS mirror of ../SCHEMA.md.
@@ -1262,9 +1267,6 @@
       deliver();                         // synchronous: Enter waits for no frame
     }
 
-    /** Set by Enter, consumed by the next `setRows'; see the keydown handler. */
-    let handOver = false;
-
     // Enter applies and hands the table over; Escape clears and steps out of
     // the box. Both are the input's own keys — they are stopped here rather
     // than left to bubble into a consumer's document-level keymap, the way a
@@ -1310,11 +1312,17 @@
         else input.blur();
         return;
       }
-      flushFilter(true);                // Enter commits the box whole
-      // Remote filtering answers later, with `setRows'; local filtering has
-      // already landed, so one of these two runs and the other is a no-op.
-      if (o.onFilter) handOver = true;
-      else selectFirstVisible();
+      // Enter means one of two things, and which one is what the box holds.
+      // With something typed it commits that token and stays put: the query is
+      // being built a token at a time and the next one is usually on its way.
+      if (input.value.trim()) { flushFilter(true); return; }
+      // With the box empty it is the gesture that says the query is done, so
+      // the table takes over. Nothing is delivered — the chips are already
+      // applied — unless typing was deleted and a debounce still owes the
+      // change, which is settled here rather than dropped.
+      input.value = "";                 // stray whitespace is nothing to commit
+      if (debounce) { clearTimeout(debounce); debounce = 0; deliver(); }
+      selectFirstVisible();
       input.blur();
     });
 
@@ -1387,10 +1395,6 @@
         clearTexts();
         dropSorted();
         renderRows(true);
-        // The answer to an Enter in the filter box: hand the table a selection,
-        // once. Streaming ops leave it alone — `setRows' is what a producer
-        // replies to a query with.
-        if (handOver) { handOver = false; selectFirstVisible(); }
       },
       /** @param {Row} row */
       upsertRow(row) {

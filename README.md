@@ -376,14 +376,27 @@ caret. **Backspace** on an empty box takes the last chip off, a click takes any
 chip off, and `onFilter` is handed the whole query joined — a producer never
 learns that chips exist.
 
-**Enter** with no list open commits the box at once — cancelling the pending
-debounce, so the query reaches the producer exactly once — blurs the box, and
-puts the selection on the first visible row unless it is already on one (under
-`onFilter`, that last step waits for the producer's `setRows`). **Escape** walks
-out one step at a time: it closes the list if one is open, else drops what is
-half-typed, else blurs. Both keys stop at the input rather than bubbling into a
-consumer's own keymap, and nothing else moves focus or the selection: a debounce
-firing on its own leaves both where the typist left them.
+**Enter** means one of three things, depending on what is open and what is
+typed:
+
+| state | Enter does |
+|-------|------------|
+| suggestion list open      | accept the highlighted suggestion |
+| list closed, box has text | commit that token to a chip, deliver the query once, **keep the keyboard in the box** |
+| list closed, box empty    | hand the table the selection and blur — the query is done, and nothing is delivered because the chips are already applied |
+
+So a query is built a token at a time and ends with one extra Enter:
+
+```
+/  tanik  RET  passport  RET  RET
+        └ chip ┘  └ chip ┘   └ focus to the table
+```
+
+— two ANDed tokens, two queries sent, and the selection on the first matching
+row. **Escape** walks out one step at a time: it closes the list if one is open,
+else drops what is half-typed, else blurs. Both keys stop at the input rather
+than bubbling into a consumer's own keymap, and nothing else moves focus or the
+selection: a debounce firing on its own leaves both where the typist left them.
 
 ## Development
 
