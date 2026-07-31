@@ -144,10 +144,10 @@ whitespace (`&` accepted as an alias); each token is:
 
 Predicates sharing one key OR together **when the field is single-valued**
 (`state:TODO state:DONE` = either state — AND would always be empty), and
-AND together **when the field is multi-valued** (`tags:a tags:b` = carries
+AND together **when the field is multi-valued** (`tag:a tag:b` = carries
 both, GitHub-label style; a column is multi-valued when its cells hold
 delimited value lists, e.g. org tags — producers and renderers must agree
-per column, `tags` being the canonical case). Distinct keys and free-text
+per column, glance's `tag` column being the canonical case). Distinct keys and free-text
 tokens AND. Negations AND regardless. Field-predicate semantics, by column type: `badge` —
 whole-value match, case-insensitive; a producer may add meta-values (e.g.
 glance's `state:active` / `state:inactive` matching keyword groups);
