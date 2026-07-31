@@ -331,9 +331,20 @@ Movement is smooth in two places. The selection marks **crossfade in place**
 loop that covers 30% of the remaining distance per frame and retargets, so a
 held key converges on the latest row instead of replaying a backlog. Any wheel,
 touch or drag cancels it, and `prefers-reduced-motion: reduce` turns off both.
+
+The ease keeps a **margin under the cursor**, like Emacs's `scroll-margin` or
+vim's `scrolloff`: moving down, the row's foot stops at two thirds of the
+viewport; moving up, its head stops at one third; between those the viewport
+holds still, so a held run follows one row at a time with the cursor pinned to
+the band edge. It clamps at both ends, where the cursor walks into the margin
+instead. A **click never scrolls** — the row is already under the pointer.
 `select()` returns at once and `getSelection()` is synchronous truth, but the
 painting it implies coalesces to one animation frame: a consumer holding `n`/`j`
 at ~30 calls a second costs one paint per frame rather than thirty.
+
+When the row under the selection goes — filtered away, deleted, paged past —
+the selection keeps its **place** rather than its id, staying at that visual
+index (clamped), so movement carries on from where the eye is.
 
 **Selection** is a row and, optionally, one cell of it. `select(id, 2)` stamps
 the third column's `td`; `select(id)` selects the whole row, which is what it
@@ -356,9 +367,13 @@ dot and writes the label, so one hue carries the whole thing in either scheme.
 It speaks [`SCHEMA.md`](SCHEMA.md)'s query micro-syntax: `key:value` field
 predicates — only where `key` names a column, so org text like `:work:` or
 `=code=` never becomes one by accident — plus `"quoted text"`, `-negation`, and
-free text for everything else. Predicates sharing a key **OR** together;
-distinct keys, free text and negations **AND**. So `state:TODO state:NEXT
--tags:done review` reads *either state, not done, mentioning review*.
+free text for everything else. Predicates sharing a key group by the field's
+**arity**: a single-valued field **ORs** (a row has one state), a multi-valued
+one **ANDs** (a row carries several tags). Distinct keys, free text and
+negations **AND**. So `state:TODO state:NEXT tag:web tag:api review` reads
+*either state, carrying both tags, mentioning review*. A column is multi-valued
+when its cells hold delimited lists (`:a:b:`) — decided by their shape, so the
+column may be called `tag`, `tags` or anything else.
 
 ```js
 TableView.parseQuery('state:TODO -tags:done', ["state", "tags"])
@@ -397,13 +412,33 @@ accept, **Escape** dismisses, a click accepts without taking focus. Only a
 column name starts highlighted — a tag name is often the word you were actually
 searching for — so Enter still commits the word as typed.
 
+**Tab** completes and stays; **Enter** completes and then commits, so picking a
+suggestion and running it is one keystroke. **C-n**/**C-p** move the list too,
+while it is open and the box has focus — the
+Emacs minibuffer and vim's insert-mode completion agree on those. Platform
+reality: Chrome-family browsers take C-n for a new window before the page sees
+it, so the arrows are the fallback there; Firefox and system-webview shells
+deliver both.
+
+Pass **`omnibox: true`** to make the filter the bar's centrepiece: the title and
+the placeholder go, the input takes the full width, and the applied chips move
+to a row of their own beneath it that collapses when empty. Without it the bar
+is exactly as it was.
+
+Pass **`initialQuery`** to restore a query rather than run one — it arrives as
+committed chips with the box empty and nothing delivered, which is what a
+consumer remounting after a reconnect or a `?q=` load wants. There is no other
+entry point for committed state, and stuffing `input.value` instead is what
+makes chips appear to vanish into the box.
+
 A committed token leaves the box and becomes a **chip** beside it. The query is
 always the chips and the box together — chips are where the finished tokens are
 kept, so the box holds only what is still being typed and a long query stops
 scrolling out of sight. Enter commits the box whole; a settling debounce commits
 only the tokens something follows, so a word is never chipped out from under the
 caret. **Backspace** walks the query down: characters first, then chips one at a time,
-and with nothing left it hands the table over. A click takes any chip off, and
+and with nothing left it hands the table over — one press per part, so holding
+it deletes what was typed and then stops at the first chip. A click takes any chip off, and
 `onFilter` is handed the whole query joined — a producer never learns that chips
 exist.
 

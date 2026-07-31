@@ -6,13 +6,49 @@ the rails-to-cosmos ELPA archive publishes date-stamped snapshots.
 ## Unreleased
 
 ### Added
+- Browser renderer: `omnibox: true` mount option — the filter becomes the
+  bar's centrepiece: no title, no placeholder, the input takes the full
+  width, and the applied chips move to a row of their own beneath it that
+  collapses to nothing when empty. Without it the bar is unchanged.
+- Browser renderer: `initialQuery` mount option — a query a consumer is
+  *restoring* rather than running. It arrives as committed chips with the
+  box empty and nothing delivered, so a remount after a reconnect or a
+  `?q=` load puts the filter back intact. Without it the only way in was
+  `input.value`, which left the existing chips looking as though they had
+  vanished into the box.
+- Browser renderer: both themes are now danneskjold's, and text roles are
+  held to WCAG floors — body 7:1, muted/hint/dimmed and chip/dropdown
+  text 4.5:1, selected-row text 7:1 — verified in the driver. Three
+  values are lightness-only adjustments of the theme's own (hue held):
+  light muted `#7F8C8D`→`#667071`, light accent `#4CB5F5`→`#31769F`.
+  Borders are exempt and stay hairlines: 1px, `#E3E6EA` light and
+  `#2a2d3d` dark.
+- Browser renderer: badge colours are made legible per theme. A
+  producer's hex is the badge's identity; the renderer darkens or
+  lightens it — hue held — until the pill's label clears 4.5:1 against
+  its own tint, and redraws when the theme flips.
+- Browser renderer: **C-n**/**C-p** move the suggestion list while it is
+  open and the filter has focus, alongside the arrows. Chrome-family
+  browsers take C-n for a new window before the page sees it, so the
+  arrows remain the fallback there; Firefox and webview shells deliver
+  both. With the list closed the keys are untouched. Tab completes and
+  stays in the box; Enter completes and then commits, so picking a
+  suggestion and running it is one keystroke and one delivery.
+- Browser renderer: a **danneskjold light palette**, mapped role for role
+  from the theme's own `light-*` block (`--tv-bg` #FFFFFF, `--tv-fg`
+  #000000, `--tv-alt` #F8F8FF, `--tv-border` #BDC3C7, `--tv-muted`
+  #7F8C8D, `--tv-sel` #FFD600, `--tv-accent` #4CB5F5) plus a new
+  `--tv-hover` role (#FAFAFA light). Dark is untouched.
 - Browser renderer: selection movement is smooth. The marks crossfade in
   place (80ms), and the viewport eases toward the row — one rAF loop that
   covers 30% of the remaining distance per frame and *retargets*, so a
   held movement key converges on the latest row instead of replaying a
   backlog. Any wheel, touch or drag cancels the ease, as does a rows,
   filter or sort change, and `prefers-reduced-motion: reduce` turns off
-  both the crossfade and the ease.
+  both the crossfade and the ease. The target keeps a margin under the
+  cursor (Emacs `scroll-margin` / vim `scrolloff`): down stops the row's
+  foot at two thirds of the viewport, up stops its head at one third,
+  clamping at both ends. A click never scrolls.
 - Browser renderer: `select()` paints on an animation frame. It updates
   the state and returns as before (`getSelection()` stays synchronous
   truth), but the window rewrite, marks and scroll it implies coalesce to
@@ -20,6 +56,20 @@ the rails-to-cosmos ELPA archive publishes date-stamped snapshots.
   second went from 117ms and 548KB of HTML per burst to 44ms and 274KB.
   Consumers reading `.tv-sel` from the DOM immediately after `select()`
   now see it on the next frame.
+- Browser renderer: same-key predicates group by the field's **arity** —
+  a single-valued field ORs (`state:TODO state:DONE` is either), a
+  multi-valued one ANDs (`tag:a tag:b` is a row carrying both,
+  GitHub-label style), and repeated virtual tag keys AND likewise. A
+  column counts as multi-valued when its cells hold delimited lists,
+  decided by their shape rather than by the column's name — so glance's
+  rename from `tags` to `tag` needed nothing here.
+- Browser renderer: the selection keeps its **place** when the row under
+  it goes. Filtered away, deleted or paged past, it stays at that visual
+  index (clamped to what is left) instead of vanishing, so the next
+  keypress carries on from where the eye is.
+- Browser renderer: Backspace's chip-strip and hand-over ignore key
+  repeat — one press, one part. Holding it deletes the typed characters
+  natively and then stops at the first chip.
 - Browser renderer: filter keys may be **virtual** — SCHEMA's
   producer-defined keys, derived here as org tags: every distinct tag in
   the `tags` column is a key, so `contact:tanik` is tagged `contact` and
@@ -31,8 +81,15 @@ the rails-to-cosmos ELPA archive publishes date-stamped snapshots.
   Past two characters, a prefix completes to whole title words paired
   with the tags their rows carry — `tan` offers `contact:tanik` with the
   rows behind it — so every offer is a query that finds something.
-  Backed by a lazily built sorted word index with per-word tag postings,
-  rebuilt with the text cache; prefix lookup is a binary search.
+  Backed by a sorted word index with per-word tag postings, built when the
+  rows settle rather than when someone types — 200ms of quiet then an idle
+  turn, re-queued by an edit burst, and built synchronously only if a
+  keystroke beats it. Prefix lookup is a binary search.
+- Browser renderer: domain-value completions match by **prefix** as well
+  as in full — `TOD` reaches `state:TODO`, `alberbl` reaches
+  `tags:alberblanc` (the tags column's values are the tags themselves).
+  Exact hits rank first and suppress the dimmed word completions; a
+  prefix-only hit is a guess like they are, so they stand together.
 - Browser renderer handle: `getQuery()` returns the filter query as last
   delivered, and `stripLastToken()` drops the typed text — else the last
   chip — and reapplies, returning whether anything went. For a consumer

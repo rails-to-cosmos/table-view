@@ -87,6 +87,7 @@ class Ev {
     this.type = type;
     this.detail = init && init.detail;
     this.key = init && init.key;
+    this.repeat = !!(init && init.repeat);
     this.target = null;
     this.defaultPrevented = false;
     this.propagationStopped = false;
@@ -255,6 +256,7 @@ global.CustomEvent = Ev;
 global.window = { open() {} };
 global.document = {
   head: new El("head"),
+  documentElement: new El("html"),
   createElement: (tag) => new El(tag),
 };
 
@@ -275,7 +277,7 @@ const columns = [
     badges: STATES.map((v, i) => ({ value: v, color: ["#e0af68", "#ff9e64", "#f7768e", "#9ece6a", "#73daca"][i] })) },
   { key: "priority", header: "Pri", type: "text", sortable: true, values: PRI },
   { key: "title", header: "Headline", type: "text" },
-  { key: "tags", header: "Tags", type: "text" },
+  { key: "tag", header: "Tags", type: "text" },
   { key: "scheduled", header: "Scheduled", type: "text", sortable: true },
   { key: "deadline", header: "Deadline", type: "text", sortable: true },
 ];
@@ -289,7 +291,7 @@ function makeRow(i) {
     state: STATES[i % STATES.length],
     priority: PRI[i % PRI.length],
     title: `[[org-glance:h-${i}][${words} ${i}]]`,
-    tags: TAGS[i % TAGS.length],
+    tag: TAGS[i % TAGS.length],
     scheduled: `2026-${pad(month)}-${pad(day)} ${pad(i % 24)}:00`,
     deadline: i % 4 ? "" : `2026-${pad(month)}-${pad(day)}`,
   } };
@@ -447,13 +449,13 @@ async function filterQuery() {
   check("a key with nothing typed after it narrows nothing",
         [shown("state:"), shown("title:"), shown("deadline:")], [40, 40, 40]);
   check("negation excludes", shown("-state:DONE"), 32);
-  check("tokens AND together", shown("state:DONE tags:web"), 3);
+  check("tokens AND together", shown("state:DONE tag:web"), 3);
   // SCHEMA: predicates sharing one key OR, distinct keys AND, negations AND.
   const done = shown("state:DONE"), next = shown("state:NEXT");
   check("predicates sharing a key OR together", shown("state:DONE state:NEXT"), done + next);
   check("three of them too", shown("state:DONE state:NEXT state:TODO"), done + next + 8);
   check("distinct keys still AND across the OR groups",
-        shown("state:DONE state:NEXT tags:web"), 6);
+        shown("state:DONE state:NEXT tag:web"), 6);
   check("free text ANDs with an OR group",
         shown("state:DONE state:NEXT system") < done + next, true);
   check("a negation ANDs rather than joining its key's group",
@@ -488,8 +490,8 @@ async function filterQuery() {
   check("key: offers the badge palette", type("state:"), STATES);
   check("and the prefix narrows it", type("state:d"), ["DONE"]);
   check("a declared values list wins", type("priority:"), PRI);
-  check("a column with neither is the distinct cell values",
-        type("tags:").sort(), TAGS.slice().sort());
+  check("the tag column's values are the tags themselves, not the cells",
+        type("tag:").sort(), ["daemon", "emacs", "glance", "ops", "read", "system", "web"]);
   check("the list is capped", type("title:").length <= 12, true);
 
   // Value counts: how many rows stand behind each suggestion.
@@ -504,7 +506,7 @@ async function filterQuery() {
         counts().reduce((a, b) => a + b, 0), 10);
   // The cache is thrown away with the text cache, so an edit is reflected.
   q.upsertRow({ id: "h-0", cells: { state: "DONE", priority: "A", title: "moved",
-                                    tags: ":web:", scheduled: "2026-01-01 00:00",
+                                    tag: ":web:", scheduled: "2026-01-01 00:00",
                                     deadline: "" } });
   type("state:");
   check("an upsert invalidates the counts", counts(), [7, 8, 8, 8, 9]);
@@ -513,11 +515,12 @@ async function filterQuery() {
   check("and putting it back restores them", counts(), [8, 8, 8, 8, 8]);
 
   // Accept mechanics.
+  // Tab completes and stays; Enter completes and goes.
   const b = filterOf(box);
   type("sta");
   const held = b.blurs || 0;
-  b.dispatchEvent(new Ev("keydown", { key: "Enter" }));
-  check("Enter on a key suggestion completes to key:", b.value, "state:");
+  b.dispatchEvent(new Ev("keydown", { key: "Tab" }));
+  check("Tab on a key suggestion completes to key:", b.value, "state:");
   check("and stays in the box for the value", (b.blurs || 0) - held, 0);
   check("and the list moves to the value stage", items(), STATES);
   b.dispatchEvent(new Ev("keydown", { key: "ArrowDown" }));
@@ -527,11 +530,11 @@ async function filterQuery() {
   check("and the list closes once the token is finished", items(), []);
 
   type("state:DONE tit");
-  b.dispatchEvent(new Ev("keydown", { key: "Enter" }));
+  b.dispatchEvent(new Ev("keydown", { key: "Tab" }));
   check("accepting replaces the caret's token and keeps the rest",
         b.value, "state:DONE title:");
   type("-sta");
-  b.dispatchEvent(new Ev("keydown", { key: "Enter" }));
+  b.dispatchEvent(new Ev("keydown", { key: "Tab" }));
   check("a negated token keeps its -", b.value, "-state:");
 
   // Precedence: the list gets Enter and Esc first.
@@ -542,19 +545,24 @@ async function filterQuery() {
   b.dispatchEvent(new Ev("keydown", { key: "Escape" }));
   check("the second Escape clears the box", b.value, "");
 
-  type("sta");
+  // Enter with a list open is one gesture: complete, commit, hand over.
+  type("state:DO");
   const blurs = b.blurs || 0;
   b.dispatchEvent(new Ev("keydown", { key: "Enter" }));
-  check("Enter with the list open accepts rather than handing over focus",
-        [(b.blurs || 0) - blurs, b.value], [0, "state:"]);
-  b.dispatchEvent(new Ev("keydown", { key: "Escape" }));
-  b.dispatchEvent(new Ev("keydown", { key: "Escape" }));
+  await painted();
+  check("Enter with the list open completes and then goes",
+        [box.querySelectorAll(".tv-chip").map((c) => c.text.replace("×", "")),
+         b.value, (b.blurs || 0) - blurs, items().length],
+        [["state:DONE"], "", 1, 0]);
+  check("and the table has it", !!box.querySelector(".tv-table tbody tr.tv-sel"), true);
+  reset();
   b.value = "system";
+  const blurs2 = b.blurs || 0;
   b.dispatchEvent(new Ev("keydown", { key: "Enter" }));
   await painted();
   check("Enter with the list closed commits the token and hands the table over",
-        [(b.blurs || 0) - blurs, b.value, box.querySelectorAll(".tv-chip").length,
-         !!box.querySelector(".tv-table tbody tr.tv-sel")], [1, "", 1, true]);
+        [(b.blurs || 0) - blurs2, b.value, box.querySelectorAll(".tv-chip").length > 0,
+         !!box.querySelector(".tv-table tbody tr.tv-sel")], [1, "", true, true]);
 }
 
 /** Cell-level selection, the action legend, chips and badge pills. */
@@ -630,7 +638,12 @@ async function cellsChipsPills() {
     check("and the state is already the last of them",
           t.getSelection().id, ids[ids.length - 1]);
     await painted();
-    check("the frame paints once", bytes > 0 && bytes < 3 * 18128, true);
+    // A move that leaves the window where it is writes no HTML at all: the
+    // marks are re-stamped on the trs already there, which is what gives them
+    // something to crossfade between.
+    // Thirty per-event paints would be thirty windows; the ease writes one per
+    // frame it travels, and a move that does not shift the window writes none.
+    check("far fewer windows than there were calls", bytes < 10 * 18128, true);
     check("landing on the row the last call asked for",
           box.querySelector(".tv-table tbody tr.tv-sel").dataset.id, ids[ids.length - 1]);
   }
@@ -658,38 +671,71 @@ async function cellsChipsPills() {
           [false, t.getVisible()[3].id]);
   }
 
-  // --- the viewport ease: one loop, retargeting, snapping, cancellable
+  // --- the viewport ease: scroll-margin targeting, one retargeting loop
   {
     const sc = box.querySelector(".tv-scroll");
     sc.clientHeight = 300;                        // ten rows on screen
-    sc.scrollTop = 0;
-    const rowH = 30, head = 30;
-    const target = (i) => head + i * rowH + rowH - 300;   // block-nearest, downward
-    /** Is row I clear of the sticky header and inside the port at scroll TOP? */
-    const inView = (i, top) =>
-      head + i * rowH >= top + head - 0.5 && head + i * rowH + rowH <= top + 300 + 0.5;
+    const rowH = 30, head = 30, port = 300;
+    const topOf = (i) => head + i * rowH;
+    const downTo = (i) => topOf(i) + rowH - port * 2 / 3;   // foot pinned at 2/3
+    const upTo = (i) => topOf(i) - port / 3;               // head pinned at 1/3
+    const most = () => Math.max(0, head + t.getVisible().length * rowH - port);
 
-    t.select(t.getVisible()[30].id);
-    check("the ease does not land in one go", sc.scrollTop, 0);
+    sc.scrollTop = 0;
+    t.select(t.getVisible()[0].id);
     await sleep(300);
-    check("it converges on the block-nearest target", sc.scrollTop, target(30));
-    check("and snaps rather than creeping",
-          Number.isInteger(sc.scrollTop) || Math.abs(sc.scrollTop - target(30)) < 0.5, true);
+    t.select(t.getVisible()[20].id);
+    check("moving down does not land in one go", sc.scrollTop < downTo(20), true);
+    await sleep(400);
+    check("it stops with the row's foot at two thirds", sc.scrollTop, downTo(20));
 
-    // Retargeting: a second move mid-flight changes where the one loop is
-    // heading; it must end at the second target, not the first.
+    t.select(t.getVisible()[8].id);
+    await sleep(400);
+    check("moving up stops with the row's head at one third", sc.scrollTop, upTo(8));
+
+    // Inside the band the viewport holds still.
+    const held = sc.scrollTop;
+    t.select(t.getVisible()[9].id);
+    await sleep(300);
+    check("a step that stays inside the band moves nothing", sc.scrollTop, held);
+
+    // A held run pins the cursor to the band edge: one row of scroll per row.
+    t.select(t.getVisible()[20].id);
+    await sleep(400);
+    const a = sc.scrollTop;
+    t.select(t.getVisible()[21].id);
+    await sleep(400);
+    const b = sc.scrollTop;
+    t.select(t.getVisible()[22].id);
+    await sleep(400);
+    check("and a run down moves exactly one row at a time",
+          [b - a, sc.scrollTop - b], [rowH, rowH]);
+
+    // The ends: the cursor walks into the margin rather than the view running on.
+    t.select(t.getVisible()[0].id);
+    await sleep(500);
+    check("at the top it clamps to zero", sc.scrollTop, 0);
+    t.select(t.getVisible()[39].id);
+    await sleep(600);
+    check("and at the bottom to the last screenful", sc.scrollTop, most());
+
+    // Retargeting: a second move mid-flight changes where the one loop heads.
     sc.scrollTop = 0;
+    t.select(t.getVisible()[0].id);
+    await sleep(300);
     t.select(t.getVisible()[30].id);
     await sleep(20);
     const midway = sc.scrollTop;
     t.select(t.getVisible()[20].id);
-    await sleep(300);
+    await sleep(400);
+    // Retargeting upward, so the new aim is the upward rule's.
     check("a move mid-ease retargets the same loop",
-          [midway > 0 && midway < target(30), sc.scrollTop !== target(30),
-           inView(20, sc.scrollTop)], [true, true, true]);
+          [midway > 0 && midway < downTo(30), sc.scrollTop], [true, upTo(20)]);
 
     // The user outranks it.
     sc.scrollTop = 0;
+    t.select(t.getVisible()[0].id);
+    await sleep(300);
     t.select(t.getVisible()[35].id);
     await sleep(20);
     sc.dispatchEvent(new Ev("wheel"));
@@ -704,6 +750,17 @@ async function cellsChipsPills() {
     t.setRows(view(40).rows);
     await sleep(300);
     check("and a rows change cancels it too", sc.scrollTop, 0);
+
+    // A click is already looking at its row: it must not yank the viewport.
+    t.select(t.getVisible()[20].id);
+    await sleep(400);
+    const parked = sc.scrollTop;
+    const visible = box.querySelectorAll(".tv-table tbody tr[data-id]");
+    const clicked = visible[visible.length - 1];
+    clicked.children[1].dispatchEvent(new Ev("click"));
+    await sleep(300);
+    check("a click selects without scrolling",
+          [sc.scrollTop, t.getSelection().id], [parked, clicked.dataset.id]);
     sc.clientHeight = 600;
   }
 
@@ -719,7 +776,8 @@ async function cellsChipsPills() {
           quiet.querySelector(".tv-root").classes.has("tv-calm"), true);
     bytes = 0;
     qt.select(qt.getVisible()[30].id);
-    check("the viewport jumps rather than easing", qs.scrollTop, 30 + 30 * 30 + 30 - 300);
+    check("the viewport jumps rather than easing",
+          qs.scrollTop, 30 + 30 * 30 + 30 - 300 * 2 / 3);
     check("and the paint still waits for the frame", bytes, 0);
     await painted();
     check("landing on the row asked for",
@@ -760,8 +818,8 @@ async function cellsChipsPills() {
   commit("state:DONE");
   check("Enter moves the token out of the box and into a chip",
         [chipText(), b2.value], [["state:DONE"], ""]);
-  commit("tags:web");
-  check("a second commit adds a second chip", chipText(), ["state:DONE", "tags:web"]);
+  commit("tag:web");
+  check("a second commit adds a second chip", chipText(), ["state:DONE", "tag:web"]);
   check("and the two AND together", t2.getVisible().length, 3);
   b2.value = "2026";                       // every row's scheduled date starts here
   b2.dispatchEvent(new Ev("input"));
@@ -772,13 +830,13 @@ async function cellsChipsPills() {
         [composed > 0, composed <= 3], [true, true]);
   b2.dispatchEvent(new Ev("keydown", { key: "Enter" }));
   check("chips and box compose into one query", chipText(),
-        ["state:DONE", "tags:web", "2026"]);
+        ["state:DONE", "tag:web", "2026"]);
 
   // The same query typed whole must filter identically — chips are display.
   const box3 = new El("div");
   const t3 = TableView.mount(box3, view(40));
   const b3 = filterOf(box3);
-  b3.value = "state:DONE tags:web 2026";
+  b3.value = "state:DONE tag:web 2026";
   b3.dispatchEvent(new Ev("keydown", { key: "Enter" }));
   check("a query split into chips filters as the same query typed whole",
         t3.getVisible().length, composed);
@@ -786,15 +844,15 @@ async function cellsChipsPills() {
 
   b2.dispatchEvent(new Ev("keydown", { key: "Backspace" }));
   check("Backspace on an empty box strips the last chip",
-        chipText(), ["state:DONE", "tags:web"]);
+        chipText(), ["state:DONE", "tag:web"]);
   const mid = box2.querySelectorAll(".tv-chip")[0];
   mid.dispatchEvent(new Ev("click"));
-  check("a chip click removes that one", chipText(), ["tags:web"]);
+  check("a chip click removes that one", chipText(), ["tag:web"]);
   check("and reapplies what is left", t2.getVisible().length, 13);
 
   commit('-priority:A "two words"');
   check("a chip shows its token verbatim, quotes and negation and all",
-        chipText(), ["tags:web", "-priority:A", '"two words"']);
+        chipText(), ["tag:web", "-priority:A", '"two words"']);
 
   // --- the flow the semantics exist for: `/ tanik RET / passport RET'.
   // Every RET commits what is typed and returns to the table; a longer query is
@@ -882,6 +940,7 @@ async function cellsChipsPills() {
 }
 
 /** SCHEMA's producer-defined virtual keys: org tags, derived from the rows. */
+let wb2 = null;
 async function virtualKeys() {
   console.log("\n== virtual keys");
   const box = new El("div");
@@ -903,6 +962,13 @@ async function virtualKeys() {
   const items = () => box.querySelectorAll(".tv-ac-label").map((e) => e.text);
   const counts = () => box.querySelectorAll(".tv-ac-n").map((e) => Number(e.text));
   const type = (q) => { reset(); b.value = q; b.dispatchEvent(new Ev("input")); return items(); };
+  /** The rows of one tier: keys end in `:', word completions are dimmed. */
+  const tier = (n) => box.querySelectorAll(".tv-ac-item").filter((e) => {
+    const label = e.querySelector(".tv-ac-label").text;
+    if (n === 1) return label.endsWith(":");
+    return n === 3 ? e.classes.has("tv-ac-dim")
+                   : !label.endsWith(":") && !e.classes.has("tv-ac-dim");
+  }).map((e) => e.querySelector(".tv-ac-label").text);
 
   // --- the vocabulary
   // The fixture tags rows `:web:glance:', `:emacs:', `:ops:system:', `:read:',
@@ -927,22 +993,53 @@ async function virtualKeys() {
   check("whole-tag matching — a prefix of a tag is not that tag", shown("gla:"), 0);
   check("tag and text AND together", shown("glance:review") < glance, true);
   check("the same query typed against the tag column agrees",
-        shown("glance:review"), shown("tags:glance review"));
+        shown("glance:review"), shown("tag:glance review"));
   check("negation is the rows without the tag", shown("-web:"), 40 - web);
   {
+    // SCHEMA splits same-key grouping by arity. A row carries several tags at
+    // once, so repeating a tag key means all of them; a row has one state, so
+    // repeating that key means either.
     const ids = (q) => { shown(q); return t.getVisible().map((r) => r.id).sort(); };
     const a = ids("glance:review"), b = ids("glance:sync");
+    const both = a.filter((x) => b.indexOf(x) !== -1);
     const union = Array.from(new Set(a.concat(b))).sort();
-    check("tag keys OR when they share a name", ids("glance:review glance:sync"), union);
-    check("and the terms overlap, so a sum would have been the wrong oracle",
-          union.length < a.length + b.length, true);
+    check("repeated virtual tag keys AND — the row carries each",
+          ids("glance:review glance:sync"), both);
+    check("which is narrower than the union they would have made",
+          [both.length > 0, both.length < union.length], [true, true]);
+
+    const web = ids("tag:web"), glance = ids("tag:glance");
+    const carries = web.filter((x) => glance.indexOf(x) !== -1);
+    check("the multi-valued column ANDs within its key too",
+          ids("tag:web tag:glance"), carries);
+    check("and that is an intersection, not a union",
+          [carries.length > 0, carries.length < web.length + glance.length], [true, true]);
+
+    const todo = ids("state:TODO"), done = ids("state:DONE");
+    check("a single-valued key still ORs — a row has one state",
+          ids("state:TODO state:DONE"),
+          Array.from(new Set(todo.concat(done))).sort());
+
+    // One query with both shapes, plus free text, plus a negation.
+    const mixed = ids("state:TODO state:DONE tag:web tag:glance 2026 -priority:C");
+    const byHand = t.getRows().filter((r) => {
+      const c = r.cells, tags = String(c.tag).split(":").filter(Boolean);
+      return (c.state === "TODO" || c.state === "DONE")
+          && tags.indexOf("web") !== -1 && tags.indexOf("glance") !== -1
+          && JSON.stringify(c).indexOf("2026") !== -1
+          && c.priority !== "C";
+    }).map((r) => r.id).sort();
+    check("a mixed query composes both groupings, the text and the negation",
+          [mixed, mixed.length > 0], [byHand, true]);
+    check("negation is unchanged by any of it",
+          ids("-tag:web").length, 40 - web.length);
   }
   check("and AND across different tags", shown("web:glance:") <= Math.min(web, glance), true);
 
   // --- columns shadow tags on collision
   {
     const shadow = new El("div");
-    const rows = view(6).rows.map((r) => ({ id: r.id, cells: { ...r.cells, tags: ":title:" } }));
+    const rows = view(6).rows.map((r) => ({ id: r.id, cells: { ...r.cells, tag: ":title:" } }));
     const st = TableView.mount(shadow, { columns, rows });
     const sb = filterOf(shadow);
     sb.value = "title:review";
@@ -963,37 +1060,44 @@ async function virtualKeys() {
   // --- scoped suggestions
   // A prefix completes to whole title words, scoped to the tags they sit under.
   reset();
-  const offered = type("sy").filter((x) => !x.endsWith(":"));
+  type("sy");
+  const offered = tier(3);
   check("a bare word completes to title words, scoped by tag", offered.length > 0, true);
   check("each a tag and a whole word, not the fragment typed",
         offered.every((x) => /^[^:]+:sy.+/.test(x) && !x.endsWith(":sy")), true);
   check("no more than five of them", offered.length <= 5, true);
-  check("counts descend", (() => {
-    const n = counts().slice(-offered.length);
-    return n.every((v, i, a) => v > 0 && (i === 0 || a[i - 1] >= v));
-  })(), true);
   check("and every one of them matches something — the invariant of completing",
         offered.every((x) => shown(x) > 0), true);
-  const scoped = type("sy").filter((x) => !x.endsWith(":"));
-  check("they are dimmed — a word count is not a value match",
-        box.querySelectorAll(".tv-ac-dim").length, scoped.length);
   check("a prefix inside a word is not a completion of it",
-        type("yst").filter((x) => !x.endsWith(":")).length, 0);
+        (type("yst"), tier(3).length), 0);
   check("and two characters are the least that completes anything",
-        type("s").filter((x) => !x.endsWith(":")).length, 0);
+        (type("s"), tier(3).length), 0);
   check("keys come before the scoped completions",
         (() => { const l = type("sy"); const k = l.filter((x) => x.endsWith(":")).length;
                  return l.slice(0, k).every((x) => x.endsWith(":")); })(), true);
 
-  // Exact beats fuzzy: a word that IS a value of some column says so, and the
-  // scoped guesses go entirely rather than crowding it.
-  const exact = type("TODO");
-  check("a word that names a column value completes to it", exact, ["state:TODO"]);
-  check("with the rows behind it", counts(), [Math.round(40 / 5)]);
-  check("and nothing fuzzy beside it", box.querySelectorAll(".tv-ac-dim").length, 0);
-  check("the exact row is not dimmed either",
+  // Tier 2: values a column has, reached by prefix as well as in full.
+  type("TODO");
+  check("a word that names a column value completes to it", tier(2), ["state:TODO"]);
+  check("with the rows behind it", counts()[0], Math.round(40 / 5));
+  check("an exact value suppresses the word completions", tier(3).length, 0);
+  check("and is not dimmed itself",
         box.querySelectorAll(".tv-ac-item")[0].classes.has("tv-ac-dim"), false);
-  check("a value of a declared list counts too", type("A"), ["priority:A"]);
+  check("a value of a declared list counts too", (type("A"), tier(2)), ["priority:A"]);
+
+  type("TOD");
+  check("a prefix of a value reaches it too", tier(2), ["state:TODO"]);
+  type("sy");
+  check("but a prefix is a guess, so the word completions stand beside it",
+        [tier(2).indexOf("tag:system") !== -1, tier(3).length > 0], [true, true]);
+  type("we");
+  check("the tag column answers by prefix as well", tier(2).indexOf("tag:web") !== -1, true);
+  check("and the tag's own key row comes first, being a different token",
+        (() => { const l = items(); return l.indexOf("web:") !== -1
+                                         && l.indexOf("web:") < l.indexOf("tag:web"); })(), true);
+  type("d");
+  check("a one-letter prefix still reaches values — only tier three waits",
+        tier(2).length > 0, true);
   type("sync");
   check("nothing is preselected when only tags are offered — Enter commits the word",
         [items().every((x) => !x.endsWith(":")),
@@ -1009,8 +1113,8 @@ async function virtualKeys() {
   b.dispatchEvent(new Ev("keydown", { key: "ArrowDown" }));
   check("an arrow steps into the offers", box.querySelectorAll(".tv-ac-on").length, 1);
   const first = items()[0];
-  b.dispatchEvent(new Ev("keydown", { key: "Enter" }));
-  check("accepting a key completion leaves the value to type", b.value, first);
+  b.dispatchEvent(new Ev("keydown", { key: "Tab" }));
+  check("Tab on a key completion leaves the value to type", b.value, first);
   check("and a virtual key offers no value list", items(), []);
 
   // A tag name is a key like any other: its prefix completes to `tag:'.
@@ -1026,8 +1130,8 @@ async function virtualKeys() {
   b.value = "sys";
   b.dispatchEvent(new Ev("input"));
   b.dispatchEvent(new Ev("keydown", { key: "ArrowDown" }));
-  b.dispatchEvent(new Ev("keydown", { key: "Enter" }));
-  check("accepting it lands the key with the caret past the colon", b.value, "system:");
+  b.dispatchEvent(new Ev("keydown", { key: "Tab" }));
+  check("Tab lands the key with the caret past the colon", b.value, "system:");
   b.value = "system:sy";
   b.dispatchEvent(new Ev("input"));
   b.dispatchEvent(new Ev("keydown", { key: "Enter" }));
@@ -1038,13 +1142,14 @@ async function virtualKeys() {
   {
     const own = [
       { key: "title", header: "Headline", type: "text" },
-      { key: "tags", header: "Tags", type: "text" },
+      { key: "tag", header: "Tags", type: "text" },
     ];
     const rows = [
-      { id: "a", cells: { title: "call tanik about the lease", tags: ":contact:" } },
-      { id: "b", cells: { title: "tanik sent the passport scan", tags: ":contact:doc:" } },
-      { id: "c", cells: { title: "tangent worth chasing", tags: ":idea:" } },
-      { id: "d", cells: { title: "nothing to complete here", tags: ":idea:" } },
+      { id: "a", cells: { title: "call tanik about the lease", tag: ":contact:alberblanc:" } },
+      { id: "b", cells: { title: "tanik sent the passport scan", tag: ":contact:doc:" } },
+      { id: "c", cells: { title: "tangent worth chasing", tag: ":idea:" } },
+      { id: "d", cells: { title: "nothing to complete here", tag: ":idea:book:" } },
+      { id: "e", cells: { title: "bookmark the alberblanc thread", tag: ":book:" } },
     ];
     const cbox = new El("div");
     const ct = TableView.mount(cbox, { columns: own, rows });
@@ -1060,9 +1165,9 @@ async function virtualKeys() {
           list.indexOf("contact:tanik") !== -1, true);
     check("counting the rows tagged contact whose title has it",
           nums()[list.indexOf("contact:tanik")], 2);
-    check("the other tag's word comes too, and they are ordered by count",
+    check("every tag the word sits under comes too",
           list.filter((x) => x.indexOf(":tan") !== -1).sort(),
-          ["contact:tanik", "doc:tanik", "idea:tangent"]);
+          ["alberblanc:tanik", "contact:tanik", "doc:tanik", "idea:tangent"]);
     check("each is a whole word, never the fragment",
           list.every((x) => !x.endsWith(":tan")), true);
     check("and each one, run, finds the rows it was counted from",
@@ -1071,6 +1176,335 @@ async function virtualKeys() {
             cb.dispatchEvent(new Ev("keydown", { key: "Enter" }));
             return ct.getVisible().length;
           })(), 2);
+
+    // The amendment's own case: a prefix of a tag reaches it through the tags
+    // column, and the tag's key row stands beside it as a different token.
+    const dim = () => cbox.querySelectorAll(".tv-ac-item")
+      .filter((e) => e.classes.has("tv-ac-dim"))
+      .map((e) => e.querySelector(".tv-ac-label").text);
+    const plain = () => cbox.querySelectorAll(".tv-ac-item")
+      .filter((e) => !e.classes.has("tv-ac-dim"))
+      .map((e) => e.querySelector(".tv-ac-label").text);
+    cb.value = "";
+    cb.dispatchEvent(new Ev("input"));
+    const partial = offer("alberbl");
+    check("a prefix of a tag completes to it through the tag column",
+          partial.indexOf("tag:alberblanc") !== -1, true);
+    check("with the tag's key row beside it, keys first",
+          [partial.indexOf("alberblanc:") !== -1,
+           partial.indexOf("alberblanc:") < partial.indexOf("tag:alberblanc")], [true, true]);
+    check("and the word completion too — a prefix hit is no authority",
+          dim().some((x) => x.endsWith(":alberblanc")), true);
+    offer("alberblanc");
+    check("typed in full, it is exact and the guesses go",
+          [plain().indexOf("tag:alberblanc") !== -1, dim().length], [true, 0]);
+    offer("boo");
+    check("boo offers the tag as a key and as a value of the tags column",
+          [plain().indexOf("book:") !== -1, plain().indexOf("tag:book") !== -1],
+          [true, true]);
+    check("keys before values",
+          plain().indexOf("book:") < plain().indexOf("tag:book"), true);
+  }
+
+  // --- C-n and C-p drive the list, and only while it is open
+  {
+    const at = () => box.querySelectorAll(".tv-ac-item")
+      .findIndex((e) => e.classes.has("tv-ac-on"));
+    const press = (key, ctrl) => {
+      const e = new Ev("keydown", { key });
+      e.ctrlKey = !!ctrl;
+      b.dispatchEvent(e);
+      return e;
+    };
+    type("sy");
+    check("nothing is active to begin with", at(), -1);
+    press("n", true);
+    check("C-n steps down the list", at(), 0);
+    press("n", true);
+    check("and again", at(), 1);
+    press("p", true);
+    check("C-p steps back up", at(), 0);
+    check("and they are taken from the page", press("n", true).defaultPrevented, true);
+
+    // Parity: the arrows land in the same place from the same start.
+    type("sy");
+    press("ArrowDown"); press("ArrowDown");
+    const byArrow = at();
+    type("sy");
+    press("n", true); press("n", true);
+    check("C-n and ArrowDown are the same motion", at(), byArrow);
+
+    // With no list they are the browser's, and the table's keymap reserves them.
+    reset();
+    b.dispatchEvent(new Ev("input"));                 // empty box: no list
+    check("with the list closed C-n is left alone",
+          [box.querySelectorAll(".tv-ac-item").length, press("n", true).defaultPrevented],
+          [0, false]);
+    check("and so is C-p", press("p", true).defaultPrevented, false);
+  }
+
+  // --- omnibox: the filter is the bar
+  {
+    const css = document.head.children.map((e) => e.text).join("");
+    const plain = new El("div");
+    TableView.mount(plain, view(20));
+    check("by default the bar still leads with the title",
+          [plain.querySelectorAll(".tv-title").length,
+           plain.querySelector(".tv-title").text,
+           plain.querySelector(".tv-root").classes.has("tv-omni")],
+          [1, "Inbox — glance", false]);
+
+    const hero = new El("div");
+    const ht = TableView.mount(hero, view(20), { omnibox: true });
+    check("omnibox drops the title", hero.querySelectorAll(".tv-title").length, 0);
+    check("and marks the root for the stylesheet",
+          hero.querySelector(".tv-root").classes.has("tv-omni"), true);
+    check("the bar holds the control and nothing else",
+          hero.querySelector(".tv-bar").children.map((e) => e.className),
+          ["tv-filter-wrap"]);
+    check("the applied parts get a row of their own, under it",
+          hero.querySelector(".tv-root").children.map((e) => e.className),
+          ["tv-bar", "tv-chips", "tv-scroll", "tv-hint"]);
+    check("which collapses to nothing while nothing is applied",
+          hero.querySelector(".tv-chips").style.display, "none");
+    check("and the box says nothing a bar-wide search box would not",
+          filterOf(hero).placeholder, undefined);
+    check("while the classic bar keeps its placeholder and its inline chips",
+          [filterOf(plain).placeholder,
+           plain.querySelector(".tv-bar").children.map((e) => e.className)],
+          ["filter…", ["tv-title", "tv-chips", "tv-filter-wrap"]]);
+    check("the control is told to fill, at a larger size",
+          [css.indexOf(".tv-omni .tv-filter-wrap{flex:1 1 auto}") !== -1,
+           css.indexOf(".tv-omni .tv-filter{flex:1 1 auto;font-size:15px") !== -1],
+          [true, true]);
+    // The list is positioned against the control, so filling the bar fills it.
+    check("and the dropdown hangs under the whole of it",
+          css.indexOf(".tv-ac{position:absolute;top:100%;left:0;min-width:100%") !== -1, true);
+
+    // Every flow the bar carries works the same with the title gone.
+    const hb = filterOf(hero);
+    hb.value = "review";
+    hb.dispatchEvent(new Ev("keydown", { key: "Enter" }));
+    await painted();
+    check("Enter commits and hands over in omnibox too",
+          [hero.querySelectorAll(".tv-chip").map((c) => c.text.replace("×", "")),
+           hb.value, hb.blurs, !!hero.querySelector(".tv-table tbody tr.tv-sel")],
+          [["review"], "", 1, true]);
+    hb.focus();
+    hb.value = "sy";
+    hb.dispatchEvent(new Ev("input"));
+    check("and the suggestions open under it",
+          hero.querySelectorAll(".tv-ac-item").length > 0, true);
+    hb.dispatchEvent(new Ev("keydown", { key: "Escape" }));
+    hb.dispatchEvent(new Ev("keydown", { key: "Escape" }));
+    hb.dispatchEvent(new Ev("keydown", { key: "Backspace" }));
+    check("and the ladder walks the chips off",
+          [hero.querySelectorAll(".tv-chip").length, ht.getQuery()], [0, ""]);
+  }
+
+  // --- the danneskjold light palette, and the idle-built word index
+  {
+    const css = document.head.children.map((e) => e.text).join("");
+    // Role for role from danneskjold-theme.el's light-* block; the values are
+    // written down here so a drift in either file shows up as a failure.
+    for (const [role, hex] of [["--tv-bg", "#FFFFFF"], ["--tv-fg", "#000000"],
+                               ["--tv-alt", "#F8F8FF"], ["--tv-border", "#E3E6EA"],
+                               ["--tv-muted", "#667071"], ["--tv-sel", "#FFD600"],
+                               ["--tv-accent", "#31769F"], ["--tv-hover", "#FAFAFA"]])
+      check(`light ${role} is the theme's`, css.indexOf(role + ":" + hex) !== -1, true);
+    check("and the light values are in the data-theme override too",
+          css.indexOf(':root[data-theme="light"] .tv-root{--tv-fg:#000000') !== -1, true);
+    for (const [role, hex] of [["--tv-bg", "#000000"], ["--tv-fg", "#FFFFFF"],
+                               ["--tv-alt", "#21252B"], ["--tv-border", "#2a2d3d"],
+                               ["--tv-muted", "#A4C2EB"], ["--tv-sel", "#373D4F"],
+                               ["--tv-accent", "#4CB5F5"], ["--tv-hover", "#1F1F1F"]])
+      check(`dark ${role} is the theme's`, css.indexOf(role + ":" + hex) !== -1, true);
+    check("and the sheet names where they came from",
+          css.indexOf("danneskjold-theme.el") !== -1, true);
+    // The floors, checked with an implementation of WCAG that is this file's
+    // own — the renderer's must agree with something, not with itself.
+    const rgb = (h) => { h = h.replace("#", "");
+      return [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16)); };
+    const chan = (c) => (c / 255 <= 0.03928 ? c / 255 / 12.92
+                                            : Math.pow((c / 255 + 0.055) / 1.055, 2.4));
+    const lum = (c) => 0.2126 * chan(c[0]) + 0.7152 * chan(c[1]) + 0.0722 * chan(c[2]);
+    const ratio = (a, b) => { const x = lum(rgb(a)) + 0.05, y = lum(rgb(b)) + 0.05;
+                              return x > y ? x / y : y / x; };
+    const mixed = (a, b, t) => "#" + rgb(a)
+      .map((v, i) => Math.round(v + (rgb(b)[i] - v) * t).toString(16).padStart(2, "0")).join("");
+    const hue = (h) => { const [r, g, b] = rgb(h).map((v) => v / 255);
+      const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+      if (mx === mn) return 0;
+      const d = mx - mn;
+      const x = mx === r ? (g - b) / d + (g < b ? 6 : 0) : mx === g ? (b - r) / d + 2 : (r - g) / d + 4;
+      return Math.round(x * 60); };
+
+    for (const [name, p] of [
+      ["light", { bg: "#FFFFFF", fg: "#000000", alt: "#F8F8FF", muted: "#667071",
+                  sel: "#FFD600", accent: "#31769F" }],
+      ["dark", { bg: "#000000", fg: "#FFFFFF", alt: "#21252B", muted: "#A4C2EB",
+                 sel: "#373D4F", accent: "#4CB5F5" }]]) {
+      const dimmed = mixed(p.fg, p.bg, 0.4);          // the .6 opacity, resolved
+      for (const [what, fgc, bgc, floor] of [
+        ["body", p.fg, p.bg, 7], ["body on zebra", p.fg, p.alt, 7],
+        ["muted", p.muted, p.bg, 4.5], ["muted on zebra", p.muted, p.alt, 4.5],
+        ["selected row", p.fg, p.sel, 7], ["chip text", p.fg, p.alt, 4.5],
+        ["dropdown active", p.fg, p.sel, 4.5], ["dimmed suggestion", dimmed, p.bg, 4.5],
+        ["accent as text", p.accent, p.bg, 4.5]])
+        check(`${name} ${what} clears ${floor}:1`, ratio(fgc, bgc) >= floor, true);
+    }
+    check("the adjusted light values kept their hue",
+          [Math.abs(hue("#667071") - hue("#7F8C8D")) <= 3,
+           Math.abs(hue("#31769F") - hue("#4CB5F5")) <= 3], [true, true]);
+
+    // Badge ink: the producer's hex is identity, the renderer owns legibility.
+    const inkOf = (el) => /--tv-ink:(#[0-9a-f]{6})/i.exec(el.attrs.get("style") || "")[1];
+    const bright = [{ value: "GO", color: "#B6E63E" }, { value: "OK", color: "#9ece6a" }];
+    const shape = (dark) => {
+      global.matchMedia = (q) => ({ matches: dark && q.indexOf("dark") !== -1 });
+      const el = new El("div");
+      TableView.mount(el, {
+        columns: [{ key: "state", header: "S", type: "badge", badges: bright }],
+        rows: bright.map((b, i) => ({ id: "b" + i, cells: { state: b.value } })),
+      });
+      delete global.matchMedia;
+      return el.querySelectorAll(".tv-pill").map(inkOf);
+    };
+    const onLight = shape(false), onDark = shape(true);
+    for (let i = 0; i < bright.length; i++) {
+      const pill = mixed("#FFFFFF", bright[i].color, 0.15);
+      check(`${bright[i].color} is made legible on light`,
+            ratio(onLight[i], pill) >= 4.5, true);
+      check("and keeps its hue",
+            Math.abs(hue(onLight[i]) - hue(bright[i].color)) <= 4, true);
+    }
+    for (let i = 0; i < bright.length; i++) {
+      const pill = mixed("#000000", bright[i].color, 0.15);
+      check(`${bright[i].color} already reads on dark, and is left alone`,
+            [ratio(bright[i].color, pill) >= 4.5, onDark[i].toLowerCase()],
+            [true, bright[i].color.toLowerCase()]);
+    }
+
+    // A theme flip redraws, so the ink follows.
+    {
+      let observed = null;
+      global.MutationObserver = class { constructor(cb) { observed = cb; } observe() {} };
+      global.matchMedia = () => ({ matches: false });
+      const flip = new El("div");
+      TableView.mount(flip, {
+        columns: [{ key: "state", header: "S", type: "badge", badges: bright }],
+        rows: [{ id: "b0", cells: { state: "GO" } }],
+      });
+      const before = inkOf(flip.querySelector(".tv-pill"));
+      global.matchMedia = (q) => ({ matches: q.indexOf("dark") !== -1 });
+      observed();                                   // the data-theme attribute moved
+      const after = inkOf(flip.querySelector(".tv-pill"));
+      check("a theme flip redraws the badges with the other theme's ink",
+            [before !== after, after.toLowerCase()], [true, "#b6e63e"]);
+      delete global.MutationObserver;
+      delete global.matchMedia;
+    }
+
+    // Borders carry nothing, so they stay hairlines in both themes.
+    check("every rule is one pixel",
+          (css.match(/border(-top|-bottom|-left|-right)?:\s*\d+px/g) || [])
+            .every((d) => /:\s*1px/.test(d)), true);
+    check("and no border is asked to be prominent",
+          [css.indexOf("--tv-border:#E3E6EA") !== -1,
+           css.indexOf("--tv-border:#2a2d3d") !== -1], [true, true]);
+    // Golden is full strength, so the active suggestion reads by weight and the
+    // foreground rather than by an accent colour that would vanish on it.
+    check("the active suggestion does not colour its label with the accent",
+          css.indexOf(".tv-ac-on{background:var(--tv-sel);color:var(--tv-fg);font-weight:600}")
+            !== -1, true);
+    check("and hover has a ground of its own now",
+          css.indexOf(".tv-ac-item:hover{background:var(--tv-hover)") !== -1, true);
+  }
+
+  // --- the index is built when the rows settle, not when someone types
+  {
+    const many = (n) => ({
+      columns: [{ key: "title", header: "H", type: "text" },
+                { key: "tag", header: "T", type: "text" }],
+      rows: Array.from({ length: n }, (_, i) => ({
+        id: "r-" + i,
+        cells: { title: WORDS[i % WORDS.length] + " " + WORDS[(i * 3) % WORDS.length] + " " + i,
+                 tag: TAGS[i % TAGS.length] },
+      })),
+    });
+    let idles = 0;
+    global.requestIdleCallback = (cb) => { idles++; return setTimeout(cb, 0); };
+
+    const warm = new El("div");
+    TableView.mount(warm, many(6000));
+    await sleep(400);                       // the settle plus the idle turn
+    check("the index builds itself with nobody typing", idles > 0, true);
+    const wb = filterOf(warm);
+    let t0 = now();
+    wb.value = "sy"; wb.dispatchEvent(new Ev("input"));
+    const afterIdle = now() - t0;
+
+    const cold = new El("div");
+    TableView.mount(cold, many(6000));      // no wait: the keystroke arrives first
+    const cb2 = filterOf(cold);
+    t0 = now();
+    cb2.value = "sy"; cb2.dispatchEvent(new Ev("input"));
+    const beforeIdle = now() - t0;
+    check("a keystroke that beats it still gets an answer",
+          cold.querySelectorAll(".tv-ac-item").length > 0, true);
+    check("and the idle-built one answers without paying for the build",
+          [afterIdle < beforeIdle, afterIdle * 4 < beforeIdle], [true, true]);
+    check("both answer the same thing",
+          warm.querySelectorAll(".tv-ac-label").map((e) => e.text),
+          cold.querySelectorAll(".tv-ac-label").map((e) => e.text));
+
+    // Invalidation re-queues it rather than leaving a stale index behind.
+    const before = idles;
+    const wt = TableView.mount(warm, many(200));
+    wt.setRows(many(300).rows);
+    await sleep(400);
+    check("a rows change queues another build", idles > before, true);
+    wb2 = filterOf(warm);
+    wb2.value = "sy"; wb2.dispatchEvent(new Ev("input"));
+    check("and what it offers is the new rows'",
+          warm.querySelectorAll(".tv-ac-item").length > 0, true);
+    delete global.requestIdleCallback;
+  }
+
+  // --- initialQuery: chips a consumer is putting back, not a query being run
+  {
+    const asked = [];
+    const back = new El("div");
+    const bt = TableView.mount(back, view(40),
+                               { onFilter: (q) => asked.push(q), initialQuery: 'state:DONE "two words"' });
+    const bb = filterOf(back);
+    check("a restored query arrives as chips, with the box empty",
+          [back.querySelectorAll(".tv-chip").map((c) => c.text.replace("×", "")), bb.value],
+          [["state:DONE", '"two words"'], ""]);
+    check("getQuery answers it", bt.getQuery(), 'state:DONE "two words"');
+    check("and nothing was delivered for it — the rows already match", asked, []);
+
+    // From there it behaves as if the chips had been typed.
+    bb.value = "review";
+    bb.dispatchEvent(new Ev("keydown", { key: "Enter" }));
+    check("a commit on top joins them and delivers once",
+          [back.querySelectorAll(".tv-chip").length, asked], [3, ['state:DONE "two words" review']]);
+    bb.focus();
+    bb.dispatchEvent(new Ev("keydown", { key: "Backspace" }));
+    check("the ladder walks the restored ones off too",
+          back.querySelectorAll(".tv-chip").length, 2);
+    check("and stripLastToken reaches them",
+          [bt.stripLastToken(), bt.getQuery()], [true, "state:DONE"]);
+
+    // Locally, the rows have to catch up to what was restored.
+    const local = new El("div");
+    const lt = TableView.mount(local, view(40), { initialQuery: "state:DONE" });
+    check("filtering locally, a restored query is applied at once",
+          [lt.getVisible().length, local.querySelectorAll(".tv-chip").length], [8, 1]);
+    const none = new El("div");
+    TableView.mount(none, view(40), { initialQuery: "   " });
+    check("and a blank one restores nothing",
+          none.querySelectorAll(".tv-chip").length, 0);
   }
 
   // --- the handle: stripLastToken and getQuery
@@ -1130,6 +1564,68 @@ async function virtualKeys() {
     await painted();
     check("and with none left it hands the table over",
           [lb.blurs - blurs, !!l.querySelector(".tv-table tbody tr.tv-sel")], [1, true]);
+  }
+
+  // --- a held Backspace stops at the first chip
+  {
+    const h = new El("div");
+    const ht = TableView.mount(h, view(40));
+    const hb = filterOf(h);
+    for (const q of ["review", "sync"]) {
+      hb.value = q;
+      hb.dispatchEvent(new Ev("keydown", { key: "Enter" }));
+      await painted();
+      hb.focus();
+    }
+    check("two chips to walk off", h.querySelectorAll(".tv-chip").length, 2);
+    const held = hb.blurs;
+    for (let i = 0; i < 5; i++)
+      hb.dispatchEvent(new Ev("keydown", { key: "Backspace", repeat: true }));
+    check("a held Backspace takes nothing — one press is one part",
+          [h.querySelectorAll(".tv-chip").length, hb.blurs - held], [2, 0]);
+    hb.dispatchEvent(new Ev("keydown", { key: "Backspace" }));
+    check("released and pressed again, it takes one",
+          h.querySelectorAll(".tv-chip").length, 1);
+    hb.dispatchEvent(new Ev("keydown", { key: "Backspace", repeat: true }));
+    check("and holding it there stops again", h.querySelectorAll(".tv-chip").length, 1);
+    hb.dispatchEvent(new Ev("keydown", { key: "Backspace" }));
+    hb.dispatchEvent(new Ev("keydown", { key: "Backspace", repeat: true }));
+    check("the hand-over at the end is a decision too",
+          [h.querySelectorAll(".tv-chip").length, hb.blurs - held], [0, 0]);
+    hb.dispatchEvent(new Ev("keydown", { key: "Backspace" }));
+    await painted();
+    check("taken only on a press of its own", hb.blurs - held, 1);
+  }
+
+  // --- the selection keeps its place when the row under it goes
+  {
+    const k = new El("div");
+    const kt = TableView.mount(k, view(40));
+    k.querySelector(".tv-scroll").clientHeight = 600;
+    const at = () => kt.getVisible().findIndex((r) => r.id === kt.getSelection().id);
+    kt.select(kt.getVisible()[10].id);
+    await painted();
+    check("a row is selected at a known place", at(), 10);
+
+    kt.deleteRow(kt.getSelection().id);
+    check("deleting it leaves the selection where it was, on the row that took the place",
+          [at(), kt.getSelection().id !== null], [10, true]);
+
+    // A filter that excludes it: the place survives, clamped to what is left.
+    const kb = filterOf(k);
+    kb.value = "review";
+    kb.dispatchEvent(new Ev("keydown", { key: "Enter" }));
+    await painted();
+    const held2 = kt.getSelection().id;
+    check("a filter that drops it keeps a selection rather than losing one",
+          [held2 !== null, kt.getVisible().some((r) => r.id === held2)], [true, true]);
+
+    kt.setRows(view(3).rows);
+    check("and a shorter set clamps the place to the end",
+          [kt.getSelection().id, at()], [kt.getVisible()[kt.getVisible().length - 1].id,
+                                         kt.getVisible().length - 1]);
+    kt.setRows([]);
+    check("with nothing left there is nothing selected", kt.getSelection().id, null);
   }
 }
 

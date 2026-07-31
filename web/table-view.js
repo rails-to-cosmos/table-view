@@ -50,6 +50,16 @@
  *   geometry it cannot own, so collapsed borders, the header's real height and
  *   sub-pixel metrics drift it off the row it is meant to mark, and every fix
  *   is another measurement chasing the DOM. The row already knows where it is.
+ * - When the row under the selection goes — filtered away, deleted, paged past
+ *   — the selection keeps its place rather than its id: it stays at that
+ *   visual index, clamped to what is left, so the next keypress carries on
+ *   from where the eye is instead of starting over at the top.
+ * - The ease keeps a margin under the cursor, the way `scroll-margin' and
+ *   `scrolloff' do: moving down the row's foot stops at two thirds of the
+ *   port, moving up its head stops at one third, and between those the
+ *   viewport holds still. Clamped to the content, so at either end the cursor
+ *   walks into the margin instead of the view running past the rows. A click
+ *   never scrolls — the row is under the pointer already.
  * - The ease is one rAF loop that retargets. Each frame it covers 30% of the
  *   distance left and stops within half a pixel; a new selection moves the
  *   target rather than queueing a second animation, so a held key converges on
@@ -89,7 +99,11 @@
  * - The filter box speaks SCHEMA.md's query micro-syntax: `key:value' field
  *   predicates (only where `key' names a column, so `:work:' stays org text),
  *   `"quoted text"', `-negation', everything else free text. Predicates
- *   sharing a key OR together; distinct keys, free text and negations AND.
+ *   sharing a key group by the field's arity: a single-valued one ORs (a row
+ *   has one state), a multi-valued one ANDs (a row carries several tags, so
+ *   `tag:a tag:b' is a row with both). Distinct keys, free text and negations
+ *   AND. A column counts as multi-valued when its cells hold delimited lists —
+ *   decided by their shape, never by the column's name.
  *   `TableView.parseQuery' is the tokenizer, exported so a consumer can
  *   highlight the box and a producer can implement the same grammar. Filtering
  *   locally applies the parsed query; with `onFilter' the raw text goes to the
@@ -108,9 +122,24 @@
  *   like a value match. After `key:' comes that column's value domain
  *   (`values', else the badge palette, else the distinct cell values), each
  *   with the number of rows behind it; a virtual key has no domain to offer.
- *   Arrows move, Tab and Enter accept, Esc dismisses; a click accepts without
- *   taking focus. Only a column completion starts highlighted, so Enter still
- *   commits the word as typed and an arrow is how you step into the offers.
+ *   Arrows — and C-n/C-p, which both editors' users reach for here — move it,
+ *   Esc dismisses, and a click accepts without taking focus. Tab completes and
+ *   stays; Enter completes and then commits, so picking a suggestion and
+ *   running it is one keystroke and one delivery.
+ *   Only a column completion starts highlighted, so Enter still commits the
+ *   word as typed and an arrow is how you step into the offers.
+ * - `omnibox: true' makes the filter the bar: no title, no placeholder, the
+ *   control takes the width, and the applied chips move to a row of their own
+ *   under it that collapses to nothing when empty. A consumer that does not
+ *   ask for it sees exactly what it saw before.
+ * - `initialQuery' is a query a consumer is putting back rather than running:
+ *   it arrives as chips with the box empty and nothing delivered. Remounting
+ *   is the restoration idiom — after a reconnect, a view change, a `?q=' load
+ *   — and there is no other way to hand the renderer committed state.
+ * - The word index is built when the rows settle rather than when someone
+ *   types — 200ms of quiet, then an idle turn. An edit burst re-queues it, and
+ *   a keystroke that arrives first builds it synchronously, which is the cost
+ *   this exists to avoid and the worst case it cannot exceed.
  * - A committed token leaves the box and becomes a chip. The query is always
  *   the chips and the box together — chips are where the finished tokens are
  *   kept, not a second filter — so the box holds only what is still being
@@ -163,7 +192,9 @@
  *        | { op: "reset", rows: Row[] }} Op
  * @typedef {{ onAction?: (command: string, id: string, row: Row) => void,
  *             onLink?: (target: string, row: Row | null) => void,
- *             onFilter?: (q: string) => void }} MountOptions
+ *             onFilter?: (q: string) => void,
+ *             omnibox?: boolean,
+ *             initialQuery?: string }} MountOptions
  * @typedef {{ el: HTMLElement,
  *             setView: (v: View) => void,
  *             setRows: (rows: Row[]) => void,
@@ -215,9 +246,70 @@
     return s.replace(/[\u0000-\u001f\u007f]+/g, " ");
   }
 
+  // ---- badge legibility ----------------------------------------------------
+  // A producer's badge colour is the badge's identity, and it was picked for
+  // one background — usually a dark one. The renderer owns whether it can be
+  // read on the ground it is actually drawn on, so the hue is kept and only its
+  // lightness moves, until the label clears WCAG AA against its own pill.
+
+  /** A delimited value list, org-style: `:a:b:'. What makes a column multi-valued. */
+  const ORG_TAGS = /^:[^:]+(:[^:]+)*:$/;
+
+  const HEX = /^#?([0-9a-f]{3}|[0-9a-f]{6})$/i;
+  /** @param {string} hex  @returns {number[]|null} */
+  function rgbOf(hex) {
+    const m = HEX.exec(String(hex).trim());
+    if (!m) return null;
+    const h = m[1].length === 3 ? m[1].replace(/./g, (c) => c + c) : m[1];
+    return [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16));
+  }
+  const channel = (c) => (c / 255 <= 0.03928 ? c / 255 / 12.92
+                                             : Math.pow((c / 255 + 0.055) / 1.055, 2.4));
+  /** WCAG relative luminance. @param {number[]} c */
+  const luma = (c) => 0.2126 * channel(c[0]) + 0.7152 * channel(c[1]) + 0.0722 * channel(c[2]);
+  /** WCAG contrast ratio. @param {number[]} a  @param {number[]} b */
+  function contrast(a, b) {
+    const x = luma(a) + 0.05, y = luma(b) + 0.05;
+    return x > y ? x / y : y / x;
+  }
+  /** @param {number[]} a  @param {number[]} b  @param {number} t */
+  const blend = (a, b, t) => a.map((v, i) => Math.round(v + (b[i] - v) * t));
+  const hexOf = (c) => "#" + c.map((v) => v.toString(16).padStart(2, "0")).join("");
+
+  /** @type {Map<string, string>} */
+  const inkCache = new Map();
+
+  /**
+   * COLOR made legible on the pill it tints, under a dark or light ground.
+   * Stepped toward black on light and toward white on dark — a scale of the
+   * same hue, so the badge stays recognisably itself — until the label clears
+   * 4.5:1 against the 15% wash it sits on. Cached per colour and theme.
+   * @param {string} color  @param {boolean} dark  @returns {string}
+   */
+  function inkFor(color, dark) {
+    const key = color + (dark ? "|d" : "|l");
+    const had = inkCache.get(key);
+    if (had !== undefined) return had;
+    const hue = rgbOf(color), ground = rgbOf(dark ? "#000000" : "#FFFFFF");
+    let ink = color;
+    if (hue && ground) {
+      const pill = blend(ground, hue, 0.15);          // what the wash comes out as
+      const toward = dark ? [255, 255, 255] : [0, 0, 0];
+      let out = hue;
+      for (let t = 0; t < 0.95 && contrast(out, pill) < 4.5; ) {
+        t += 0.05;
+        out = blend(hue, toward, t);
+      }
+      ink = hexOf(out);
+    }
+    inkCache.set(key, ink);
+    return ink;
+  }
+
   // Cell inner HTML: badge colouring + Org links + escaping.
-  /** @param {Column} col  @param {Cell|undefined} val  @returns {string} */
-  function cellHTML(col, val) {
+  /** @param {Column} col  @param {Cell|undefined} val  @param {boolean} [dark]
+   *  @returns {string} */
+  function cellHTML(col, val, dark) {
     if (col.type === "badge") {
       const raw = displayText(val);
       const badge = (col.badges || []).find((b) => b.value === raw);
@@ -226,7 +318,8 @@
       // the label, so one hue carries the whole thing in either scheme. A value
       // the palette does not name stays plain text.
       if (color)
-        return `<span class="tv-pill" style="--tv-badge:${esc(color)}">`
+        return `<span class="tv-pill" style="--tv-badge:${esc(color)};`
+             + `--tv-ink:${esc(inkFor(color, !!dark))}">`
              + `<i class="tv-dot"></i>${esc(raw)}</span>`;
       return esc(raw);
     }
@@ -368,8 +461,13 @@
   const CELL_PAD = 24;         // a cell's horizontal padding, both sides
   const PILL_CH = 4;           // a badge pill's dot, gap and ground, in characters
   const DEBOUNCE = 120;        // ms of quiet before a filter keystroke re-renders
+  const SETTLE = 200;          // ms of quiet before the rows are taken to have settled
   const EASE = 0.3;            // fraction of the remaining scroll covered per frame
   const SNAP_PX = 0.5;         // closer than this and the ease is over
+
+  /** Run CB when nothing else is pending (or soon, where there is no idle). */
+  const idle = (cb) =>
+    typeof requestIdleCallback === "function" ? requestIdleCallback(cb) : setTimeout(cb, 0);
 
   /** Run CB on the next frame (or soon, where there are no frames). */
   const frame = (cb) =>
@@ -381,21 +479,45 @@
     if (styleInjected) return;
     styleInjected = true;
     const css = `
-.tv-root{--tv-fg:#1c1e26;--tv-muted:#6b7280;--tv-bg:#ffffff;--tv-alt:#f6f7f9;
-  --tv-border:#e3e6ea;--tv-accent:#3b82f6;--tv-sel:#e8f0fe;
+/* Both palettes are danneskjold-theme's, mapped role for role from
+   /home/akatovda/sync/stuff/danneskjold-theme/danneskjold-theme.el — its
+   default faces for dark, its light-* block for light. Three values are
+   lightness-only adjustments where the theme's own colour missed a contrast
+   floor in this context, the hue held: light muted #7F8C8D -> #667071 (3.5:1
+   -> 5.1:1 on white) and light accent #4CB5F5 -> #31769F (2.3:1 -> 5.0:1, it
+   is link text here).
+
+   Borders are the exception and stay hairlines: they carry no information, so
+   contrast is not a goal for them and a visible rule only adds noise. Light
+   keeps the quiet #E3E6EA (1.25:1 on white) rather than the theme's #BDC3C7,
+   and dark takes #2a2d3d over the theme's #223959 (1.54:1 against true black
+   against 1.80:1) — the quieter of the two. Every rule is 1px. */
+.tv-root{--tv-fg:#000000;--tv-muted:#667071;--tv-bg:#FFFFFF;--tv-alt:#F8F8FF;
+  --tv-border:#E3E6EA;--tv-accent:#31769F;--tv-sel:#FFD600;--tv-hover:#FAFAFA;
   color:var(--tv-fg);background:var(--tv-bg);font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
   border:1px solid var(--tv-border);border-radius:8px;overflow:hidden;display:flex;flex-direction:column;max-height:100%}
-@media (prefers-color-scheme:dark){.tv-root{--tv-fg:#c8ccd4;--tv-muted:#8b93a7;--tv-bg:#1a1b26;
-  --tv-alt:#1f2130;--tv-border:#2a2d3d;--tv-accent:#7aa2f7;--tv-sel:#26304d}}
-:root[data-theme="dark"] .tv-root{--tv-fg:#c8ccd4;--tv-muted:#8b93a7;--tv-bg:#1a1b26;
-  --tv-alt:#1f2130;--tv-border:#2a2d3d;--tv-accent:#7aa2f7;--tv-sel:#26304d}
-:root[data-theme="light"] .tv-root{--tv-fg:#1c1e26;--tv-muted:#6b7280;--tv-bg:#ffffff;
-  --tv-alt:#f6f7f9;--tv-border:#e3e6ea;--tv-accent:#3b82f6;--tv-sel:#e8f0fe}
+@media (prefers-color-scheme:dark){.tv-root{--tv-fg:#FFFFFF;--tv-muted:#A4C2EB;--tv-bg:#000000;
+  --tv-alt:#21252B;--tv-border:#2a2d3d;--tv-accent:#4CB5F5;--tv-sel:#373D4F;
+  --tv-hover:#1F1F1F;}}
+:root[data-theme="dark"] .tv-root{--tv-fg:#FFFFFF;--tv-muted:#A4C2EB;--tv-bg:#000000;
+  --tv-alt:#21252B;--tv-border:#2a2d3d;--tv-accent:#4CB5F5;--tv-sel:#373D4F;
+  --tv-hover:#1F1F1F;}
+:root[data-theme="light"] .tv-root{--tv-fg:#000000;--tv-muted:#667071;--tv-bg:#FFFFFF;--tv-alt:#F8F8FF;
+  --tv-border:#E3E6EA;--tv-accent:#31769F;--tv-sel:#FFD600;--tv-hover:#FAFAFA}
 .tv-bar{display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:1px solid var(--tv-border);flex-wrap:wrap}
 .tv-title{font-weight:600;font-size:14px;margin-right:auto}
 .tv-filter{font:inherit;padding:4px 8px;border:1px solid var(--tv-border);border-radius:6px;
   background:var(--tv-bg);color:var(--tv-fg);min-width:140px}
 .tv-filter-wrap{position:relative;display:flex}
+/* Omnibox: the filter is the bar's one control, and it takes the width the
+   title was holding. The dropdown hangs under the whole of it. */
+.tv-omni .tv-bar{gap:8px;padding:10px 12px}
+.tv-omni .tv-filter-wrap{flex:1 1 auto}
+.tv-omni .tv-filter{flex:1 1 auto;font-size:15px;padding:7px 11px}
+/* Its own row under the box, and no gap at all when nothing is applied. The
+   suggestion list is positioned and z-indexed, so it lays over this rather
+   than being pushed down by it. */
+.tv-omni > .tv-chips{padding:8px 12px;border-bottom:1px solid var(--tv-border)}
 .tv-chips{display:flex;flex-wrap:wrap;gap:5px;align-items:center}
 .tv-chip{display:inline-flex;align-items:center;gap:5px;padding:1px 4px 1px 8px;
   border-radius:999px;font-size:12px;cursor:pointer;color:var(--tv-fg);
@@ -413,8 +535,11 @@
 .tv-ac-n{color:var(--tv-muted);font-variant-numeric:tabular-nums}
 /* A scoped tag is a substring count, and reads as one. */
 .tv-ac-dim{opacity:.6;font-style:italic}
-.tv-ac-item:hover{color:var(--tv-accent)}
-.tv-ac-on{background:var(--tv-sel);color:var(--tv-accent)}
+.tv-ac-item:hover{background:var(--tv-hover);color:var(--tv-accent)}
+/* The theme's own selections (ivy-current-match, company-tooltip-selection)
+   are full-strength golden with bold weight and the default foreground — an
+   accent-coloured label on that ground would be unreadable. */
+.tv-ac-on{background:var(--tv-sel);color:var(--tv-fg);font-weight:600}
 .tv-scroll{overflow:auto;position:relative}
 .tv-table{border-collapse:collapse;width:100%}
 .tv-table th,.tv-table td{padding:5px 12px;text-align:left;white-space:nowrap;
@@ -435,9 +560,10 @@
 .tv-table tbody tr{cursor:default}
 .tv-table tbody tr.tv-pad td{padding:0;border:0}
 .tv-pill{display:inline-flex;align-items:center;gap:5px;padding:0 8px;border-radius:999px;
-  font-weight:600;color:var(--tv-badge);
+  font-weight:600;color:var(--tv-ink,var(--tv-badge));
   background:color-mix(in srgb,var(--tv-badge) 15%,transparent)}
-.tv-dot{flex:none;width:6px;height:6px;border-radius:50%;background:var(--tv-badge)}
+.tv-dot{flex:none;width:6px;height:6px;border-radius:50%;
+  background:var(--tv-ink,var(--tv-badge))}
 .tv-link{color:var(--tv-accent);text-decoration:underline}
 .tv-arrow{margin-left:4px;opacity:.7}
 .tv-empty{padding:16px 12px;color:var(--tv-muted)}
@@ -458,6 +584,18 @@
   function mount(container, view, opts) {
     injectStyle();
     const o = opts || {};   // narrowing sticks in closures (a reassigned param would not)
+    const omnibox = o.omnibox === true;
+
+    /** Is the table being drawn dark? The page's choice outranks the system's. */
+    function darkNow() {
+      const root$ = document.documentElement;
+      const asked = root$ && root$.getAttribute ? root$.getAttribute("data-theme") : null;
+      if (asked === "dark") return true;
+      if (asked === "light") return false;
+      return typeof matchMedia === "function"
+          && matchMedia("(prefers-color-scheme: dark)").matches;
+    }
+    let dark = darkNow();
     /**
      * @type {{ view: View, rows: Row[], filter: string,
      *          selected: string|null, selCol: number|null, sortKeys: SortKey[] }}
@@ -528,8 +666,35 @@
     /** Forget the cached display data, and the value domains read off it. */
     function clearTexts() { texts.clear(); dropDomains(); }
 
-    /** Forget what was read off the rows: value domains, and the tag vocabulary. */
-    function dropDomains() { domains.clear(); vocab = null; wordIndex = null; }
+    /**
+     * Forget what was read off the rows: value domains, the tag vocabulary and
+     * the word index. The index is the expensive one, so its rebuild is queued
+     * for an idle moment rather than left for whoever types next.
+     */
+    function dropDomains() {
+      domains.clear();
+      vocab = null;
+      wordIndex = null;
+      queueIndex();
+    }
+
+    /**
+     * Build the word index once the rows have stopped moving, off the path a
+     * keystroke takes. An edit burst — a stream of upserts, a paged load — re
+     * -queues this rather than rebuilding per row, and only the quiet at the
+     * end of it pays. A keystroke arriving first finds no index and builds one
+     * itself, which is the cost this exists to avoid and the worst case it
+     * cannot be worse than.
+     */
+    let idleAt = 0, idleGen = 0;
+    function queueIndex() {
+      const mine = ++idleGen;          // anything already queued is now stale
+      if (idleAt) clearTimeout(idleAt);
+      idleAt = setTimeout(() => {
+        idleAt = 0;
+        idle(() => { if (mine === idleGen) titleIndex(); });
+      }, SETTLE);
+    }
 
     /**
      * The virtual keys, and the rows behind each. SCHEMA lets a producer define
@@ -542,8 +707,31 @@
      */
     let vocab = null;
 
-    /** The `tags' column's index, or -1 when the view has none. */
-    function tagsColumn() { return columns().findIndex((c) => c.key === "tags"); }
+    /**
+     * The multi-valued column's index, or -1. SCHEMA calls a column
+     * multi-valued when its cells hold delimited value lists — org's `:a:b:'
+     * being the canonical shape — so this is decided by looking at the cells
+     * rather than by the column's name: glance's key has been `tags' and is
+     * `tag', and neither spelling is the renderer's business.
+     */
+    function multiColumn() {
+      if (multiAt !== undefined) return multiAt;
+      const cols = columns();
+      multiAt = -1;
+      for (let i = 0; i < cols.length && multiAt === -1; i++) {
+        let seen = 0, all = true;
+        for (const r of state.rows) {
+          const cell = rowText(r).cells[i];
+          if (!cell) continue;
+          if (!ORG_TAGS.test(cell)) { all = false; break; }
+          if (++seen >= 20) break;
+        }
+        if (all && seen) multiAt = i;
+      }
+      return multiAt;
+    }
+    /** @type {number|undefined} */
+    let multiAt;
 
     /** The `title' column's index, or -1; where a scoped completion finds words. */
     function titleColumn() { return columns().findIndex((c) => c.key === "title"); }
@@ -560,7 +748,7 @@
      */
     function tagVocab() {
       if (vocab) return vocab;
-      const at = tagsColumn();
+      const at = multiColumn();
       const ids = new Map(), byRow = new Map();
       if (at !== -1)
         for (const r of state.rows) {
@@ -598,7 +786,9 @@
     const input = document.createElement("input");
     input.className = "tv-filter";
     input.type = "search";
-    input.placeholder = "filter…";
+    // Classic bar: the box is one control among others and says what it is.
+    // Omnibox: it is the bar, and a placeholder only repeats that.
+    if (!omnibox) input.placeholder = "filter…";
     // The box and its suggestion list travel together, so the list can be
     // positioned against the box and nothing else.
     const chipsEl = document.createElement("div");
@@ -611,8 +801,11 @@
     acEl.style.display = "none";
     filterWrap.appendChild(input);
     filterWrap.appendChild(acEl);
-    bar.appendChild(titleEl);
-    bar.appendChild(chipsEl);
+    // In omnibox mode the filter is the bar: no title, and the control grows to
+    // fill what the title was using. The applied parts then get a row of their
+    // own under it rather than crowding the caret — appended to the root below,
+    // between the bar and the table.
+    if (!omnibox) { bar.appendChild(titleEl); bar.appendChild(chipsEl); }
     bar.appendChild(filterWrap);
 
     const scroll = document.createElement("div");
@@ -637,12 +830,14 @@
     // the coalescing, which is not motion, stays.
     const calm = typeof matchMedia === "function"
               && matchMedia("(prefers-reduced-motion: reduce)").matches;
-    if (calm) root.className = "tv-root tv-calm";
+    if (calm || omnibox)
+      root.className = "tv-root" + (calm ? " tv-calm" : "") + (omnibox ? " tv-omni" : "");
 
     const hint = document.createElement("div");
     hint.className = "tv-hint";
 
     root.appendChild(bar);
+    if (omnibox) root.appendChild(chipsEl);
     root.appendChild(scroll);
     root.appendChild(hint);
 
@@ -780,6 +975,13 @@
      * each group passes on any member, and everything else stands on its own.
      * @param {string} q  @returns {((r: Row) => boolean)|null}
      */
+    /** Does KEY name a field a row may hold several of at once? */
+    function manyValued(key) {
+      const col = colByKey(key);
+      if (!col) return true;                 // a virtual key is one of its values
+      return columns().indexOf(col) === multiColumn();
+    }
+
     function queryMatcher(q) {
       /** @type {Map<string, ((r: Row) => boolean)[]>} */
       const groups = new Map();
@@ -794,8 +996,17 @@
           if (g) g.push(test); else groups.set(tok.key, [test]);
         }
       }
-      for (const g of groups.values())
-        musts.push(g.length === 1 ? g[0] : (r) => {
+      // SCHEMA splits same-key grouping by arity. A single-valued field can
+      // only hold one of them, so repeating it means either (`state:TODO
+      // state:DONE'). A multi-valued one can hold both, so repeating it means
+      // both — GitHub's label semantics, and org's, `tag:a tag:b' being a row
+      // carrying each. The virtual keys are that column's values, so they
+      // inherit its arity.
+      for (const [key, g] of groups)
+        musts.push(g.length === 1 ? g[0] : manyValued(key) ? (r) => {
+          for (const t of g) if (!t(r)) return false;
+          return true;
+        } : (r) => {
           for (const t of g) if (t(r)) return true;
           return false;
         });
@@ -912,7 +1123,7 @@
       for (let c = 0; c < cols.length; c++) {
         const cell = (cols[c].align === "right" ? "tv-right" : "")
                    + (on && c === state.selCol ? " tv-cell-sel" : "");
-        tds += `<td class="${cell}">${cellHTML(cols[c], cs[cols[c].key])}</td>`;
+        tds += `<td class="${cell}">${cellHTML(cols[c], cs[cols[c].key], dark)}</td>`;
       }
       const cls = (i % 2 ? " tv-alt" : "") + (on ? " tv-sel" : "");
       return `<tr class="${cls}" data-id="${esc(r.id)}">${tds}</tr>`;
@@ -930,6 +1141,7 @@
      * @param {boolean} [force]
      */
     function renderRows(force) {
+      keepSelection();
       const rows = ordered();
       const total = rows.length;
       const rowH = geom.row;
@@ -1017,6 +1229,23 @@
       stampSelection();
     }
 
+    /**
+     * Keep the selection where it was on screen when the row it was on stops
+     * being there — filtered away, deleted, replaced by a new page. The id is
+     * gone, but the place is not, so the selection stays at that visual index
+     * (clamped to what is left) rather than disappearing and making the next
+     * keypress start over from the top.
+     */
+    function keepSelection() {
+      if (state.selected === null) return;
+      const rows = order || sorted || state.rows;
+      if (!rows.length) { state.selected = null; state.selCol = null; selAt = -1; return; }
+      if (selAt >= 0 && rows[selAt] && rows[selAt].id === state.selected) return;
+      if (rows.some((r) => r.id === state.selected)) return;
+      selAt = Math.max(0, Math.min(rows.length - 1, selAt));
+      state.selected = rows[selAt].id;
+    }
+
     /** Where the selected row sits in display order, or -1. */
     function indexOfSelected() {
       if (state.selected === null) return -1;
@@ -1048,16 +1277,23 @@
      *
      * COL selects one cell of that row, clamped to the columns that exist;
      * omitted, the selection is the whole row, which is what it always was.
+     *
+     * This scrolls, keeping a margin under the cursor. A click does not: the
+     * row is under the pointer already, and yanking the viewport out from
+     * under a hand that just aimed at something is the one thing it must not
+     * do — so the delegated handler sets the selection through `setSelected'
+     * instead, which moves the marks and nothing else.
      * @param {string} id  @param {number} [col]  @returns {boolean}
      */
     function selectRow(id, col) {
       const rows = ordered();
       const i = rows.findIndex((r) => r.id === id);
       if (i === -1) return false;
+      const was = selAt;
       state.selected = id;
       state.selCol = clampCol(col);
       selAt = i;
-      paintSelection();
+      paintSelection(was);
       return true;
     }
 
@@ -1069,9 +1305,9 @@
      * already correct — `getSelection' answers from it synchronously — so the
      * frame only has to paint where the selection ended up.
      */
-    function paintSelection() {
+    function paintSelection(was) {
       wantSelection = true;
-      if (selAt >= 0) easeToRow(selAt);
+      if (selAt >= 0) easeToRow(selAt, was === undefined ? selAt : was);
       schedule();
     }
 
@@ -1108,21 +1344,36 @@
     }
 
     /**
-     * Aim the viewport at row I, the way `block: "nearest"' would. Retargeting
-     * rather than queueing: a held key lands a new target every 30ms or so, and
-     * the one loop simply heads for the latest one, so it converges instead of
-     * playing back a backlog. The aim is taken from where the ease is going,
-     * not from where it currently is, or each keypress would re-derive against
+     * Aim the viewport at row I, arrived at from row WAS, keeping a margin
+     * under the cursor the way `scroll-margin' and `scrolloff' do: moving down,
+     * the row's foot is not allowed past two thirds of the port; moving up, its
+     * head is not allowed above one third. Between those the viewport holds
+     * still, and on a held run it follows a row at a time with the cursor
+     * pinned to the band edge — which is what makes a long movement readable,
+     * against `block: "nearest"' leaving the cursor on the very edge of the
+     * viewport with nothing ahead of it.
+     *
+     * Clamped to the content, so at either end the cursor walks into the margin
+     * rather than the view scrolling past the rows — standard scrolloff.
+     *
+     * Retargeting rather than queueing: a held key lands a new target every
+     * 30ms or so, and the one loop heads for the latest, so it converges
+     * instead of playing back a backlog. The aim is taken from where the ease
+     * is going, not from where it is, or each keypress would re-derive against
      * a viewport still in flight and creep.
      */
-    function easeToRow(i) {
-      const from = easing ? easeAt : scroll.scrollTop;
+    function easeToRow(i, was) {
       const rowH = geom.row, port = scroll.clientHeight || 0;
-      const top = geom.head + i * rowH;
+      if (!port) return;
+      const from = easing ? easeAt : scroll.scrollTop;
+      const top = geom.head + i * rowH, foot = top + rowH;
       let to = from;
-      if (top - geom.head < from) to = top - geom.head;
-      else if (port && top + rowH > from + port) to = top + rowH - port;
-      if (to === from && !easing) return;              // already in view
+      if (was < 0 || i >= was) {                       // downward, and the first pick
+        if (foot - from > port * 2 / 3) to = foot - port * 2 / 3;
+      } else if (top - from < port / 3) to = top - port / 3;
+      const most = Math.max(0, geom.head + ordered().length * rowH - port);
+      to = Math.max(0, Math.min(most, to));
+      if (to === from && !easing) return;              // the band already holds it
       if (calm) { scroll.scrollTop = to; easing = false; return; }
       easeAt = to;
       easing = true;
@@ -1356,6 +1607,16 @@
       let d = domains.get(col.key);
       if (!d) {
         const i = columns().indexOf(col);
+        // The tags column's values are the tags, not the `:a:b:' strings its
+        // cells spell them in — the vocabulary already holds them, counted.
+        if (i === multiColumn()) {
+          const v = tagVocab();
+          const counts = new Map();
+          for (const tag of v.list) counts.set(tag, (v.ids.get(tag) || new Set()).size);
+          d = { list: v.list, counts };
+          domains.set(col.key, d);
+          return d;
+        }
         const counts = new Map();
         const found = [];
         for (const r of state.rows) {
@@ -1433,26 +1694,40 @@
           out.push({ text: tag + ":", count: rows.size, full: false, dim: false,
                      pick: false });
         }
-        // 2. The word as a value some column actually has: typing TODO means
-        //    `state:TODO', and that is a fact about the data rather than a
-        //    guess about it.
+        // 2. Values some column actually has, reached by prefix: `TOD' means
+        //    `state:TODO' and `alberbl' means `tags:alberblanc'. Facts about
+        //    the data rather than guesses about it — but only where a column
+        //    has a domain worth enumerating: its declared `values', its badge
+        //    palette, or the tag vocabulary. A free-text column has no such
+        //    set, and offering one word of it is what the third tier is for.
         let exact = 0;
+        const hits = [];
         for (const c of columns()) {
-          const dom = valueOrder(c);
-          const hit = dom && dom.find((v) => String(v).toLowerCase() === p);
-          if (hit === undefined || hit === null) continue;
+          if (!valueOrder(c) && columns().indexOf(c) !== multiColumn()) continue;
+          const dom = domainOf(c);
+          for (const v of dom.list) {
+            const lower = String(v).toLowerCase();
+            if (!lower.startsWith(p)) continue;
+            if (lower === p) exact++;
+            hits.push({ text: c.key + ":" + v, count: dom.counts.get(lower) || 0,
+                        whole: lower === p, full: true, dim: false, pick: false });
+          }
+        }
+        // What was typed in full outranks what merely opens with it.
+        hits.sort((a, b) => (b.whole ? 1 : 0) - (a.whole ? 1 : 0)
+                         || b.count - a.count
+                         || (a.text < b.text ? -1 : 1));
+        for (const hit of hits) {
           if (out.length === AC_MAX) break;
-          out.push({ text: c.key + ":" + hit, count: domainOf(c).counts.get(p) || 0,
-                     full: true, dim: false, pick: false });
-          exact++;
+          out.push({ text: hit.text, count: hit.count, full: true, dim: false, pick: false });
         }
         // 3. Words the rows finish for it, scoped to the tag they were found
-        //    under. Exact beats fuzzy, and fuzzy never crowds: a value match
-        //    makes these redundant, so they go entirely, and otherwise only the
-        //    best few appear and they are dimmed — a scoped count counts a word
-        //    in a title, and must not dress like a value match. A single letter
-        //    completes to most of the store, which says nothing and costs a
-        //    pass over every row to say.
+        //    under. Only an EXACT value match makes these redundant — a value
+        //    merely opening with what was typed is a guess of the same kind, so
+        //    the two stand together. They are dimmed either way: a scoped count
+        //    counts a word in a title and must not dress like a value match. A
+        //    single letter completes to most of the store, which says nothing
+        //    and costs a pass over every row to say.
         if (!exact && p.length >= SCOPED_MIN)
           for (const hit of scopedCompletions(p).slice(0, SCOPED_MAX)) {
             if (out.length === AC_MAX) break;
@@ -1655,16 +1930,30 @@
     // the first Esc closes the list and the second does what it does here.
     input.addEventListener("keydown", (e) => {
       if (ac) {
-        const arrow = e.key === "ArrowDown" || e.key === "ArrowUp";
+        // C-n and C-p move the list too, while it is open and the box has the
+        // keyboard. Both editors' users reach for them here — the Emacs
+        // minibuffer and vim's insert-mode completion agree — so neither
+        // profile has to ask. Platform reality, stated rather than wished
+        // away: Chrome-family browsers take C-n for a new window before the
+        // page ever sees it, so the arrows are the fallback there; Firefox and
+        // system-webview shells deliver both. Outside an open list these keys
+        // are left alone — they stay the browser's, and the table's keymap
+        // reserves them.
+        const down = e.key === "ArrowDown" || (e.ctrlKey && e.key === "n");
+        const up = e.key === "ArrowUp" || (e.ctrlKey && e.key === "p");
         const accepts = (e.key === "Tab" || e.key === "Enter") && acAt >= 0;
-        if (arrow || accepts || e.key === "Escape") {
+        if (down || up || accepts || e.key === "Escape") {
           e.preventDefault();
           e.stopPropagation();
-          if (e.key === "ArrowDown") moveAc(1);
-          else if (e.key === "ArrowUp") moveAc(-1);
-          else if (e.key === "Escape") closeAc();
-          else acceptAc(ac.items[acAt]);
-          return;
+          if (down) { moveAc(1); return; }
+          if (up) { moveAc(-1); return; }
+          if (e.key === "Escape") { closeAc(); return; }
+          acceptAc(ac.items[acAt]);
+          // Tab completes and leaves the caret where more can be typed. Enter
+          // completes and goes — the same gesture it is with no list at all, so
+          // picking a suggestion and running it is one keystroke, one delivery.
+          if (e.key === "Tab") return;
+          closeAc();
         }
         // Nothing highlighted: the keys fall through to what they mean with no
         // list at all, so a typed word is still committed by Enter.
@@ -1675,6 +1964,10 @@
       if (e.key === "Backspace" && !input.value) {
         e.preventDefault();
         e.stopPropagation();
+        // One press, one part. Held down, the browser's repeat deletes the
+        // typed characters and then stops here — taking a chip off is a
+        // decision, and a row of them should not vanish under a resting finger.
+        if (e.repeat) return;
         if (chips.length) { chips.pop(); renderChips(); deliver(); }
         else { selectFirstVisible(); input.blur(); }
         return;
@@ -1744,9 +2037,41 @@
       if (at !== -1) arr.splice(at, 1);
     }
 
+    // A query the consumer is restoring: chips as an Enter commit would leave
+    // them, and nothing delivered. Remounting is how a consumer puts state
+    // back — after a reconnect, a view change, a `?q=' load — and without this
+    // the only way in is `input.value', which the first commit then chips a
+    // second time while the chips it already had go missing.
+    if (typeof o.initialQuery === "string" && o.initialQuery.trim()) {
+      for (const t of parseQuery(o.initialQuery, queryKeys()))
+        chips.push(o.initialQuery.slice(t.start, t.end));
+      renderChips();
+      lastQuery = effectiveQuery();
+      // Local filtering has to catch up to it; a producer has already filtered.
+      if (!o.onFilter) state.filter = lastQuery;
+    }
+
     titleEl.textContent = state.view.title || "Table";
     renderHead();
     renderRows(true);
+    queueIndex();
+
+    // A theme flip changes what a badge colour has to become to stay legible,
+    // and the ink is baked into the row HTML — so redraw when the scheme moves
+    // under us, whether the page asked for it or the system did.
+    function onTheme() {
+      const now = darkNow();
+      if (now === dark) return;
+      dark = now;
+      renderRows(true);
+    }
+    if (typeof matchMedia === "function") {
+      const q = matchMedia("(prefers-color-scheme: dark)");
+      if (q.addEventListener) q.addEventListener("change", onTheme);
+    }
+    if (typeof MutationObserver === "function" && document.documentElement)
+      new MutationObserver(onTheme).observe(document.documentElement,
+                                            { attributes: true, attributeFilter: ["data-theme"] });
 
     return {
       el: root,
@@ -1796,8 +2121,7 @@
         dropDomains();
         if (sorted) unplace(sorted, id);
         if (order) unplace(order, id);
-        renderRows(true);
-        if (state.selected === id) setSelected(null);   // and disable the actions
+        renderRows(true);                               // which keeps the place
       },
       /** @param {Op[]} ops */
       applyDelta(ops) {
