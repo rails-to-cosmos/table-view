@@ -84,6 +84,17 @@ the rails-to-cosmos ELPA archive publishes date-stamped snapshots.
   second went from 117ms and 548KB of HTML per burst to 44ms and 274KB.
   Consumers reading `.tv-sel` from the DOM immediately after `select()`
   now see it on the next frame.
+- Browser renderer: **fixed** — one tag cell that was not a delimited
+  list cost the whole column its vocabulary. Multi-valued detection
+  asked every sampled cell to be well formed, so a single import or
+  hand-edited headline anywhere in the sample decided a corpus had no
+  tags at all: no tag keys, no values under them, no completions, and
+  the raw `:a:b:` cells offered as values instead — `alb` returning
+  nothing for `tag:alberblanc`. Detection now weighs evidence both ways:
+  two or more org-shaped cells make the column, a cell holding a single
+  bare value cannot argue either way (it has no delimiter to show, and
+  reads as the one value it is), and only a colon arranged some other
+  way — a time, a URL — rules the column out.
 - Browser renderer: same-key predicates group by the field's **arity** —
   a single-valued field ORs (`state:TODO state:DONE` is either), a
   multi-valued one ANDs (`tag:a tag:b` is a row carrying both,
@@ -191,7 +202,7 @@ the rails-to-cosmos ELPA archive publishes date-stamped snapshots.
   `onAction` dispatch are unchanged. Consumers styling `.tv-btn` have
   nothing to style.
 - Browser renderer: badge cells render as pills — the palette colour
-  tints the ground, marks a dot and writes the label.
+  tints the ground and writes the label.
 - Browser renderer: Escape in the filter box walks out one step at a
   time — it closes the suggestion list if one is open, else drops what
   is half-typed (the chips stand), else blurs. It previously cleared and

@@ -81,9 +81,8 @@
  * - `prefers-reduced-motion: reduce' turns off both the crossfade and the ease:
  *   the marks land and the viewport jumps. The coalescing stays, being economy
  *   rather than motion.
- * - Badge cells render as pills: the palette colour tints the ground, marks a
- *   dot and writes the label, so one hue carries the whole thing in either
- *   scheme.
+ * - Badge cells render as pills: the palette colour tints the ground and writes
+ *   the label, so one hue carries it in either scheme.
  * - Rows are virtualized. `tbody` holds the scrolled-to window plus ~15 rows of
  *   overscan, between two spacer rows standing in for the height of the rest.
  *   Rows outside the window have no DOM: drive selection with `select(id)`
@@ -332,13 +331,12 @@
       const raw = displayText(val);
       const badge = (col.badges || []).find((b) => b.value === raw);
       const color = badge && badge.color;
-      // A pill: the palette colour tints the ground, marks the dot and writes
-      // the label, so one hue carries the whole thing in either scheme. A value
-      // the palette does not name stays plain text.
+      // A pill: the palette colour tints the ground and writes the label, so
+      // one hue carries it in either scheme. A value the palette does not name
+      // stays plain text.
       if (color)
         return `<span class="tv-pill" style="--tv-badge:${esc(color)};`
-             + `--tv-ink:${esc(inkFor(color, !!dark))}">`
-             + `<i class="tv-dot"></i>${esc(raw)}</span>`;
+             + `--tv-ink:${esc(inkFor(color, !!dark))}">${esc(raw)}</span>`;
       return esc(raw);
     }
     const s = typeof val === "string" ? val : displayText(val);
@@ -477,7 +475,7 @@
   const OVERSCAN = 15;         // rows rendered above and below the viewport
   const ROW_H = 30;            // row height until a rendered row can be measured
   const CELL_PAD = 24;         // a cell's horizontal padding, both sides
-  const PILL_CH = 4;           // a badge pill's dot, gap and ground, in characters
+  const PILL_CH = 2;           // a badge pill's ground, in characters
   const DEBOUNCE = 120;        // ms of quiet before a filter keystroke re-renders
   const SETTLE = 200;          // ms of quiet before the rows are taken to have settled
   const LONG_PRESS = 500;      // ms of a still finger before it means the row action
@@ -596,11 +594,9 @@
 .tv-table tbody td.tv-cell-sel{box-shadow:inset 0 0 0 1px var(--tv-accent);border-radius:3px}
 .tv-table tbody tr{cursor:default}
 .tv-table tbody tr.tv-pad td{padding:0;border:0}
-.tv-pill{display:inline-flex;align-items:center;gap:5px;padding:0 8px;border-radius:999px;
+.tv-pill{display:inline-block;padding:0 8px;border-radius:999px;
   font-weight:600;color:var(--tv-ink,var(--tv-badge));
   background:color-mix(in srgb,var(--tv-badge) 15%,transparent)}
-.tv-dot{flex:none;width:6px;height:6px;border-radius:50%;
-  background:var(--tv-ink,var(--tv-badge))}
 .tv-link{color:var(--tv-accent);text-decoration:underline}
 .tv-arrow{margin-left:4px;opacity:.7}
 .tv-empty{padding:16px 12px;color:var(--tv-muted)}
@@ -770,14 +766,25 @@
       const cols = columns();
       multiAt = -1;
       for (let i = 0; i < cols.length && multiAt === -1; i++) {
-        let seen = 0, all = true;
+        let shaped = 0, contrary = 0, seen = 0;
         for (const r of state.rows) {
           const cell = rowText(r).cells[i];
           if (!cell) continue;
-          if (!ORG_TAGS.test(cell)) { all = false; break; }
-          if (++seen >= 20) break;
+          if (ORG_TAGS.test(cell)) shaped++;
+          else if (cell.indexOf(":") !== -1) contrary++;
+          if (++seen >= 40) break;
         }
-        if (all && seen) multiAt = i;
+        // Evidence for, and evidence against — a bare word being neither.
+        // Asking every sampled cell to be a well-formed list lets one import,
+        // one hand-edited headline, one stray anywhere in the sample decide
+        // that a corpus has no tags at all, and the whole vocabulary goes with
+        // it: no tag keys, no values under them, no completions, and the raw
+        // `:a:b:' strings offered as values instead. But a cell holding a
+        // single value holds no delimiter to show, so it cannot argue either
+        // way; `tagsIn' reads it as the one value it plainly is. What does
+        // argue against is a colon arranged some other way — a time, a URL, a
+        // sentence — which no column of delimited lists would carry.
+        if (shaped >= 2 && !contrary) multiAt = i;
       }
       return multiAt;
     }
@@ -1118,8 +1125,8 @@
         const len = rowText(r).len;
         for (let i = 0; i < w.length; i++) if (len[i] > w[i]) w[i] = len[i];
       }
-      // A badge cell draws a pill around its text, which the cached length
-      // knows nothing about: the dot, its gap and the ground's padding.
+      // A badge cell draws a pill around its text, whose padding the cached
+      // length knows nothing about.
       for (let i = 0; i < cols.length; i++) if (cols[i].type === "badge") w[i] += PILL_CH;
       widths = w;
       return w;

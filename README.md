@@ -375,8 +375,8 @@ the way `table-view.el` prints its legend: the keys are the interface, and a
 consumer binds them and dispatches the command (`onAction`, or the
 `tableview-action` event). A double click still runs the default action.
 
-**Badge cells render as pills** — the palette colour tints the ground, marks a
-dot and writes the label, so one hue carries the whole thing in either scheme.
+**Badge cells render as pills** — the palette colour tints the ground and writes
+the label, so one hue carries it in either scheme.
 
 ### The filter box
 

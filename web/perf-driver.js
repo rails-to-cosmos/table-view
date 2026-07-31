@@ -803,8 +803,8 @@ async function cellsChipsPills() {
   const pill = box.querySelector(".tv-table tbody td .tv-pill");
   check("a badge cell renders a pill", !!pill, true);
   check("tinted from its palette colour", pill.attrs.get("style").indexOf("--tv-badge:#") !== -1, true);
-  check("with a dot before the label", pill.children.map((e) => e.className), ["tv-dot"]);
-  check("and the label after it", STATES.indexOf(pill.text) !== -1, true);
+  check("holding the label and nothing else",
+        [pill.children.length, STATES.indexOf(pill.text) !== -1], [0, true]);
   check("a text cell is untouched",
         rowOf(id).children[2].querySelectorAll(".tv-pill").length, 0);
 
@@ -1200,6 +1200,75 @@ async function virtualKeys() {
     offer("alberblanc");
     check("typed in full, it is exact and the guesses go",
           [plain().indexOf("tag:alberblanc") !== -1, dim().length], [true, 0]);
+    // The live report: a corpus whose tag cells are colon-wrapped, with one
+    // that is not. Detection has to survive the stray, and the values offered
+    // for the column have to be the split tags — the raw `:a:b:' cell can
+    // never prefix-match a bare word, so a reroute failure looks exactly like
+    // this: no `tag:alberblanc' for `alb'.
+    {
+      const messy = rows.concat([
+        { id: "f", cells: { title: "imported from elsewhere", tag: "alberblanc" } }]);
+      const mbox = new El("div");
+      const mt = TableView.mount(mbox, { columns: own, rows: messy });
+      const mb = filterOf(mbox);
+      const mOffer = (q) => {
+        mb.value = q;
+        mb.dispatchEvent(new Ev("input"));
+        return mbox.querySelectorAll(".tv-ac-label").map((e) => e.text);
+      };
+      check("one cell that is not a list does not cost the column its vocabulary",
+            mOffer("alb").indexOf("tag:alberblanc") !== -1, true);
+      check("and the tag is still a key of its own",
+            mOffer("alb").indexOf("alberblanc:") !== -1, true);
+      check("the column's values are the split tags, never the raw cells",
+            mOffer("tag:").every((v) => v.indexOf(":") === -1), true);
+      check("the bare cell reads as the single value it is",
+            mOffer("tag:").indexOf("alberblanc") !== -1, true);
+      mb.value = "tag:alberblanc";
+      mb.dispatchEvent(new Ev("keydown", { key: "Enter" }));
+      // The well-formed row and the stray one, which is the point: the bare
+      // cell is a member of the vocabulary rather than an outsider to it.
+      check("and it matches both the list row and the bare one",
+            mt.getVisible().length, 2);
+
+      // A colon arranged some other way is evidence against, and is taken as
+      // such — a time column must not become a tag vocabulary.
+      const timed = new El("div");
+      TableView.mount(timed, {
+        columns: [{ key: "title", header: "H", type: "text" },
+                  { key: "at", header: "At", type: "text" }],
+        rows: [{ id: "1", cells: { title: "a", at: "09:30" } },
+               { id: "2", cells: { title: "b", at: ":x:y:" } },
+               { id: "3", cells: { title: "c", at: ":x:" } }],
+      });
+      const tb = filterOf(timed);
+      tb.value = "at:";
+      tb.dispatchEvent(new Ev("input"));
+      check("a column carrying a time is no column of lists",
+            timed.querySelectorAll(".tv-ac-label").map((e) => e.text).indexOf("09:30") !== -1,
+            true);
+    }
+
+    // A single-valued column keeps its distinct cells, whole.
+    {
+      const single = new El("div");
+      TableView.mount(single, {
+        columns: [{ key: "title", header: "H", type: "text" },
+                  { key: "who", header: "Who", type: "text" }],
+        rows: [{ id: "1", cells: { title: "a", who: "ada lovelace" } },
+               { id: "2", cells: { title: "b", who: "ada lovelace" } },
+               { id: "3", cells: { title: "c", who: "alan turing" } }],
+      });
+      const sb = filterOf(single);
+      sb.value = "who:";
+      sb.dispatchEvent(new Ev("input"));
+      check("a single-valued column offers its distinct cells, unsplit",
+            single.querySelectorAll(".tv-ac-label").map((e) => e.text),
+            ["ada lovelace", "alan turing"]);
+      check("counted as cells", single.querySelectorAll(".tv-ac-n").map((e) => Number(e.text)),
+            [2, 1]);
+    }
+
     offer("boo");
     check("boo offers the tag as a key and as a value of the tags column",
           [plain().indexOf("book:") !== -1, plain().indexOf("tag:book") !== -1],
