@@ -332,6 +332,172 @@ const check = (what, got, want) => {
               + (ok ? "" : "  want " + JSON.stringify(want)));
 };
 
+/**
+ * SCHEMA.md's filter micro-syntax: the tokenizer, the local semantics it
+ * drives, and the suggestion list that helps type it.
+ */
+async function filterQuery() {
+  console.log("\n== the filter query");
+  const KEYS = columns.map((c) => c.key);
+  const parse = (q) => TableView.parseQuery(q, KEYS);
+  /** A token as `[negated, key, value, quoted]' — what the grammar decided. */
+  const shape = (q) => parse(q).map((t) => [t.negated, t.key, t.value, t.quoted]);
+
+  check("key:value is a predicate when the key names a column",
+        shape("state:DONE"), [[false, "state", "DONE", false]]);
+  check("= is an alias for :", shape("state=DONE"), [[false, "state", "DONE", false]]);
+  check("an unknown key is free text", shape("nope:x"), [[false, null, "nope:x", false]]);
+  // The org-text traps: a predicate must never happen by accident.
+  check("org tag text stays free text", shape(":work:"), [[false, null, ":work:", false]]);
+  check("org verbatim text stays free text", shape("=code="), [[false, null, "=code=", false]]);
+  check("a quoted token is free text, spaces and all",
+        shape('"two words"'), [[false, null, "two words", true]]);
+  check("a quoted token never becomes a predicate",
+        shape('"state:DONE"'), [[false, null, "state:DONE", true]]);
+  check("- negates a predicate", shape("-state:DONE"), [[true, "state", "DONE", false]]);
+  check("- negates quoted free text", shape('-"two words"'), [[true, null, "two words", true]]);
+  check("& separates like whitespace",
+        shape("a&b"), [[false, null, "a", false], [false, null, "b", false]]);
+  check("a predicate value may be quoted",
+        shape('state:"a b"'), [[false, "state", "a b", false]]);
+  check("tokens collapse runs of separators", shape("  a   b  ").length, 2);
+  check("an empty query is no tokens", shape(""), []);
+  const off = parse("ab state:DONE")[1];
+  check("offsets cover the whole token, separator and all",
+        [off.start, off.end, "ab state:DONE".slice(off.start, off.end)],
+        [3, 13, "state:DONE"]);
+
+  // Local semantics, by column type.
+  const box = new El("div");
+  const q = TableView.mount(box, view(40));
+  const shown = (query) => {
+    const b = filterOf(box);
+    // An empty box offers nothing, so this shuts any list a previous check
+    // left open — an open list would take the Enter below for itself.
+    b.value = "";
+    b.dispatchEvent(new Ev("input"));
+    b.value = query;
+    b.dispatchEvent(new Ev("keydown", { key: "Enter" }));    // applies at once
+    return q.getVisible().length;
+  };
+  const all = shown("");
+  check("the fixture is 40 rows", all, 40);
+  check("badge predicates match a value exactly", shown("state:DONE"), 8);
+  check("and only exactly — no substring", shown("state:DON"), 0);
+  check("text predicates are substrings", shown("title:system") > 0, true);
+  check("date cells match by prefix", shown("scheduled:2026-03"), 4);
+  check("and not by substring", shown("scheduled:03"), 0);
+  check("none matches an empty cell", shown("deadline:none"), 30);
+  // The half-typed state the suggestion list serves: it must not narrow, and
+  // must not narrow differently per column type.
+  check("a key with nothing typed after it narrows nothing",
+        [shown("state:"), shown("title:"), shown("deadline:")], [40, 40, 40]);
+  check("negation excludes", shown("-state:DONE"), 32);
+  check("tokens AND together", shown("state:DONE tags:web"), 3);
+  // SCHEMA: predicates sharing one key OR, distinct keys AND, negations AND.
+  const done = shown("state:DONE"), next = shown("state:NEXT");
+  check("predicates sharing a key OR together", shown("state:DONE state:NEXT"), done + next);
+  check("three of them too", shown("state:DONE state:NEXT state:TODO"), done + next + 8);
+  check("distinct keys still AND across the OR groups",
+        shown("state:DONE state:NEXT tags:web"), 6);
+  check("free text ANDs with an OR group",
+        shown("state:DONE state:NEXT system") < done + next, true);
+  check("a negation ANDs rather than joining its key's group",
+        shown("-state:DONE state:NEXT"), next);
+  check("and a negated key is not an OR group of its own",
+        shown("-state:DONE -state:NEXT"), 40 - done - next);
+  check("free text still searches every cell", shown("system") > 0, true);
+  check("free text and a predicate AND too",
+        shown("system state:DONE") <= shown("state:DONE"), true);
+  check("an unknown key filters as the free text it is", shown("nope:x"), 0);
+  shown("");
+
+  // The suggestion list.
+  const items = () => Array.from(box.querySelectorAll(".tv-ac-label")).map((e) => e.text);
+  const counts = () => Array.from(box.querySelectorAll(".tv-ac-n")).map((e) => Number(e.text));
+  const type = (query) => {
+    const b = filterOf(box);
+    b.value = query;
+    b.dispatchEvent(new Ev("input"));
+    return items();
+  };
+  check("a bare word suggests the column keys it opens", type("sta"), ["state:"]);
+  check("the prefix narrows them", type("s"), ["state:", "scheduled:"]);
+  check("a key with no match offers nothing", type("zzz"), []);
+  check("an empty box offers nothing", type(""), []);
+  check("a quoted token offers nothing", type('"sta'), []);
+  check("free text carrying punctuation offers nothing", type(":work"), []);
+  check("key: offers the badge palette", type("state:"), STATES);
+  check("and the prefix narrows it", type("state:d"), ["DONE"]);
+  check("a declared values list wins", type("priority:"), PRI);
+  check("a column with neither is the distinct cell values",
+        type("tags:").sort(), TAGS.slice().sort());
+  check("the list is capped", type("title:").length <= 12, true);
+
+  // Value counts: how many rows stand behind each suggestion.
+  type("state:");
+  check("each value carries its row count", counts(), [8, 8, 8, 8, 8]);
+  check("and the count is what the predicate actually matches",
+        counts()[items().indexOf("DONE")], shown("state:DONE"));
+  type("sta");
+  check("the key stage carries no counts", counts(), []);
+  type("deadline:");
+  check("counts are over every row, not the filtered ones",
+        counts().reduce((a, b) => a + b, 0), 10);
+  // The cache is thrown away with the text cache, so an edit is reflected.
+  q.upsertRow({ id: "h-0", cells: { state: "DONE", priority: "A", title: "moved",
+                                    tags: ":web:", scheduled: "2026-01-01 00:00",
+                                    deadline: "" } });
+  type("state:");
+  check("an upsert invalidates the counts", counts(), [7, 8, 8, 8, 9]);
+  q.upsertRow(makeRow(0));
+  type("state:");
+  check("and putting it back restores them", counts(), [8, 8, 8, 8, 8]);
+
+  // Accept mechanics.
+  const b = filterOf(box);
+  type("sta");
+  const held = b.blurs || 0;
+  b.dispatchEvent(new Ev("keydown", { key: "Enter" }));
+  check("Enter on a key suggestion completes to key:", b.value, "state:");
+  check("and stays in the box for the value", (b.blurs || 0) - held, 0);
+  check("and the list moves to the value stage", items(), STATES);
+  b.dispatchEvent(new Ev("keydown", { key: "ArrowDown" }));
+  b.dispatchEvent(new Ev("keydown", { key: "Tab" }));
+  check("Tab accepts the highlighted value, with a trailing space",
+        b.value, "state:TODO ");
+  check("and the list closes once the token is finished", items(), []);
+
+  type("state:DONE tit");
+  b.dispatchEvent(new Ev("keydown", { key: "Enter" }));
+  check("accepting replaces the caret's token and keeps the rest",
+        b.value, "state:DONE title:");
+  type("-sta");
+  b.dispatchEvent(new Ev("keydown", { key: "Enter" }));
+  check("a negated token keeps its -", b.value, "-state:");
+
+  // Precedence: the list gets Enter and Esc first.
+  type("sta");
+  b.dispatchEvent(new Ev("keydown", { key: "Escape" }));
+  check("the first Escape closes the list", items(), []);
+  check("and leaves the text alone", b.value, "sta");
+  b.dispatchEvent(new Ev("keydown", { key: "Escape" }));
+  check("the second Escape clears the box", b.value, "");
+
+  type("sta");
+  const blurs = b.blurs || 0;
+  b.dispatchEvent(new Ev("keydown", { key: "Enter" }));
+  check("Enter with the list open accepts rather than handing over focus",
+        [(b.blurs || 0) - blurs, b.value], [0, "state:"]);
+  b.dispatchEvent(new Ev("keydown", { key: "Escape" }));
+  b.dispatchEvent(new Ev("keydown", { key: "Escape" }));
+  b.value = "system";
+  b.dispatchEvent(new Ev("keydown", { key: "Enter" }));
+  check("Enter with the list closed still hands the table over",
+        [(b.blurs || 0) - blurs > 0,
+         !!box.querySelector(".tv-table tbody tr.tv-sel")], [true, true]);
+}
+
 async function smoke() {
   const seen = [];
   const box = new El("div");
@@ -492,6 +658,8 @@ async function smoke() {
   check("no rows says so", box.querySelector(".tv-empty").style.display, "");
   t.setView(view(5));
   check("setView reloads", hint(), "5 rows · sort scheduled asc");
+
+  if (typeof TableView.parseQuery === "function") await filterQuery();
 
   if (typeof t.select !== "function") return;
 

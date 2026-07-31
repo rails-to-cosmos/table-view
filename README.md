@@ -323,13 +323,41 @@ outside the window has no element to click — move the selection with
 elements. The filter input is built once and never re-created, so focus and
 caret survive typing.
 
-**Enter** in the filter box applies it at once — cancelling the pending
+### The filter box
+
+It speaks [`SCHEMA.md`](SCHEMA.md)'s query micro-syntax: `key:value` field
+predicates — only where `key` names a column, so org text like `:work:` or
+`=code=` never becomes one by accident — plus `"quoted text"`, `-negation`, and
+free text for everything else. Predicates sharing a key **OR** together;
+distinct keys, free text and negations **AND**. So `state:TODO state:NEXT
+-tags:done review` reads *either state, not done, mentioning review*.
+
+```js
+TableView.parseQuery('state:TODO -tags:done', ["state", "tags"])
+// [{ negated: false, key: "state", value: "TODO", quoted: false, start: 0, end: 11, sep: 5 },
+//  { negated: true,  key: "tags",  value: "done", quoted: false, start: 12, end: 22, sep: 17 }]
+```
+
+The tokenizer is exported so a consumer can highlight the box and a producer can
+implement the same grammar at the other end. Filtering locally applies the
+parsed query; with `onFilter` the raw text goes to the producer and the grammar
+is its business.
+
+A **suggestion list** under the box completes it: a bare word suggests column
+keys, `key:` suggests that column's value domain — its `values`, else its badge
+palette, else the distinct cell values of the loaded rows — each with the number
+of rows behind it. **Arrows** move, **Tab**/**Enter** accept, **Escape**
+dismisses, a click accepts without taking focus. It stays shut when it has
+nothing to offer, and inside a quoted token.
+
+**Enter** with no list open applies the filter at once — cancelling the pending
 debounce, so the query reaches the producer exactly once — blurs the box, and
 puts the selection on the first visible row unless it is already on one (under
 `onFilter`, that last step waits for the producer's `setRows`). **Escape**
-clears a filled box and blurs. Both keys stop at the input rather than bubbling
-into a consumer's own keymap, and nothing else moves focus or the selection: a
-debounce firing on its own leaves both where the typist left them.
+closes the list if it is open, else clears a filled box, and blurs. Both keys
+stop at the input rather than bubbling into a consumer's own keymap, and nothing
+else moves focus or the selection: a debounce firing on its own leaves both
+where the typist left them.
 
 ## Development
 

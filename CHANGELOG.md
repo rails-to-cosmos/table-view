@@ -6,6 +6,21 @@ the rails-to-cosmos ELPA archive publishes date-stamped snapshots.
 ## Unreleased
 
 ### Added
+- Browser renderer: the filter box speaks SCHEMA.md's query micro-syntax
+  — `key:value` predicates (only where `key` names a column, so `:work:`
+  and `=code=` stay org text), `"quoted text"`, `-negation`, free text
+  otherwise; predicates sharing a key OR, distinct keys and free text and
+  negations AND. `TableView.parseQuery(q, columnKeys)` is the tokenizer,
+  exported for consumers highlighting the box and producers implementing
+  the grammar server-side. Filtering locally applies the parsed query,
+  by column type: badge exact, text/number substring, date cells by
+  prefix, `none` for empty.
+- Browser renderer: a staged suggestion list under the filter box. A
+  bare word suggests column keys, `key:` suggests that column's value
+  domain (`values`, else the badge palette, else the distinct cell
+  values of the loaded rows), each shown with the number of rows behind
+  it. Arrows move, Tab/Enter accept, Escape dismisses before it clears
+  anything, a click accepts without taking focus.
 - `web/perf-driver.js` + `make web-perf`: a dependency-free Node driver
   (its own DOM shim) that mounts 13,344 synthetic rows and reports the
   time, HTML bytes and listener count of a mount, a filter keystroke, an
@@ -27,6 +42,8 @@ the rails-to-cosmos ELPA archive publishes date-stamped snapshots.
   keymap; nothing else moves focus or the selection.
 
 ### Changed
+- Browser renderer: Org links in cells are underlined always, rather
+  than only under the pointer.
 - The browser renderer no longer rebuilds itself on every keystroke. The
   chrome — bar, filter input, table skeleton, hint — is built once at
   mount; rows are virtualized (the scrolled-to window plus ~15 rows of

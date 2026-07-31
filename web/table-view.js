@@ -17,6 +17,9 @@
  *   tv.select(id);        // select a row by id and scroll it into view -> bool
  *   tv.getVisible();      // the filtered + sorted rows, in display order
  *
+ *   TableView.parseQuery(q, columnKeys)   // SCHEMA.md's filter micro-syntax
+ *   // -> [{ negated, key, value, quoted, start, end, sep }, ...]
+ *
  * Also emits DOM CustomEvents on the container: `tableview-action`
  * ({detail:{command,id,row}}) and `tableview-link` ({detail:{target,row}}).
  *
@@ -39,13 +42,28 @@
  * - Filter input is debounced 120ms; the row window renders on a rAF. With an
  *   `onFilter' option the debounced query goes to the producer instead and the
  *   rows given are the rows shown — no local narrowing.
- * - Enter in the filter box applies it at once (cancelling the pending
- *   debounce, so the query is delivered exactly once), blurs the box, and puts
- *   the selection on the first visible row unless it is already on one — under
- *   `onFilter' that last step waits for the producer's `setRows'. Escape clears
- *   a non-empty box and blurs. Both keys stop there rather than bubbling into a
- *   consumer's own keymap. Nothing else moves focus or the selection: a
- *   debounce firing on its own leaves both where the typist left them.
+ * - The filter box speaks SCHEMA.md's query micro-syntax: `key:value' field
+ *   predicates (only where `key' names a column, so `:work:' stays org text),
+ *   `"quoted text"', `-negation', everything else free text. Predicates
+ *   sharing a key OR together; distinct keys, free text and negations AND.
+ *   `TableView.parseQuery' is the tokenizer, exported so a consumer can
+ *   highlight the box and a producer can implement the same grammar. Filtering
+ *   locally applies the parsed query; with `onFilter' the raw text goes to the
+ *   producer and the grammar is its business.
+ * - A suggestion list under the box completes it: a bare word suggests column
+ *   keys, `key:' suggests that column's value domain (`values', else the badge
+ *   palette, else the distinct cell values of the loaded rows), each with the
+ *   number of rows behind it. Arrows move, Tab and Enter accept, Esc dismisses;
+ *   a click accepts without taking focus. It stays shut when it has nothing to
+ *   offer, and inside a quoted token.
+ * - Enter in the filter box, with no list open, applies it at once (cancelling
+ *   the pending debounce, so the query is delivered exactly once), blurs the
+ *   box, and puts the selection on the first visible row unless it is already
+ *   on one — under `onFilter' that last step waits for the producer's
+ *   `setRows'. Escape closes the list if it is open, else clears a non-empty
+ *   box, and blurs. Both keys stop there rather than bubbling into a consumer's
+ *   own keymap. Nothing else moves focus or the selection: a debounce firing on
+ *   its own leaves both where the typist left them.
  *
  * Type-checked with `// @ts-check` + the JSDoc @typedefs below (no build step);
  * run `make web-check`.  The typedefs are the JS mirror of ../SCHEMA.md.
@@ -88,9 +106,17 @@
  *             getRows: () => Row[],
  *             getVisible: () => Row[],
  *             select: (id: string) => boolean }} Handle  What `mount' returns.
- * @typedef {{ search: string, len: number[] }} RowText
+ * @typedef {{ search: string, len: number[], cells: string[] }} RowText
  *   A row's cached display data: every cell's text lowercased and joined with
- *   \x1f (the filter searches it), and each cell's length (column widths).
+ *   \x1f (free-text filtering searches it), each cell's length (column widths),
+ *   and the same per-cell strings (field predicates test one column).
+ * @typedef {{ negated: boolean,
+ *             key: string|null,
+ *             value: string,
+ *             quoted: boolean,
+ *             start: number,
+ *             end: number,
+ *             sep: number }} Token  One filter-query token; see `parseQuery'.
  */
 
 /** @param {*} root  The global object (`window`, or CommonJS `this`). */
@@ -142,6 +168,82 @@
     }
     out += esc(s.slice(last).replace(/[\u0000-\u001f\u007f]+/g, " "));
     return out;
+  }
+
+  // ---- filter query --------------------------------------------------------
+  // SCHEMA.md's filter micro-syntax, so a producer filtering server-side and a
+  // renderer filtering locally answer the same box the same way. Exported as
+  // `TableView.parseQuery' — a consumer highlighting the box, and a producer
+  // implementing the grammar at the other end, read it from here.
+
+  /** Is C a token separator? `&' is an alias for whitespace. */
+  const isSep = (c) => c === "&" || c === " " || c === "\t" || c === "\n";
+
+  /** The first `:' or `=' in S, or -1. @param {string} s */
+  function splitAt(s) {
+    const a = s.indexOf(":"), b = s.indexOf("=");
+    return a === -1 ? b : (b === -1 ? a : Math.min(a, b));
+  }
+
+  /**
+   * Split Q into raw tokens: quotes removed, a leading `-' taken off, and the
+   * offsets of the whole token kept so a caret can be placed inside one.
+   * Separators inside quotes are ordinary characters.
+   * @param {string} q
+   */
+  function scanQuery(q) {
+    const out = [];
+    let start = 0, body = "", neg = false, quoted = false;
+    let seen = false, hasBody = false, inQ = false, sep = -1;
+    const flush = (end) => {
+      if (seen) out.push({ start, end, body, negated: neg, quoted, sep });
+      body = ""; neg = false; quoted = false; seen = false; hasBody = false; sep = -1;
+    };
+    for (let i = 0; i < q.length; i++) {
+      const c = q[i];
+      if (c === '"') {
+        if (!seen) start = i;
+        if (!hasBody) quoted = true;      // a token that opens with a quote is free text
+        seen = hasBody = true;
+        inQ = !inQ;
+      } else if (!inQ && isSep(c)) {
+        flush(i);
+      } else if (!seen && c === "-") {
+        start = i; seen = true; neg = true;
+      } else {
+        if (!seen) start = i;
+        if (!inQ && !quoted && sep === -1 && (c === ":" || c === "=")) sep = i;
+        body += c;
+        seen = hasBody = true;
+      }
+    }
+    flush(q.length);
+    return out;
+  }
+
+  /**
+   * Q as tokens, against the column KEYS of the view it filters. `key:value'
+   * is a field predicate only when KEY names a column, so org cell text like
+   * `:work:' or `=code=' stays free text; a quoted token is always free text;
+   * a leading `-' negates either form; tokens AND together.
+   * @param {string} q  @param {string[]} keys  @returns {Token[]}
+   */
+  function parseQuery(q, keys) {
+    const known = new Set(keys || []);
+    return scanQuery(q).map((t) => {
+      const at = t.quoted ? -1 : splitAt(t.body);
+      const key = at > 0 ? t.body.slice(0, at) : null;
+      const pred = key !== null && known.has(key);
+      return {
+        negated: t.negated,
+        key: pred ? key : null,
+        value: pred ? t.body.slice(at + 1) : t.body,
+        quoted: t.quoted,
+        start: t.start,
+        end: t.end,
+        sep: pred ? t.sep : -1,
+      };
+    });
   }
 
   // ---- sorting -------------------------------------------------------------
@@ -216,6 +318,17 @@
 .tv-title{font-weight:600;font-size:14px;margin-right:auto}
 .tv-filter{font:inherit;padding:4px 8px;border:1px solid var(--tv-border);border-radius:6px;
   background:var(--tv-bg);color:var(--tv-fg);min-width:140px}
+.tv-filter-wrap{position:relative;display:flex}
+/* The suggestion list hangs under the box, over the table. .tv-root clips with
+   overflow:hidden, so it scrolls internally rather than growing past it. */
+.tv-ac{position:absolute;top:100%;left:0;min-width:100%;z-index:5;margin-top:2px;
+  max-height:min(288px,40vh);overflow-y:auto;background:var(--tv-bg);
+  border:1px solid var(--tv-border);border-radius:6px;box-shadow:0 4px 12px #0003}
+.tv-ac-item{display:flex;justify-content:space-between;align-items:baseline;gap:14px;
+  padding:3px 10px;white-space:nowrap;cursor:pointer;color:var(--tv-fg)}
+.tv-ac-n{color:var(--tv-muted);font-variant-numeric:tabular-nums}
+.tv-ac-item:hover{color:var(--tv-accent)}
+.tv-ac-on{background:var(--tv-sel);color:var(--tv-accent)}
 .tv-btn{font:inherit;padding:4px 10px;border:1px solid var(--tv-border);border-radius:6px;
   background:var(--tv-bg);color:var(--tv-fg);cursor:pointer}
 .tv-btn:disabled{opacity:.45;cursor:default}
@@ -234,8 +347,7 @@
 .tv-table tbody tr{cursor:default}
 .tv-table tbody tr.tv-pad td{padding:0;border:0}
 .tv-badge{font-weight:600;color:var(--tv-badge)}
-.tv-link{color:var(--tv-accent);text-decoration:none}
-.tv-link:hover{text-decoration:underline}
+.tv-link{color:var(--tv-accent);text-decoration:underline}
 .tv-arrow{margin-left:4px;opacity:.7}
 .tv-empty{padding:16px 12px;color:var(--tv-muted)}
 .tv-hint{padding:6px 12px;border-top:1px solid var(--tv-border);color:var(--tv-muted);font-size:12px}`;
@@ -277,8 +389,12 @@
     let sorted = null;
     /** @type {Row[]|null} */
     let order = null;
-    /** The trimmed, lowercased query `order' was filtered by. */
-    let orderQuery = "";
+    /**
+     * The compiled query `order' was filtered by; null when unfiltered. An
+     * upsert asks it whether the row still belongs.
+     * @type {((r: Row) => boolean)|null}
+     */
+    let orderTest = null;
     /**
      * The comparator `sorted' is in, for binary-inserting an upsert.
      * @type {((a: Row, b: Row) => number)|null}
@@ -291,6 +407,13 @@
     let widths = null;
     /** @type {Map<string, RowText>} */
     const texts = new Map();
+    /**
+     * A column's distinct cell values, for the suggestion list — computed on
+     * demand and thrown away with the text cache, since the rows are what it
+     * was read off.
+     * @type {Map<string, {list: string[], counts: Map<string, number>}>}
+     */
+    const domains = new Map();
 
     /** Cached display data for row R. @param {Row} r  @returns {RowText} */
     function rowText(r) {
@@ -303,11 +426,14 @@
           len[i] = s.length;
           parts[i] = s.toLowerCase();
         }
-        t = { search: parts.join("\x1f"), len };
+        t = { search: parts.join("\x1f"), len, cells: parts };
         texts.set(r.id, t);
       }
       return t;
     }
+
+    /** Forget the cached display data, and the value domains read off it. */
+    function clearTexts() { texts.clear(); domains.clear(); }
 
     /** Drop the filtered list (and the widths it implies). */
     function dropOrder() { order = null; widths = null; }
@@ -332,8 +458,17 @@
     input.className = "tv-filter";
     input.type = "search";
     input.placeholder = "filter…";
+    // The box and its suggestion list travel together, so the list can be
+    // positioned against the box and nothing else.
+    const filterWrap = document.createElement("div");
+    filterWrap.className = "tv-filter-wrap";
+    const acEl = document.createElement("div");
+    acEl.className = "tv-ac";
+    acEl.style.display = "none";
+    filterWrap.appendChild(input);
+    filterWrap.appendChild(acEl);
     bar.appendChild(titleEl);
-    bar.appendChild(input);
+    bar.appendChild(filterWrap);
 
     const scroll = document.createElement("div");
     scroll.className = "tv-scroll";
@@ -416,6 +551,91 @@
       };
     }
 
+    /** The column keys `parseQuery' resolves predicates against. */
+    const columnKeys = () => columns().map((c) => c.key);
+
+    /** An ISO-ish date cell, which SCHEMA gives prefix matching. */
+    const DATEISH = /^\d{4}-\d{2}(-\d{2})?([ T]\d{2}:\d{2})?$/;
+
+    /**
+     * Does column I hold dates? Decided once per query off a sample rather than
+     * per cell, so a date column costs no regex in the filter loop. A column
+     * whose first 20 non-empty cells are ISO dates counts as one.
+     * @param {number} i
+     */
+    function dateColumn(i) {
+      let seen = 0;
+      for (const r of state.rows) {
+        const s = rowText(r).cells[i];
+        if (!s) continue;
+        if (!DATEISH.test(s)) return false;
+        if (++seen >= 20) break;
+      }
+      return seen > 0;
+    }
+
+    /**
+     * TOK as a row test, negation aside — `queryMatcher' applies that, since
+     * where a token lands in the AND/OR shape depends on it. Free text is a
+     * substring of the whole row; a field predicate reads one cell, by SCHEMA's
+     * semantics for that column's type.
+     * @param {Token} tok  @returns {(r: Row) => boolean}
+     */
+    function tokenTest(tok) {
+      const col = tok.key === null ? null : colByKey(tok.key);
+      const v = tok.value.toLowerCase();
+      if (!col)
+        // The cached joined string, which is the hot path and the reason the
+        // pure-free-text query costs exactly what it did before.
+        return v ? (r) => rowText(r).search.includes(v) : () => true;
+      const i = columns().indexOf(col);
+      // `key:' with nothing after it yet — the half-typed state the suggestion
+      // list exists to serve — narrows nothing, whatever the column's type.
+      // Asking for an empty cell is what `none' is for.
+      if (!v) return () => true;
+      if (v === "none") return (r) => rowText(r).cells[i] === "";
+      if (col.type === "badge") return (r) => rowText(r).cells[i] === v;
+      if (dateColumn(i)) return (r) => rowText(r).cells[i].startsWith(v);
+      return (r) => rowText(r).cells[i].includes(v);
+    }
+
+    /**
+     * Q compiled to a row test, or null when it filters nothing. Built once per
+     * filter change and reused for every row.
+     *
+     * SCHEMA's shape: predicates sharing one key OR together — `state:TODO
+     * state:DONE' is either — while distinct keys and free text AND, and a
+     * negation ANDs whatever it is. So the positive predicates group by key,
+     * each group passes on any member, and everything else stands on its own.
+     * @param {string} q  @returns {((r: Row) => boolean)|null}
+     */
+    function queryMatcher(q) {
+      /** @type {Map<string, ((r: Row) => boolean)[]>} */
+      const groups = new Map();
+      /** @type {((r: Row) => boolean)[]} */
+      const musts = [];
+      for (const tok of parseQuery(q, columnKeys())) {
+        const test = tokenTest(tok);
+        if (tok.negated) musts.push((r) => !test(r));
+        else if (tok.key === null) musts.push(test);
+        else {
+          const g = groups.get(tok.key);
+          if (g) g.push(test); else groups.set(tok.key, [test]);
+        }
+      }
+      for (const g of groups.values())
+        musts.push(g.length === 1 ? g[0] : (r) => {
+          for (const t of g) if (t(r)) return true;
+          return false;
+        });
+      if (!musts.length) return null;
+      if (musts.length === 1) return musts[0];
+      return (r) => {
+        for (const t of musts) if (!t(r)) return false;
+        return true;
+      };
+    }
+
     /** The rows to display: sorted, then filtered. Cached. @returns {Row[]} */
     function ordered() {
       if (order) return order;
@@ -424,15 +644,14 @@
         sorted = state.rows.slice();     // never sort the store itself
         if (orderCmp) sorted.sort(orderCmp);
       }
-      const q = state.filter.trim().toLowerCase();
-      order = q ? sorted.filter((r) => rowText(r).search.includes(q)) : sorted.slice();
-      orderQuery = q;
+      orderTest = queryMatcher(state.filter);
+      order = orderTest ? sorted.filter(orderTest) : sorted.slice();
       widths = null;
       return order;
     }
 
     /** Whether ROW passes the current filter. @param {Row} r */
-    function matches(r) { return !orderQuery || rowText(r).search.includes(orderQuery); }
+    function matches(r) { return !orderTest || orderTest(r); }
 
     /**
      * Column widths in characters: the widest cell in the filtered set, and the
@@ -738,14 +957,178 @@
     // query instead of filtering locally: `state.filter' stays empty, so
     // `order' is `sorted' and the rows given are the rows shown.
     let debounce = 0;
-    input.addEventListener("input", () => {
+    function armFilter() {
       if (debounce) clearTimeout(debounce);
       debounce = setTimeout(() => {
         debounce = 0;
         if (o.onFilter) o.onFilter(input.value);
         else frame(applyFilter);
       }, DEBOUNCE);
+    }
+    input.addEventListener("input", () => { armFilter(); openAc(); });
+
+    // ---- the suggestion list -----------------------------------------------
+    // SCHEMA.md's autocomplete: a bare word suggests column keys, `key:'
+    // suggests that column's value domain. Renderer-local — the producer is
+    // never asked, and the list is only ever an aid to typing the grammar.
+
+    const AC_MAX = 12;          // suggestions offered at once
+    const DOMAIN_MAX = 200;     // distinct values kept before the prefix narrows them
+
+    /** @type {{stage: string, tok: Token, items: {text: string, count: number}[]}|null} */
+    let ac = null;
+    let acAt = 0;
+
+    /**
+     * COL's value domain, and how many rows stand behind each value.
+     *
+     * The order is the column's own where it has one — `values', else the badge
+     * palette — because that order is semantic (it is the sort order too);
+     * distinct cell values have none, so they sort. The counts come from one
+     * pass over every row, which is what makes them counts rather than
+     * estimates; `displayText' runs once per distinct value rather than once
+     * per row, the cell text itself being cached already. The pass is lazy,
+     * per column, and thrown away with the text cache.
+     * @returns {{list: string[], counts: Map<string, number>}}
+     */
+    function domainOf(col) {
+      let d = domains.get(col.key);
+      if (!d) {
+        const i = columns().indexOf(col);
+        const counts = new Map();
+        const found = [];
+        for (const r of state.rows) {
+          const lower = rowText(r).cells[i];
+          if (!lower) continue;
+          const n = counts.get(lower);
+          if (n !== undefined) { counts.set(lower, n + 1); continue; }
+          counts.set(lower, 1);
+          if (found.length < DOMAIN_MAX) found.push(displayText((r.cells || {})[col.key]));
+        }
+        const fixed = valueOrder(col);
+        d = { list: fixed || found.sort(), counts };
+        domains.set(col.key, d);
+      }
+      return d;
+    }
+
+    /** The token the caret sits in, or null. @returns {Token|null} */
+    function tokenAtCaret() {
+      const v = input.value;
+      const caret = typeof input.selectionStart === "number" ? input.selectionStart : v.length;
+      for (const t of parseQuery(v, columnKeys()))
+        if (caret >= t.start && caret <= t.end) return t;
+      return null;
+    }
+
+    /**
+     * What the token under the caret is asking for, or null when it asks for
+     * nothing: a quoted token is free text and takes no suggestions, and so
+     * does one carrying punctuation that named no column — `:work:' is org
+     * text, not a half-typed predicate.
+     * @returns {{stage: string, tok: Token, col: Column|null, prefix: string}|null}
+     */
+    function stageAt() {
+      const t = tokenAtCaret();
+      if (!t || t.quoted) return null;
+      if (t.key !== null) {
+        const col = colByKey(t.key);
+        return col ? { stage: "value", tok: t, col, prefix: t.value } : null;
+      }
+      if (!t.value || splitAt(t.value) !== -1) return null;
+      return { stage: "key", tok: t, col: null, prefix: t.value };
+    }
+
+    /**
+     * The suggestions for STAGE: the text each one inserts, and for a value the
+     * number of rows it would match. A key stage carries no count — completing
+     * to `key:' narrows nothing on its own.
+     * @returns {{text: string, count: number}[]}
+     */
+    function suggestFor(st) {
+      const p = st.prefix.toLowerCase();
+      const out = [];
+      if (!st.col) {
+        for (const k of columnKeys()) {
+          if (!k.toLowerCase().startsWith(p)) continue;
+          out.push({ text: k + ":", count: -1 });
+          if (out.length === AC_MAX) break;
+        }
+        return out;
+      }
+      const dom = domainOf(st.col);
+      for (const v of dom.list) {
+        const lower = String(v).toLowerCase();
+        if (!lower.startsWith(p)) continue;
+        out.push({ text: String(v), count: dom.counts.get(lower) || 0 });
+        if (out.length === AC_MAX) break;
+      }
+      return out;
+    }
+
+    function closeAc() {
+      if (!ac) return;
+      ac = null;
+      acEl.innerHTML = "";
+      acEl.style.display = "none";
+    }
+
+    function renderAc() {
+      if (!ac) return;
+      let html = "";
+      for (let i = 0; i < ac.items.length; i++) {
+        const it = ac.items[i];
+        html += `<div class="tv-ac-item${i === acAt ? " tv-ac-on" : ""}" data-i="${i}">`
+              + `<span class="tv-ac-label">${esc(it.text)}</span>`
+              + (it.count < 0 ? "" : `<span class="tv-ac-n">${it.count}</span>`)
+              + `</div>`;
+      }
+      acEl.innerHTML = html;
+      acEl.style.display = "";
+    }
+
+    /** Offer what the caret is asking for, or close when that is nothing. */
+    function openAc() {
+      const st = stageAt();
+      if (!st) { closeAc(); return; }
+      const items = suggestFor(st);
+      if (!items.length) { closeAc(); return; }
+      ac = { stage: st.stage, tok: st.tok, items };
+      acAt = 0;
+      renderAc();
+    }
+
+    function moveAc(step) {
+      if (!ac) return;
+      acAt = (acAt + step + ac.items.length) % ac.items.length;
+      renderAc();
+    }
+
+    /**
+     * Put TEXT in place of the token under the caret, leaving the rest of the
+     * box alone. A key lands as `key:' with the caret against the colon, ready
+     * for the value; a value lands with a trailing space, ready for the next
+     * token. Focus stays in the box either way.
+     */
+    function acceptAc(text) {
+      if (!ac) return;
+      const v = input.value, t = ac.tok;
+      const head = ac.stage === "key" ? (t.negated ? "-" : "") : v.slice(t.start, t.sep + 1);
+      const ins = head + text + (ac.stage === "key" ? "" : " ");
+      input.value = v.slice(0, t.start) + ins + v.slice(t.end);
+      const caret = t.start + ins.length;
+      if (input.setSelectionRange) input.setSelectionRange(caret, caret);
+      armFilter();
+      openAc();          // a key opens its values; a finished value closes the list
+    }
+
+    acEl.addEventListener("mousedown", (e) => e.preventDefault());   // the box keeps focus
+    acEl.addEventListener("click", (e) => {
+      const t = hit(e);
+      const item = t && /** @type {HTMLElement|null} */ (t.closest(".tv-ac-item"));
+      if (item && ac) acceptAc(ac.items[Number(item.dataset.i)].text);
     });
+    input.addEventListener("blur", closeAc);
 
     /**
      * Apply the box now, cancelling whatever the debounce still owes — so the
@@ -768,12 +1151,24 @@
     // touches focus or the selection: a debounce firing on its own leaves both
     // exactly where the typist left them.
     //
-    // SCHEMA.md's filter-query section reserves both keys for the autocomplete
-    // it describes (Enter accepts a suggestion, Esc dismisses the list "before
-    // it clears anything"). None of it is built yet; when it is, it takes these
-    // two keys ahead of this handler — an early return here while the list is
-    // open, so accepting a suggestion neither applies the filter nor blurs.
+    // The suggestion list gets first refusal, which is SCHEMA.md's precedence:
+    // arrows and Tab drive it, Enter accepts a suggestion rather than applying
+    // the filter, and Esc dismisses the list "before it clears anything" — so
+    // the first Esc closes the list and the second does what it does here.
     input.addEventListener("keydown", (e) => {
+      if (ac) {
+        const taken = e.key === "ArrowDown" || e.key === "ArrowUp"
+                   || e.key === "Tab" || e.key === "Enter" || e.key === "Escape";
+        if (taken) {
+          e.preventDefault();
+          e.stopPropagation();
+          if (e.key === "ArrowDown") moveAc(1);
+          else if (e.key === "ArrowUp") moveAc(-1);
+          else if (e.key === "Escape") closeAc();
+          else acceptAc(ac.items[acAt].text);
+          return;
+        }
+      }
       if (e.key !== "Enter" && e.key !== "Escape") return;
       e.preventDefault();               // and, for Escape, the native search-box clear
       e.stopPropagation();
@@ -830,7 +1225,7 @@
         state.rows = (v && v.rows) ? v.rows.slice() : [];
         state.sortKeys = normalizeSort(v && v.sort);
         state.selected = null;
-        texts.clear();
+        clearTexts();
         dropSorted();
         titleEl.textContent = state.view.title || "Table";
         renderHead();
@@ -841,7 +1236,7 @@
       /** @param {Row[]} rows */
       setRows(rows) {
         state.rows = (rows || []).slice();
-        texts.clear();
+        clearTexts();
         dropSorted();
         renderRows(true);
         // The answer to an Enter in the filter box: hand the table a selection,
@@ -854,6 +1249,7 @@
         const i = state.rows.findIndex((r) => r.id === row.id);
         if (i === -1) state.rows.push(row); else state.rows[i] = row;
         texts.delete(row.id);
+        domains.clear();
         if (sorted) place(sorted, row, false);
         // Unsorted, `order' is `sorted' filtered, and a row the filter has just
         // started matching has no place to be spliced into: re-derive it (one
@@ -866,6 +1262,7 @@
       deleteRow(id) {
         state.rows = state.rows.filter((r) => r.id !== id);
         texts.delete(id);
+        domains.clear();
         if (sorted) unplace(sorted, id);
         if (order) unplace(order, id);
         renderRows(true);
@@ -877,13 +1274,15 @@
           if (op.op === "insert") {
             state.rows.splice(op.index, 0, op.row);
             texts.delete(op.row.id);
+            domains.clear();
           } else if (op.op === "delete") {
             const gone = state.rows[op.index];
             if (gone) texts.delete(gone.id);
+            domains.clear();
             state.rows.splice(op.index, 1);
           } else if (op.op === "reset") {
             state.rows = (op.rows || []).slice();
-            texts.clear();
+            clearTexts();
           }
         }
         dropSorted();
@@ -895,7 +1294,7 @@
     };
   }
 
-  const TableView = { mount, displayText, comparator };
+  const TableView = { mount, displayText, comparator, parseQuery };
   root.TableView = TableView;
   // @ts-ignore -- optional CommonJS export (no @types/node dependency)
   if (typeof module !== "undefined" && module.exports) module.exports = TableView;
