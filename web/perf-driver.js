@@ -286,6 +286,7 @@ class El {
   }
   setAttribute(n, v) { this.attrs.set(n, String(v)); if (n === "class") this.className = v; }
   getAttribute(n) { return this.attrs.has(n) ? this.attrs.get(n) : null; }
+  removeAttribute(n) { this.attrs.delete(n); if (n === "class") this.className = ""; }
   appendChild(c) { c.parentNode = this; this.childNodes.push(c); return c; }
   // A real caret. Setting the text puts it at the end, the way typing does;
   // a consumer that wants it elsewhere says so. Without this every caret the
@@ -1519,6 +1520,25 @@ async function virtualKeys() {
             [2, 1]);
     }
 
+    // The count behind a suggestion is rows, so a word twice in one title is
+    // one row and says one. Counted per occurrence it reads two, and the number
+    // beside the offer no longer means what the offer, run, would find.
+    {
+      const twice = new El("div");
+      TableView.mount(twice, {
+        columns: own,
+        rows: [{ id: "a", cells: { title: "pay the rent, and pay it early", tag: ":home:" } },
+               { id: "b", cells: { title: "nothing repeated here", tag: ":home:" } }],
+      });
+      const tb = filterOf(twice);
+      tb.value = "pa";                       // a prefix: typed in full it is exact
+      tb.dispatchEvent(new Ev("input"));
+      const said = twice.querySelectorAll(".tv-ac-label").map((e) => e.text);
+      const tally = twice.querySelectorAll(".tv-ac-n").map((e) => Number(e.text));
+      check("a word repeated in one title still counts one row",
+            [said.indexOf("home:pay") !== -1, tally[said.indexOf("home:pay")]], [true, 1]);
+    }
+
     offer("boo");
     check("boo offers the tag as a key and as a value of the tags column",
           [plain().indexOf("book:") !== -1, plain().indexOf("tag:book") !== -1],
@@ -1541,6 +1561,18 @@ async function virtualKeys() {
     press("p", true);
     check("C-p steps back up", at(), 0);
     check("and they are taken from the page", press("n", true).defaultPrevented, true);
+
+    // From nothing, up wraps to the end of the list the way down starts at its
+    // head — a list is a ring, and reaching the last offer should not mean
+    // walking the whole of it.
+    type("sy");
+    const many = box.querySelectorAll(".tv-ac-item").length;
+    check("there is more than one offer to wrap between", many > 1, true);
+    press("p", true);
+    check("C-p from nothing wraps to the last", at(), many - 1);
+    type("sy");
+    press("ArrowUp");
+    check("and ArrowUp is that same motion", at(), many - 1);
 
     // Parity: the arrows land in the same place from the same start.
     type("sy");
@@ -2154,6 +2186,11 @@ async function virtualKeys() {
     check("the note is not one of them, so it cannot be arrowed to or clicked",
           box.querySelectorAll(".tv-ac-note .tv-ac-label").length, 0);
 
+    ua("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) "
+       + "Chromium/126.0.0.0 Safari/537.36");
+    open();
+    check("and so is the family's other spelling", note().length, 1);
+
     ua("Mozilla/5.0 (X11; Linux x86_64; rv:127.0) Gecko/20100101 Firefox/127.0");
     open();
     check("Firefox delivers both, and is told nothing", note(), []);
@@ -2167,6 +2204,14 @@ async function virtualKeys() {
        + "(KHTML, like Gecko) Version/17.0 Safari/605.1.15");
     open();
     check("nor Safari, which is not of that family", note(), []);
+
+    // The version slash is what makes the token the product rather than a word
+    // that starts the same way. A shell naming itself after the engine still
+    // gets its own keys, and is told nothing about somebody else's.
+    ua("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) "
+       + "Chromeless/2.1 Safari/537.36");
+    open();
+    check("nor a product whose name merely begins with the word", note(), []);
 
     ua("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) "
        + "Chrome/126.0.0.0 Safari/537.36");
@@ -2430,6 +2475,40 @@ async function virtualKeys() {
     flip.flip("prefers-color-scheme", "dark");
     check("the system turning dark redraws what depended on it",
           [before !== "#b6e63e", inkIn(live)], [true, "#b6e63e"]);
+
+    // The page's own choice outranks the system's, and is read off the root's
+    // `data-theme'. Both directions are driven: an attribute agreeing with the
+    // system proves nothing, since the system alone would give that answer.
+    const DARK = "#b6e63e";
+    const root$ = document.documentElement;
+    const themed = (asked, system) => {
+      global.matchMedia = mediaStub({ "prefers-color-scheme": system });
+      if (asked) root$.setAttribute("data-theme", asked);
+      else root$.removeAttribute("data-theme");
+      const el = new El("div");
+      TableView.mount(el, badged);
+      return inkIn(el);
+    };
+    check("the page asking for dark outranks a system saying light",
+          themed("dark", "light"), DARK);
+    check("and the page asking for light outranks a system saying dark",
+          themed("light", "dark") !== DARK, true);
+    check("with nothing asked, the system is what answers",
+          [themed(null, "dark"), themed(null, "light") !== DARK], [DARK, true]);
+
+    // The attribute moving under a mounted table is what the observer is for.
+    Watcher.made.length = 0;
+    global.MutationObserver = Watcher;
+    global.matchMedia = mediaStub({ "prefers-color-scheme": "light" });
+    const asked$ = new El("div");
+    TableView.mount(asked$, badged);
+    const wasSystem = inkIn(asked$);
+    root$.setAttribute("data-theme", "dark");
+    Watcher.made[Watcher.made.length - 1].fire();
+    check("and the page changing its mind redraws to what it asked for",
+          [wasSystem !== DARK, inkIn(asked$)], [true, DARK]);
+    root$.removeAttribute("data-theme");
+    delete global.MutationObserver;
     delete global.matchMedia;
   }
 
@@ -2562,6 +2641,36 @@ async function virtualKeys() {
     check("and one on prev turns it back", pt.pageInfo().page, 1);
     prev.dispatchEvent(new Ev("click"));
     check("a dead one does nothing", pt.pageInfo().page, 1);
+
+    // --- nothing to page through
+    // An empty set is one page of nothing: no first row, so no row one, and
+    // nowhere to turn either way. The zeros are the arm a set with rows in it
+    // never reaches, and the arm a reader sees the moment a query misses.
+    {
+      const none = new El("div");
+      const nt = TableView.mount(none, view(250), { pageSize: 100 });
+      const nb = filterOf(none);
+      nt.nextPage(); nt.nextPage();
+      nb.value = "no-such-headline";
+      nb.dispatchEvent(new Ev("keydown", { key: "Enter" }));
+      await painted();
+      check("a query matching nothing leaves one page of nothing",
+            nt.pageInfo(), { page: 1, pages: 1, from: 0, to: 0, total: 0 });
+      check("and nowhere to turn from it",
+            [nt.nextPage(), nt.previousPage(), nt.selectStep(1), nt.selectStep(-1)],
+            [false, false, false, false]);
+      check("with the line back to a plain count, there being no pages",
+            [none.querySelectorAll(".tv-pg").length,
+             none.querySelector(".tv-hint").textContent.split(" · ")[0]],
+            [0, "0/250 rows"]);
+      check("and with no page size the empty set reads the same",
+            (() => {
+              const e = new El("div");
+              const et = TableView.mount(e, view(40));
+              et.setRows([]);
+              return et.pageInfo();
+            })(), { page: 1, pages: 1, from: 0, to: 0, total: 0 });
+    }
 
     // --- off mode keeps every promise it had
     const off = new El("div");
@@ -2918,6 +3027,46 @@ async function smoke() {
   t.applyDelta([{ op: "delete", index: 0 }, { op: "insert", index: 0, row: makeRow(999) }]);
   check("apply-delta keeps the count", t.getRows().length, 40);
 
+  // --- what an upsert does to the lists standing between the store and the page
+  {
+    // Unsorted, the cached list mirrors the store, so a row that is upserted
+    // goes back where it was rather than to the end — the order on screen is
+    // the producer's, and an edit is not a reordering.
+    const keep = new El("div");
+    const kt = TableView.mount(keep, {
+      columns: [{ key: "t", header: "T", type: "text" }],
+      rows: ["alpha", "beta", "gamma"].map((s, i) => ({ id: "abc"[i], cells: { t: s } })),
+    });
+    kt.upsertRow({ id: "b", cells: { t: "beta, edited" } });
+    check("an unsorted upsert keeps the row's place",
+          kt.getVisible().map((r) => r.id), ["a", "b", "c"]);
+    kt.upsertRow({ id: "d", cells: { t: "delta" } });
+    check("while an unknown id lands at the end",
+          kt.getVisible().map((r) => r.id), ["a", "b", "c", "d"]);
+
+    // Widths: sorted, so the upsert is spliced into the cached order and the
+    // cached widths are what the page is drawn to. Nothing recomputes them
+    // there, so the upsert has to widen them itself or the longer cell is drawn
+    // into a column measured before it existed.
+    const wide = new El("div");
+    const wt = TableView.mount(wide, {
+      columns: [{ key: "t", header: "T", type: "text" }],
+      rows: [{ id: "a", cells: { t: "aa" } }, { id: "b", cells: { t: "bb" } }],
+      sort: { column: "t", ascending: true },
+    });
+    const ch = () => Number(/calc\((\d+)ch/.exec(wide.querySelector("col").style.width)[1]);
+    const narrow = ch();
+    const LONG = "a much longer cell than any of these";
+    wt.upsertRow({ id: "b", cells: { t: LONG } });
+    check("a longer upserted cell widens its column",
+          [narrow < LONG.length, ch()], [true, LONG.length]);
+    // An upsert can only add text: the widths are a high-water mark until the
+    // order is recomputed, so a shorter cell does not pull the column back in
+    // under the rows still holding the long one.
+    wt.upsertRow({ id: "b", cells: { t: "bb" } });
+    check("and a shorter one does not narrow it back", ch(), LONG.length);
+  }
+
   check("select() finds a visible row", t.select("h-39"), true);
   await painted();
   check("and marks it", box.querySelector(".tv-table tbody tr.tv-sel").dataset.id, "h-39");
@@ -3043,6 +3192,30 @@ async function smoke() {
   for (const name of ["mount", "parseQuery", "displayText", "comparator"])
     check(`TableView exposes ${name}`, typeof TableView[name], "function");
 
+  // Nothing, handed in: a producer between answers, a view that has not
+  // arrived, a mount that will be filled a moment later. Each is an empty
+  // table rather than an exception thrown into the consumer's page — asserted
+  // by value, since a throw here would take the whole suite with it and say
+  // only where it landed.
+  const answer = (fn) => { try { return fn(); } catch (e) { return "threw: " + (e && e.message); } };
+  check("setRows with nothing is an empty table",
+        answer(() => {
+          const e = new El("div"), h = TableView.mount(e, view(5));
+          h.setRows(null);
+          return [h.getRows().length, e.querySelector(".tv-empty").style.display];
+        }), [0, ""]);
+  check("setView with nothing is an empty table with no columns",
+        answer(() => {
+          const e = new El("div"), h = TableView.mount(e, view(5));
+          h.setView(null);
+          return [h.getRows().length, e.querySelectorAll("th").length];
+        }), [0, 0]);
+  check("and a mount with no view at all still mounts",
+        answer(() => {
+          const e = new El("div"), h = TableView.mount(e);
+          return [h.getRows().length, e.querySelectorAll(".tv-root").length];
+        }), [0, 1]);
+
   await filterQuery();
   await cellsChipsPills();
   await virtualKeys();
@@ -3069,6 +3242,20 @@ async function smoke() {
   check("striping follows the global index",
         [shown()[0], shown()[1]].map((tr) => tr.classes.has("tv-alt")),
         [at % 2 === 1, at % 2 === 0]);
+
+  // The header stands above row zero, so which row the window starts at is the
+  // scroll position less the header's height — a row's height is a different
+  // number and gives a different row. Parked where the two answers differ by a
+  // whole row, the window says which of them was subtracted: (3024 - 24) / 30
+  // is a row boundary and (3024 - 30) / 30 is not.
+  sc.scrollTop = 3024;
+  sc.dispatchEvent(new Ev("scroll"));
+  await sleep(50);
+  const parked = big.getVisible().findIndex((r) => r.id === shown()[0].dataset.id);
+  check("the window is offset by the header's height",
+        parked, Math.floor((3024 - HEAD_PX) / ROW_PX) - 15);
+  check("which at this parking is not the row's",
+        Math.floor((3024 - HEAD_PX) / ROW_PX) === Math.floor((3024 - ROW_PX) / ROW_PX), false);
 
   const last = big.getVisible()[499].id;
   check("select() reaches a row with no element", big.select(last), true);
