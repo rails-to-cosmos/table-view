@@ -141,10 +141,14 @@ whitespace (`&` accepted as an alias); each token is:
 Predicates sharing one key OR together; distinct keys and free-text tokens
 AND (`state:TODO state:DONE tanik` = either state, and the text). Negations
 AND regardless. Field-predicate semantics, by column type: `badge` —
-exact value match; a producer may add meta-values (e.g. glance's
-`state:active` / `state:inactive` matching keyword groups); `text`/`number` —
-case-insensitive substring; date-shaped text cells — prefix match
-(`scheduled:2026-08`), plus `none` for empty.
+whole-value match, case-insensitive; a producer may add meta-values (e.g.
+glance's `state:active` / `state:inactive` matching keyword groups);
+`text`/`number` — case-insensitive substring; date-shaped text cells —
+prefix match (`scheduled:2026-08`). Three uniform rules across types:
+`key:none` matches the empty cell (any type; a literal cell value "none" is
+consequently unreachable by predicate); `key:` with nothing typed narrows
+nothing; a predicate value may be quoted (`tags:"two words"`) — only a token
+that *opens* with a quote is free text.
 
 **Autocomplete (renderer-local).** The renderer may suggest per stage: a
 bare word suggests matching column keys (completing to `key:`); after
