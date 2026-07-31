@@ -1389,7 +1389,7 @@ async function virtualKeys() {
     // written down here so a drift in either file shows up as a failure.
     for (const [role, hex] of [["--tv-bg", "#FFFFFF"], ["--tv-fg", "#000000"],
                                ["--tv-alt", "#F8F8FF"], ["--tv-border", "#E3E6EA"],
-                               ["--tv-muted", "#667071"], ["--tv-sel", "#FFD600"],
+                               ["--tv-muted", "#667071"], ["--tv-sel", "#F0FFF0"],
                                ["--tv-accent", "#31769F"], ["--tv-hover", "#FAFAFA"]])
       check(`light ${role} is the theme's`, css.indexOf(role + ":" + hex) !== -1, true);
     check("and the light values are in the data-theme override too",
@@ -1421,7 +1421,7 @@ async function virtualKeys() {
 
     for (const [name, p] of [
       ["light", { bg: "#FFFFFF", fg: "#000000", alt: "#F8F8FF", muted: "#667071",
-                  sel: "#FFD600", accent: "#31769F" }],
+                  sel: "#F0FFF0", accent: "#31769F" }],
       ["dark", { bg: "#000000", fg: "#FFFFFF", alt: "#21252B", muted: "#A4C2EB",
                  sel: "#373D4F", accent: "#4CB5F5" }]]) {
       const dimmed = mixed(p.fg, p.bg, 0.4);          // the .6 opacity, resolved
@@ -1683,6 +1683,88 @@ async function virtualKeys() {
     await painted();
     check("and so does RET", [shown(), pb.blurs > blurs], [false, true]);
 
+    // --- the list's keys work here too. The palette relocates the box into an
+    // overlay, and the handler travels with it — this pins that, because a
+    // relocation is exactly the sort of change that quietly unhooks a key.
+    pt.openFilter();
+    pb.value = "sy";
+    pb.dispatchEvent(new Ev("input"));
+    const pAt = () => pal.querySelectorAll(".tv-ac-item")
+      .findIndex((e) => e.classes.has("tv-ac-on"));
+    const pPress = (key, ctrl) => {
+      const e = new Ev("keydown", { key });
+      e.ctrlKey = !!ctrl;
+      pb.dispatchEvent(e);
+      return e;
+    };
+    check("a list opens in the palette with nothing chosen",
+          [pal.querySelectorAll(".tv-ac-item").length > 0, pAt()], [true, -1]);
+    check("C-n steps down it", [pPress("n", true).defaultPrevented, pAt()], [true, 0]);
+    check("and again", (pPress("n", true), pAt()), 1);
+    check("C-p steps back up", [pPress("p", true).defaultPrevented, pAt()], [true, 0]);
+    // Parity with the arrows from the same start, in the same place.
+    pb.value = "sy";
+    pb.dispatchEvent(new Ev("input"));
+    pPress("ArrowDown"); pPress("ArrowDown");
+    const byArrow = pAt();
+    pb.value = "sy";
+    pb.dispatchEvent(new Ev("input"));
+    pPress("n", true); pPress("n", true);
+    check("C-n and ArrowDown are one motion in the palette too", pAt(), byArrow);
+    pb.dispatchEvent(new Ev("keydown", { key: "Escape" }));
+    pb.dispatchEvent(new Ev("keydown", { key: "Escape" }));
+    pt.closeFilter();
+
+    // --- the palette filters on commit, not as you type
+    {
+      const asked = [];
+      const live = new El("div");
+      const lt = TableView.mount(live, view(40), { palette: true, onFilter: (q) => asked.push(q) });
+      const lb = filterOf(live);
+      const lItems = () => live.querySelectorAll(".tv-ac-label").map((e) => e.text);
+      lt.openFilter();
+      for (const q of ["s", "sy", "sys", "syst", "syste"]) {
+        lb.value = q;
+        lb.dispatchEvent(new Ev("input"));
+      }
+      await sleep(300);                       // well past any debounce there might be
+      check("typing in the palette delivers nothing, however long you leave it",
+            asked, []);
+      check("and forms no chips as it goes",
+            live.querySelectorAll(".tv-chip").length, 0);
+      check("while the list stays live under the caret", lItems().length > 0, true);
+      lb.value = "sy";
+      lb.dispatchEvent(new Ev("input"));
+      check("following each keystroke", lItems().length > 0, true);
+
+      lb.value = "system";
+      lb.dispatchEvent(new Ev("keydown", { key: "Escape" }));   // the list first
+      lb.dispatchEvent(new Ev("keydown", { key: "Escape" }));   // then the text
+      check("Escape drops the text and still says nothing — it was never said",
+            [lb.value, asked], ["", []]);
+
+      lt.openFilter();
+      lb.value = "review";
+      lb.dispatchEvent(new Ev("keydown", { key: "Enter" }));
+      await painted();
+      check("RET is the one that delivers, exactly once", asked, ["review"]);
+      lt.openFilter();
+      lb.value = "sync";
+      lb.dispatchEvent(new Ev("keydown", { key: "Enter" }));
+      await painted();
+      check("and again per commit", asked, ["review", "review sync"]);
+
+      lt.openFilter();
+      lb.dispatchEvent(new Ev("keydown", { key: "Backspace" }));
+      check("a chip strip delivers too — the applied filter did change",
+            asked.pop(), "review");
+      lb.dispatchEvent(new Ev("keydown", { key: "Backspace" }));
+      check("one per strip", asked.pop(), "");
+      lb.dispatchEvent(new Ev("keydown", { key: "Backspace" }));
+      check("and the bottom rung, which changes nothing, says nothing",
+            asked.length, 2);
+    }
+
     // --- clicking off is the Escape gesture
     pt.openFilter();
     pb.value = "half";
@@ -1697,8 +1779,14 @@ async function virtualKeys() {
     const lum = (c) => 0.2126 * chan(c[0]) + 0.7152 * chan(c[1]) + 0.0722 * chan(c[2]);
     const ratio = (a, b) => { const x = lum(rgbOf(a)) + 0.05, y = lum(rgbOf(b)) + 0.05;
                               return x > y ? x / y : y / x; };
-    check("palette chips are the theme's selection golden, in black",
+    check("palette chips are the theme's primary highlight, golden on black",
           css.indexOf(".tv-pal .tv-chip{background:#FFD600;color:#000000") !== -1, true);
+    check("which the cursor row is not, so the two roles read apart",
+          css.indexOf("--tv-sel:#FFD600") === -1, true);
+    check("and the selected row is a background and nothing else",
+          /\.tv-table tbody tr\.tv-sel\{background:var\(--tv-sel\)\}/.test(css), true);
+    check("no stripe, no border, no shadow on it",
+          /tr\.tv-sel\{[^}]*(border|box-shadow)/.test(css), false);
     check("which clears the text floor by a distance", ratio("#000000", "#FFD600") >= 7, true);
     check("and is one pair for both themes — the contrast is in the pair",
           css.split(".tv-pal .tv-chip{").length, 2);
@@ -1801,6 +1889,54 @@ async function virtualKeys() {
     check("and a finished token offered beside a bare word goes on RET",
           [st.querySelectorAll(".tv-chip").map((c) => c.text.replace("×", "")).pop(),
            b.value], ["state:TODO", ""]);
+  }
+
+  // --- where the browser eats C-n, the list says so rather than going quiet
+  {
+    const box = new El("div");
+    TableView.mount(box, view(40));
+    const b = filterOf(box);
+    const open = () => { b.value = "sy"; b.dispatchEvent(new Ev("input")); };
+    const note = () => box.querySelectorAll(".tv-ac-note").map((e) => e.text);
+    const items = () => box.querySelectorAll(".tv-ac-item").length;
+
+    open();
+    check("with no browser to ask, nothing is claimed", note(), []);
+    const was = items();
+
+    // Node defines its own `navigator' as getter-only, so it is replaced
+    // rather than assigned.
+    const ua = (s) => Object.defineProperty(global, "navigator",
+      { value: s === null ? undefined : { userAgent: s }, configurable: true });
+    ua("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) "
+       + "Chrome/126.0.0.0 Safari/537.36");
+    open();
+    check("Chrome is told which two keys it is eating",
+          note(), ["C-n/C-p need Firefox/webview — arrows/Tab work everywhere"]);
+    check("and the suggestions are untouched beside it", items(), was);
+    check("the note is not one of them, so it cannot be arrowed to or clicked",
+          box.querySelectorAll(".tv-ac-note .tv-ac-label").length, 0);
+
+    ua("Mozilla/5.0 (X11; Linux x86_64; rv:127.0) Gecko/20100101 Firefox/127.0");
+    open();
+    check("Firefox delivers both, and is told nothing", note(), []);
+
+    ua("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) "
+       + "table-view/1.0 Chrome/126.0.0.0 Electron/31.0.0 Safari/537.36");
+    open();
+    check("nor is a webview shell, which delivers them too", note(), []);
+
+    ua("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 "
+       + "(KHTML, like Gecko) Version/17.0 Safari/605.1.15");
+    open();
+    check("nor Safari, which is not of that family", note(), []);
+
+    ua("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) "
+       + "Chrome/126.0.0.0 Safari/537.36");
+    open();
+    b.dispatchEvent(new Ev("keydown", { key: "Escape" }));
+    check("and with no list there is nothing to say", note(), []);
+    ua(null);
   }
 
   // --- the touch pass: bigger targets, and a long press for the row action
@@ -1922,13 +2058,44 @@ async function virtualKeys() {
     hb.value = "half";                            // typed, uncommitted
     check("stripLastToken takes the typed text first", ht.stripLastToken(), true);
     check("leaving the chips", [hb.value, ht.getQuery()], ["", "glance: review"]);
-    check("and delivering once for it", asked.length, 3);
+    check("and sending nothing for it — the producer never heard that text",
+          asked.length, 2);
     check("then the chips, last first", ht.stripLastToken(), true);
     check("which getQuery follows", ht.getQuery(), "glance:");
     check("and again", [ht.stripLastToken(), ht.getQuery()], [true, ""]);
     check("false once there is nothing left", ht.stripLastToken(), false);
-    check("and nothing delivered for it", asked.length, 5);
+    check("and nothing delivered for it", asked.length, 4);
     check("focus is the caller's business", (hb.blurs || 0) - blurs, 0);
+  }
+
+  // --- the bar's debounce, and the edge that keeps it honest. Typing that is
+  // deleted again leaves a delivery owing; RET on the emptied box settles it
+  // rather than dropping it. Dead in the palette, which arms nothing — live
+  // here, which is why the branch stays.
+  {
+    const asked = [];
+    const d = new El("div");
+    TableView.mount(d, view(40), { onFilter: (q) => asked.push(q) });
+    const db = filterOf(d);
+    db.value = "review";
+    db.dispatchEvent(new Ev("keydown", { key: "Enter" }));
+    await painted();
+    check("a chip to build on", asked, ["review"]);
+
+    db.focus();
+    db.value = "sync";
+    db.dispatchEvent(new Ev("input"));
+    await sleep(200);
+    check("the bar still delivers as you type", asked, ["review", "review sync"]);
+
+    db.value = "";                              // deleted again, delivery owing
+    db.dispatchEvent(new Ev("input"));
+    db.dispatchEvent(new Ev("keydown", { key: "Enter" }));
+    await painted();
+    check("and RET on the emptied box settles what was owed",
+          asked, ["review", "review sync", "review"]);
+    check("without a fourth for the commit itself, nothing having changed since",
+          asked.length, 3);
   }
 
   // --- the Backspace ladder: characters, chips, then the table

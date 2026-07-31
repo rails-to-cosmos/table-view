@@ -139,7 +139,10 @@
  *   way a minibuffer or a Telescope prompt appears. Every ladder ends one step
  *   further out: RET commits and dissolves, Escape goes list, then text, then
  *   dissolve, and a click on the backdrop is Escape. Backspace walks the chips
- *   off and then stops: it erases, and erasing is not leaving. The chips are the theme's selection golden, which is the
+ *   off and then stops: it erases, and erasing is not leaving. It also filters
+ *   on commit alone — typing moves the suggestion list and nothing else, and
+ *   RET or a chip strip is what reaches the rows. The bar modes keep their
+ *   120ms debounce. The chips are the theme's selection golden, which is the
  *   association its own ivy and company faces make. It supersedes `omnibox',
  *   which stays for consumers that want the control resident.
  * - `omnibox: true' makes the filter the bar: no title, the
@@ -268,6 +271,22 @@
   // one background — usually a dark one. The renderer owns whether it can be
   // read on the ground it is actually drawn on, so the hue is kept and only its
   // lightness moves, until the label clears WCAG AA against its own pill.
+
+  /**
+   * Does this browser take C-n and C-p for itself before the page sees them?
+   * Chrome and its family bind them to new window and print at the browser
+   * level, so the renderer's handler never runs and two of the four keys the
+   * list documents are dead through no fault of the page. Firefox delivers
+   * both, and so do the webview shells an app embeds — Electron says so in the
+   * agent string. Read per list render rather than once at load: two short
+   * regexes against a string that is already in memory cost nothing beside the
+   * suggestions they annotate, and a value baked in at import time is one no
+   * test can reach.
+   */
+  function swallowsCtrlN() {
+    const ua = typeof navigator === "object" && navigator ? navigator.userAgent || "" : "";
+    return /Chrom(e|ium)\//.test(ua) && !/Firefox|Electron\//.test(ua);
+  }
 
   /** A delimited value list, org-style: `:a:b:'. What makes a column multi-valued. */
   const ORG_TAGS = /^:[^:]+(:[^:]+)*:$/;
@@ -503,7 +522,10 @@
    lightness-only adjustments where the theme's own colour missed a contrast
    floor in this context, the hue held: light muted #7F8C8D -> #667071 (3.5:1
    -> 5.1:1 on white) and light accent #4CB5F5 -> #31769F (2.3:1 -> 5.0:1, it
-   is link text here).
+   is link text here). The selected row takes the theme's highlight face
+   (#F0FFF0) rather than its golden: golden is the applied filter's colour, on
+   the chips, and the cursor row is a second thing that must not read as the
+   first.
 
    Borders are the exception and stay hairlines: they carry no information, so
    contrast is not a goal for them and a visible rule only adds noise. Light
@@ -511,7 +533,7 @@
    and dark takes #2a2d3d over the theme's #223959 (1.54:1 against true black
    against 1.80:1) — the quieter of the two. Every rule is 1px. */
 .tv-root{--tv-fg:#000000;--tv-muted:#667071;--tv-bg:#FFFFFF;--tv-alt:#F8F8FF;
-  --tv-border:#E3E6EA;--tv-accent:#31769F;--tv-sel:#FFD600;--tv-hover:#FAFAFA;
+  --tv-border:#E3E6EA;--tv-accent:#31769F;--tv-sel:#F0FFF0;--tv-hover:#FAFAFA;
   color:var(--tv-fg);background:var(--tv-bg);font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
   border:1px solid var(--tv-border);border-radius:8px;overflow:hidden;display:flex;flex-direction:column;max-height:100%}
 @media (prefers-color-scheme:dark){.tv-root{--tv-fg:#FFFFFF;--tv-muted:#A4C2EB;--tv-bg:#000000;
@@ -521,7 +543,7 @@
   --tv-alt:#21252B;--tv-border:#2a2d3d;--tv-accent:#4CB5F5;--tv-sel:#373D4F;
   --tv-hover:#1F1F1F;}
 :root[data-theme="light"] .tv-root{--tv-fg:#000000;--tv-muted:#667071;--tv-bg:#FFFFFF;--tv-alt:#F8F8FF;
-  --tv-border:#E3E6EA;--tv-accent:#31769F;--tv-sel:#FFD600;--tv-hover:#FAFAFA}
+  --tv-border:#E3E6EA;--tv-accent:#31769F;--tv-sel:#F0FFF0;--tv-hover:#FAFAFA}
 .tv-bar{display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:1px solid var(--tv-border);flex-wrap:wrap}
 .tv-title{font-weight:600;font-size:14px;margin-right:auto}
 .tv-filter{font:inherit;padding:4px 8px;border:1px solid var(--tv-border);border-radius:6px;
@@ -573,6 +595,8 @@
 .tv-ac-n{color:var(--tv-muted);font-variant-numeric:tabular-nums}
 /* A scoped tag is a substring count, and reads as one. */
 .tv-ac-dim{opacity:.6;font-style:italic}
+.tv-ac-note{padding:5px 10px;border-top:1px solid var(--tv-border);
+  color:var(--tv-muted);font-size:11px;white-space:nowrap}
 .tv-ac-item:hover{background:var(--tv-hover);color:var(--tv-accent)}
 /* The theme's own selections (ivy-current-match, company-tooltip-selection)
    are full-strength golden with bold weight and the default foreground — an
@@ -588,7 +612,7 @@
 .tv-table th.tv-sortable:hover{color:var(--tv-accent)}
 .tv-table td.tv-right,.tv-table th.tv-right{text-align:right;font-variant-numeric:tabular-nums}
 .tv-table tbody tr.tv-alt{background:var(--tv-alt)}
-.tv-table tbody tr.tv-sel{background:var(--tv-sel);box-shadow:inset 2px 0 0 var(--tv-accent)}
+.tv-table tbody tr.tv-sel{background:var(--tv-sel)}
 /* The selection is the row, and it crossfades in place — no overlay to keep in
    step with the rows underneath it. */
 .tv-table tbody tr,.tv-table tbody td{transition:background-color .08s ease-out,
@@ -1694,8 +1718,15 @@
     // one place it does. ONFRAME defers the local re-filter to a frame, which
     // is what a keystroke wants and what an explicit commit does not.
     function deliver(onFrame) {
-      lastQuery = effectiveQuery();
-      if (o.onFilter) o.onFilter(lastQuery);
+      const q = effectiveQuery();
+      // Nothing changed, so there is nothing to say. Local filtering worked
+      // this out for itself; a producer had no way to, and was being asked the
+      // same question twice — by Escape dropping text that was never sent, by
+      // a commit on an empty box, by a debounce settling on what it settled on
+      // before.
+      if (q === lastQuery) return;
+      lastQuery = q;
+      if (o.onFilter) o.onFilter(q);
       else if (onFrame) frame(applyFilter);
       else applyFilter();
     }
@@ -1724,7 +1755,17 @@
     }
 
     let debounce = 0;
+    /**
+     * Arm the delivery a keystroke implies — in the modes where a keystroke
+     * implies one. The palette filters on commit alone: it is summoned over
+     * the table, so narrowing it as the query is typed animates a thing the
+     * typist is not looking at and cannot see the whole of, and every
+     * half-written token is a query of its own. RET says when the query is a
+     * query. The suggestion list stays live regardless; that is what the
+     * typing is for.
+     */
     function armFilter() {
+      if (palette) return;
       if (debounce) clearTimeout(debounce);
       debounce = setTimeout(() => {
         debounce = 0;
@@ -2017,6 +2058,12 @@
               + (it.count < 0 ? "" : `<span class="tv-ac-n">${it.count}</span>`)
               + `</div>`;
       }
+      // Where the browser eats C-n before the page can see it, say so rather
+      // than leaving two of the four documented keys silently dead. Only there,
+      // and only while there is a list for them to have moved.
+      if (swallowsCtrlN())
+        html += `<div class="tv-ac-note">C-n/C-p need Firefox/webview`
+              + ` — arrows/Tab work everywhere</div>`;
       acEl.innerHTML = html;
       acEl.style.display = "";
     }

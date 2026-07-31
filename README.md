@@ -457,11 +457,18 @@ ladder then ends one step further out:
 | **RET** on an empty box | dissolve and hand over |
 | **Escape** | close the list → drop the typed text → dissolve |
 | **Backspace** on an empty box | take a chip → … → then nothing: it erases, and erasing is not leaving |
+
+The palette also **filters on commit alone**: typing moves the suggestion list
+and nothing else, and RET or a chip strip is what reaches the rows. Narrowing a
+table as each character lands animates something the typist is looking away
+from, and every half-written token is a query of its own. The resident bar and
+omnibox modes keep their 120 ms debounce.
 | click on the backdrop | as Escape |
 
-The applied chips render in the theme's selection golden (black on `#FFD600`),
-the association its own `ivy-current-match` and `company-tooltip-selection`
-faces make. `initialQuery`, `getQuery()` and `stripLastToken()` behave exactly
+The applied chips render in the theme's golden (black on `#FFD600`), the
+association its own `ivy-current-match` and `company-tooltip-selection` faces
+make. That is the *applied filter's* colour; the cursor row takes the theme's
+secondary highlight instead, so the two never read as one thing. `initialQuery`, `getQuery()` and `stripLastToken()` behave exactly
 as they do elsewhere — the chips are the same state, only styled. The overlay
 sits at `z-index` 90/91, leaving 100 and up for a consumer's own modal.
 

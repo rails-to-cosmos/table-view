@@ -32,6 +32,26 @@ the rails-to-cosmos ELPA archive publishes date-stamped snapshots.
   called the latter was collapsed by the former. One owner now: mount
   calls `renderChips()` unconditionally, so the path a raw mount takes
   and the path the checks drive are the same path.
+- Browser renderer: the palette filters on **commit alone**. Typing moves
+  the suggestion list and delivers nothing — no debounce, no per-keystroke
+  query — and RET or a chip strip is what reaches the rows. Narrowing a
+  table as each character lands animates something the typist is looking
+  away from, and every half-written token is a query of its own. The
+  resident bar and omnibox modes keep their 120 ms debounce.
+- Browser renderer: a delivery that would repeat the last one is skipped.
+  Local filtering already worked this out for itself; a producer had no
+  way to, and was being asked the same question twice by Escape dropping
+  text it never heard, by a commit on an unchanged box, and by a debounce
+  settling where it settled before.
+- Browser renderer: the selected row is a **background alone**, in the
+  theme's secondary highlight — `#F0FFF0` light, `#373D4F` dark — with
+  the inset accent stripe removed. Golden is the applied filter's colour
+  and stays on the chips; the cursor row must not read as the same thing.
+- Browser renderer: where the browser eats **C-n**/**C-p** before the page
+  sees them (Chrome and family bind them to new window and print), the
+  suggestion list now says so in a footer note rather than leaving two of
+  its four documented keys silently dead. Firefox, webview shells and
+  Safari are told nothing, having no such problem.
 - Browser renderer: `palette: true` mount option and `openFilter()` /
   `closeFilter()` on the handle — the filter becomes something you
   summon rather than something resident. The page keeps only the chip
