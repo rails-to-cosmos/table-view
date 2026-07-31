@@ -21,6 +21,9 @@
  *   tv.getQuery();        // the query as last delivered
  *   tv.stripLastToken();  // drop the typed text, else the last chip -> bool
  *   tv.openFilter(); tv.closeFilter();   // summon and dismiss the filter
+ *   tv.selectStep(+1);    // move a row, turning the page at either end -> bool
+ *   tv.nextPage(); tv.previousPage();    // turn a page -> bool
+ *   tv.pageInfo();        // { page, pages, from, to, total } over the filtered set
  *
  *   TableView.parseQuery(q, keys)         // SCHEMA.md's filter micro-syntax
  *   // -> [{ negated, key, value, quoted, start, end, sep }, ...]
@@ -212,6 +215,7 @@
  *             onFilter?: (q: string) => void,
  *             omnibox?: boolean,
  *             palette?: boolean,
+ *             pageSize?: number,
  *             initialQuery?: string }} MountOptions
  * @typedef {{ el: HTMLElement,
  *             setView: (v: View) => void,
@@ -226,7 +230,13 @@
  *             getQuery: () => string,
  *             stripLastToken: () => boolean,
  *             openFilter: () => void,
- *             closeFilter: () => void }} Handle  What `mount' returns.
+ *             closeFilter: () => void,
+ *             selectStep: (step: number) => boolean,
+ *             nextPage: () => boolean,
+ *             previousPage: () => boolean,
+ *             pageInfo: () => { page: number, pages: number,
+ *                               from: number, to: number, total: number } }} Handle
+ *   What `mount' returns.
  * @typedef {{ search: string, len: number[], cells: string[] }} RowText
  *   A row's cached display data: every cell's text lowercased and joined with
  *   \x1f (free-text filtering searches it), each cell's length (column widths),
@@ -641,7 +651,10 @@
   .tv-chip-x{opacity:1;padding:0 8px}
   .tv-filter,.tv-omni .tv-filter,.tv-panel .tv-filter{font-size:16px}
 }
-.tv-key{color:var(--tv-fg);font-weight:600}`;
+.tv-key{color:var(--tv-fg);font-weight:600}
+.tv-pg{color:var(--tv-accent);font-weight:600;cursor:pointer}
+.tv-pg:hover{text-decoration:underline}
+.tv-pg-off{color:var(--tv-muted);font-weight:400;cursor:default;text-decoration:none}`;
     const el = document.createElement("style");
     el.textContent = css;
     document.head.appendChild(el);
@@ -659,6 +672,11 @@
     const o = opts || {};   // narrowing sticks in closures (a reassigned param would not)
     const omnibox = o.omnibox === true;
     const palette = o.palette === true;
+    /** Rows per page, or 0 for the whole set at once — which is every consumer
+     *  that has not asked otherwise. */
+    const pageSize = Math.max(0, Math.trunc(Number(o.pageSize) || 0));
+    /** The page on show, counted from zero. */
+    let page = 0;
 
     /** Is the table being drawn dark? The page's choice outranks the system's. */
     function darkNow() {
@@ -1138,6 +1156,27 @@
       return order;
     }
 
+    /** How many pages the filtered set makes, never fewer than one. */
+    function pageCount() {
+      return pageSize ? Math.max(1, Math.ceil(ordered().length / pageSize)) : 1;
+    }
+
+    /**
+     * The rows on show: one page of the filtered, sorted set, or all of it
+     * where no page size was asked for. Everything that renders rows reads
+     * this — the window, the spacers, the scroll arithmetic and `getVisible'
+     * — so the virtualizer works inside the page and knows nothing about
+     * paging. Widths are the exception: they measure the whole filtered set,
+     * or columns would jump width every time the page turned.
+     */
+    function paged() {
+      const rows = ordered();
+      if (!pageSize) return rows;
+      if (page >= pageCount()) page = pageCount() - 1;   // the set shrank under it
+      const at = page * pageSize;
+      return rows.slice(at, at + pageSize);
+    }
+
     /** Whether ROW passes the current filter. @param {Row} r */
     function matches(r) { return !orderTest || orderTest(r); }
 
@@ -1248,7 +1287,7 @@
      */
     function renderRows(force) {
       keepSelection();
-      const rows = ordered();
+      const rows = paged();
       const total = rows.length;
       const rowH = geom.row;
       const port = scroll.clientHeight || rowH * 20;   // before layout: a screenful
@@ -1269,7 +1308,7 @@
       applyWidths();
       table.style.display = total ? "" : "none";
       empty.style.display = total ? "none" : "";
-      hint.innerHTML = hintHTML(total);
+      hint.innerHTML = hintHTML(ordered().length);
       measure();
     }
 
@@ -1288,6 +1327,24 @@
       }
     }
 
+    /** N with thousands grouped, written the same wherever the page runs. */
+    function grouped(n) {
+      return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+    }
+
+    /** Where in the filtered set this page sits, and the way to either side. */
+    function pagerHTML(total, pages) {
+      const from = page * pageSize + 1;
+      const to = Math.min(total, from + pageSize - 1);
+      // One row is a range of itself, and says so once rather than twice.
+      const span = from === to ? grouped(from) : `${grouped(from)}–${grouped(to)}`;
+      const step = (dir, label, can) =>
+        `<b class="tv-pg${can ? "" : " tv-pg-off"}" data-pg="${dir}">${label}</b>`;
+      return `${esc(span)} of ${esc(grouped(total))}`
+           + ` · ${step(-1, "‹ prev", page > 0)}`
+           + ` · ${step(1, "next ›", page < pages - 1)}`;
+    }
+
     /**
      * The status line: what is on show, how it is sorted, and the actions as
      * `KEY label' pairs — the way table-view.el prints its legend. The keys are
@@ -1299,7 +1356,13 @@
       const count = shown === total ? `${total} rows` : `${shown}/${total} rows`;
       const s = state.sortKeys[0];
       const sort = s ? `sort ${s.column} ${s.ascending ? "asc" : "desc"}` : "unsorted";
-      let out = `${esc(count)} · ${esc(sort)}`;
+      // With one page there is nothing to page through, and the line is the
+      // line it has always been. With more, the range says what the count
+      // said and where in the set it is, so it stands in that place rather
+      // than beside it.
+      const pages = pageCount();
+      let out = pages > 1 ? pagerHTML(shown, pages) : `${esc(count)}`;
+      out += ` · ${esc(sort)}`;
       for (const a of actions()) {
         if (!a.key) continue;
         out += ` · <b class="tv-key">${esc(a.key)}</b> ${esc(a.label || a.command)}`;
@@ -1344,7 +1407,7 @@
      */
     function keepSelection() {
       if (state.selected === null) return;
-      const rows = order || sorted || state.rows;
+      const rows = paged();
       if (!rows.length) { state.selected = null; state.selCol = null; selAt = -1; return; }
       if (selAt >= 0 && rows[selAt] && rows[selAt].id === state.selected) return;
       if (rows.some((r) => r.id === state.selected)) return;
@@ -1355,7 +1418,7 @@
     /** Where the selected row sits in display order, or -1. */
     function indexOfSelected() {
       if (state.selected === null) return -1;
-      const rows = ordered();
+      const rows = paged();
       // The cached index is right unless the order moved under it.
       if (selAt >= 0 && rows[selAt] && rows[selAt].id === state.selected) return selAt;
       return rows.findIndex((r) => r.id === state.selected);
@@ -1392,7 +1455,7 @@
      * @param {string} id  @param {number} [col]  @returns {boolean}
      */
     function selectRow(id, col) {
-      const rows = ordered();
+      const rows = paged();
       const i = rows.findIndex((r) => r.id === id);
       if (i === -1) return false;
       const was = selAt;
@@ -1477,7 +1540,7 @@
       if (was < 0 || i >= was) {                       // downward, and the first pick
         if (foot - from > port * 2 / 3) to = foot - port * 2 / 3;
       } else if (top - from < port / 3) to = top - port / 3;
-      const most = Math.max(0, geom.head + ordered().length * rowH - port);
+      const most = Math.max(0, geom.head + paged().length * rowH - port);
       to = Math.max(0, Math.min(most, to));
       if (to === from && !easing) return;              // the band already holds it
       if (calm) { scroll.scrollTop = to; easing = false; return; }
@@ -1517,12 +1580,64 @@
     function cancelEase() { easing = false; }
 
     /**
+     * Turn to page N (from zero), landing the selection on the row LAND names
+     * — its first or its last. The page is a different set of rows, so the
+     * viewport jumps to the end the reader arrives at rather than gliding
+     * across a hundred rows they never asked to see; the band then places the
+     * landing row from there, which is a short move or none.
+     * @param {number} to  @param {"first"|"last"} land  @returns {boolean}
+     */
+    function turnTo(to, land) {
+      const pages = pageCount();
+      const at = Math.max(0, Math.min(pages - 1, to));
+      if (at === page) return false;
+      const col = state.selCol;
+      page = at;
+      const rows = paged();
+      if (!rows.length) { renderRows(true); return true; }
+      const first = land === "first";
+      // Arriving from the other page, the scroller is wherever the last one
+      // left it: put it at the end being arrived at before the band reads it.
+      scroll.scrollTop = first
+        ? 0
+        : Math.max(0, geom.head + rows.length * geom.row - (scroll.clientHeight || 0));
+      easing = false;
+      // The band wants to know which way this came from; a flip forward is a
+      // move down whatever the indices say, and back is a move up.
+      selAt = first ? -1 : rows.length;
+      renderRows(true);
+      selectRow(rows[first ? 0 : rows.length - 1].id, col ?? undefined);
+      return true;
+    }
+
+    /**
+     * Move the selection one row, and off the end of a page onto the next —
+     * landing on its first row going forward, its last going back, with the
+     * column carried through. A consumer's next-row and previous-row keys are
+     * this: the page boundary is the renderer's to know about, since only it
+     * knows there is one.
+     * @param {number} step  @returns {boolean}
+     */
+    function selectStep(step) {
+      const rows = paged();
+      if (!rows.length) return false;
+      const dir = step < 0 ? -1 : 1;
+      const col = state.selCol;
+      const at = state.selected === null
+        ? -1 : rows.findIndex((r) => r.id === state.selected);
+      if (at === -1) return selectRow(rows[dir > 0 ? 0 : rows.length - 1].id, col ?? undefined);
+      const next = at + dir;
+      if (next >= 0 && next < rows.length) return selectRow(rows[next].id, col ?? undefined);
+      return turnTo(page + dir, dir > 0 ? "first" : "last");
+    }
+
+    /**
      * Put the selection on the first visible row, unless it is already on one.
      * What Enter in the filter box hands the table, so the keys a consumer
      * binds to rows have something to move from.
      */
     function selectFirstVisible() {
-      const rows = ordered();
+      const rows = paged();
       if (!rows.length) return;
       if (state.selected !== null && rows.some((r) => r.id === state.selected)) return;
       selectRow(rows[0].id, state.selCol ?? undefined);
@@ -1535,6 +1650,7 @@
       state.sortKeys = (primary && primary.column === key)
         ? [{ column: key, ascending: !primary.ascending }]
         : [{ column: key, ascending: true }];
+      page = 0;                          // a different order, read from the top
       dropSorted();
       scroll.scrollTop = 0;
       renderArrows();
@@ -1726,6 +1842,7 @@
       // before.
       if (q === lastQuery) return;
       lastQuery = q;
+      page = 0;                          // a different question, read from the top
       if (o.onFilter) o.onFilter(q);
       else if (onFrame) frame(applyFilter);
       else applyFilter();
@@ -2223,6 +2340,15 @@
       if (hit(e) === veil) { e.preventDefault(); closeFilter(); }
     });
 
+    // The pager is two words in the status line rather than a control of its
+    // own; the keys belong to the consumer, and these are for the pointer.
+    hint.addEventListener("click", (e) => {
+      const t = hit(e);
+      const step = t && /** @type {HTMLElement|null} */ (t.closest(".tv-pg"));
+      if (!step || step.classList.contains("tv-pg-off")) return;
+      turnTo(page + Number(step.dataset.pg), Number(step.dataset.pg) > 0 ? "first" : "last");
+    });
+
     chipsEl.addEventListener("mousedown", (e) => e.preventDefault());   // box keeps focus
     chipsEl.addEventListener("click", (e) => {
       const t = hit(e);
@@ -2376,7 +2502,7 @@
         renderRows(true);
       },
       getRows() { return state.rows.slice(); },
-      getVisible() { return ordered().slice(); },
+      getVisible() { return paged().slice(); },
       select: selectRow,
       /**
        * Where the selection is: the row's id and the column index within it,
@@ -2394,6 +2520,25 @@
       stripLastToken,
       openFilter,
       closeFilter,
+      selectStep,
+      /** Turn forward a page, landing on its first row. @returns {boolean} */
+      nextPage() { return turnTo(page + 1, "first"); },
+      /** Turn back a page, landing on its last. @returns {boolean} */
+      previousPage() { return turnTo(page - 1, "last"); },
+      /**
+       * Where the reading is: the page and how many there are, and the span of
+       * the filtered set on show. Counted from one, the way it reads.
+       * @returns {{page: number, pages: number, from: number, to: number, total: number}}
+       */
+      pageInfo() {
+        const total = ordered().length;
+        const pages = pageCount();
+        const at = Math.min(page, pages - 1);
+        return pageSize
+          ? { page: at + 1, pages, from: total ? at * pageSize + 1 : 0,
+              to: Math.min(total, (at + 1) * pageSize), total }
+          : { page: 1, pages: 1, from: total ? 1 : 0, to: total, total };
+      },
     };
   }
 

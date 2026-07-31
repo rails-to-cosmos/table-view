@@ -354,6 +354,13 @@ async function measure() {
   await bench("select burst x30 (key repeat)",
               () => sync(() => { for (const id of burst) tv.select(id); }));
 
+  // A page turn on a set this size: one slice, one window, one hint.
+  const paged = new El("div");
+  const pv = TableView.mount(paged, view(COUNT), { pageSize: 100 });
+  paged.querySelector(".tv-scroll").clientHeight = 600;
+  await bench("page flip (100-row page of 13344)",
+              () => sync(() => { pv.nextPage(); pv.previousPage(); }));
+
   await bench("scroll re-window", () => sync(() => {
     const sc = app.querySelector(".tv-scroll");
     sc.scrollTop = 4000;
@@ -1937,6 +1944,141 @@ async function virtualKeys() {
     b.dispatchEvent(new Ev("keydown", { key: "Escape" }));
     check("and with no list there is nothing to say", note(), []);
     ua(null);
+  }
+
+  // --- the paginator
+  {
+    const box = new El("div");
+    const t = TableView.mount(box, view(250), { pageSize: 100 });
+    box.querySelector(".tv-scroll").clientHeight = 600;
+    const b = filterOf(box);
+    const hintOf = () => box.querySelector(".tv-hint").textContent;
+    const ids = () => t.getVisible().map((r) => r.id);
+    const rowsIn = () => box.querySelectorAll(".tv-table tbody tr[data-id]").length;
+
+    // --- slicing
+    check("getVisible is the page, not the set", t.getVisible().length, 100);
+    check("and it is the first hundred of the sorted set",
+          ids()[0], t.getRows().slice().sort((x, y) =>
+            String(x.cells.scheduled).localeCompare(String(y.cells.scheduled)))[0].id);
+    check("the pager counts the pages", t.pageInfo(), { page: 1, pages: 3, from: 1, to: 100, total: 250 });
+    t.nextPage(); t.nextPage();
+    check("and the last one is the partial one",
+          [t.pageInfo(), t.getVisible().length],
+          [{ page: 3, pages: 3, from: 201, to: 250, total: 250 }, 50]);
+    check("the window renders inside the page", rowsIn() <= 50, true);
+
+    // --- the line
+    check("the range stands where the count did, with the way either side",
+          hintOf().slice(0, hintOf().indexOf(" · sort")),
+          "201–250 of 250 · ‹ prev · next ›");
+    t.previousPage(); t.previousPage();
+    check("thousands are grouped", (() => {
+      const big = new El("div");
+      const bt = TableView.mount(big, view(2000), { pageSize: 100 });
+      return big.querySelector(".tv-hint").textContent.split(" · ")[0];
+    })(), "1–100 of 2,000");
+    check("a page holding one row is a range of itself", (() => {
+      const one = new El("div");
+      const ot = TableView.mount(one, view(3), { pageSize: 1 });
+      ot.nextPage();
+      return one.querySelector(".tv-hint").textContent.split(" · ")[0];
+    })(), "2 of 3");
+    check("prev is dead on the first page, next on the last",
+          [box.querySelectorAll(".tv-pg-off").map((e) => e.text),
+           (t.nextPage(), t.nextPage(), box.querySelectorAll(".tv-pg-off").map((e) => e.text))],
+          [["‹ prev"], ["next ›"]]);
+    t.previousPage(); t.previousPage();
+
+    // --- off, and with one page, the line is what it always was
+    check("one page hides the pager entirely", (() => {
+      const small = new El("div");
+      TableView.mount(small, view(40), { pageSize: 100 });
+      return small.querySelector(".tv-hint").textContent;
+    })(), "40 rows · sort scheduled asc" + ACT);
+    check("and no pageSize is the same line again", (() => {
+      const off = new El("div");
+      TableView.mount(off, view(40));
+      return off.querySelector(".tv-hint").textContent;
+    })(), "40 rows · sort scheduled asc" + ACT);
+    check("with no pager targets in it", box.querySelectorAll(".tv-pg").length > 0, true);
+
+    // --- resets and clamps
+    t.nextPage();
+    check("on page two", t.pageInfo().page, 2);
+    b.value = "system";
+    b.dispatchEvent(new Ev("keydown", { key: "Enter" }));
+    await painted();
+    check("a query change reads from the top again", t.pageInfo().page, 1);
+    check("of the filtered set", t.pageInfo().total < 250, true);
+    b.dispatchEvent(new Ev("keydown", { key: "Backspace" }));
+    t.nextPage();
+    box.querySelector("th[data-key=state]").click();
+    check("and so does a sort change", t.pageInfo().page, 1);
+
+    t.nextPage(); t.nextPage();
+    check("on the last page", t.pageInfo().page, 3);
+    t.setRows(view(120).rows);
+    check("a shorter set clamps rather than stranding the reader",
+          t.pageInfo(), { page: 2, pages: 2, from: 101, to: 120, total: 120 });
+    t.setRows(view(250).rows);
+
+    // --- continuous movement
+    const pg = new El("div");
+    const pt = TableView.mount(pg, view(250), { pageSize: 100 });
+    pg.querySelector(".tv-scroll").clientHeight = 300;
+    const sc = pg.querySelector(".tv-scroll");
+    pt.select(pt.getVisible()[99].id, 2);
+    await sleep(400);
+    check("selected on the last row of page one, in a column",
+          [pt.getSelection().col, pt.pageInfo().page], [2, 1]);
+    const wasLast = pt.getSelection().id;
+    check("stepping past it turns the page", pt.selectStep(1), true);
+    await sleep(400);
+    check("landing on the first row of the next, column carried",
+          [pt.pageInfo().page, pt.getSelection().id, pt.getSelection().col],
+          [2, pt.getVisible()[0].id, 2]);
+    check("with the viewport at the top of it, the band asking nothing more",
+          sc.scrollTop, 0);
+    check("and the mark on it",
+          pg.querySelector(".tv-table tbody tr.tv-sel").dataset.id, pt.getVisible()[0].id);
+
+    check("stepping back turns it again", pt.selectStep(-1), true);
+    await sleep(400);
+    check("landing on the last row of the one before, and the same column",
+          [pt.pageInfo().page, pt.getSelection().id, pt.getSelection().col],
+          [1, wasLast, 2]);
+    check("with the viewport at the end it arrived at",
+          sc.scrollTop > 0 && sc.scrollTop <= 30 + 100 * 30 - 300, true);
+
+    check("and at the very ends it stays put",
+          [(pt.select(pt.getVisible()[0].id), pt.selectStep(-1)), pt.pageInfo().page],
+          [false, 1]);
+    pt.nextPage(); pt.nextPage();
+    await sleep(400);
+    pt.select(pt.getVisible()[pt.getVisible().length - 1].id);
+    check("at the far end likewise",
+          [pt.selectStep(1), pt.pageInfo().page], [false, 3]);
+
+    // --- the pointer reaches the same thing
+    pt.previousPage(); pt.previousPage();
+    const next = pg.querySelectorAll(".tv-pg").filter((e) => e.dataset.pg === "1")[0];
+    next.dispatchEvent(new Ev("click"));
+    check("a click on next turns the page", pt.pageInfo().page, 2);
+    const prev = pg.querySelectorAll(".tv-pg").filter((e) => e.dataset.pg === "-1")[0];
+    prev.dispatchEvent(new Ev("click"));
+    check("and one on prev turns it back", pt.pageInfo().page, 1);
+    prev.dispatchEvent(new Ev("click"));
+    check("a dead one does nothing", pt.pageInfo().page, 1);
+
+    // --- off mode keeps every promise it had
+    const off = new El("div");
+    const ot = TableView.mount(off, view(40));
+    check("with no page size there is one page of everything",
+          [ot.pageInfo(), ot.getVisible().length],
+          [{ page: 1, pages: 1, from: 1, to: 40, total: 40 }, 40]);
+    check("and selectStep is plain movement",
+          [ot.selectStep(1), ot.getSelection().id], [true, ot.getVisible()[0].id]);
   }
 
   // --- the touch pass: bigger targets, and a long press for the row action

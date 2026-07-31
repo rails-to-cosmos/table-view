@@ -32,6 +32,20 @@ the rails-to-cosmos ELPA archive publishes date-stamped snapshots.
   called the latter was collapsed by the former. One owner now: mount
   calls `renderChips()` unconditionally, so the path a raw mount takes
   and the path the checks drive are the same path.
+- Browser renderer: **paging**. `pageSize` shows the filtered, sorted set
+  a page at a time, with the window, spacers, scroll band and
+  `getVisible()` all operating inside the page — column widths still
+  measure the whole filtered set, so they hold still as pages turn. The
+  pager is part of the status line (`1–100 of 12,870 · ‹ prev · next ›`)
+  and vanishes entirely at one page, leaving the line byte-identical to
+  what it is without `pageSize`. A query or sort change reads from the
+  top again; `setRows` and upserts clamp rather than stranding the reader
+  past the last page.
+- Browser renderer: `selectStep(±1)` moves the selection a row and off
+  the end of a page onto the next — first row going forward, last going
+  back, carrying the column, with the scroll band placing the arrival.
+  `nextPage()`, `previousPage()` and `pageInfo()` round out the handle.
+  No keys are bound renderer-side; a consumer binds its own to these.
 - Browser renderer: the palette filters on **commit alone**. Typing moves
   the suggestion list and delivers nothing — no debounce, no per-keystroke
   query — and RET or a chip strip is what reaches the rows. Narrowing a

@@ -316,6 +316,9 @@ hands the query to the producer, and whatever `setRows` delivers is what shows.
 | `select(id, col?)` | select that row — and optionally one cell of it — and scroll it into view; false if not visible |
 | `getSelection()`   | `{ id, col }`; `col` is `null` for a whole-row selection       |
 | `getQuery()`       | the filter query as last delivered (chips + what was committed) |
+| `selectStep(±1)`   | move the selection a row, turning the page at either end       |
+| `nextPage()` / `previousPage()` | turn a page, landing on its first / last row     |
+| `pageInfo()`       | `{ page, pages, from, to, total }` over the filtered set       |
 | `openFilter()`     | summon the filter — raises the palette, or focuses the resident box |
 | `closeFilter()`    | dismiss it and give the keyboard back to the table            |
 | `stripLastToken()` | drop the typed text, else the last chip, and reapply; false if nothing was left |
@@ -334,6 +337,26 @@ one RET and a double click run — selecting the cell under the finger first.
 Drift past 10px or a scroll of any size calls it off, because every touch on a
 list might be the start of a scroll; only the touchend that completes a press is
 swallowed, so no click or context menu follows the action.
+
+### Paging
+
+Pass **`pageSize`** to show the filtered, sorted set a page at a time. The
+window, spacers, scroll band and `getVisible()` all work *inside* the page, so
+the virtualizer knows nothing about paging; column widths are the exception and
+measure the whole filtered set, or they would change every time the page turned.
+
+The pager lives in the status line rather than in a control of its own —
+`1–100 of 12,870 · ‹ prev · next ›` — and is absent entirely while there is one
+page, leaving the line exactly as it is without `pageSize`. A query or sort
+change reads from the top again; a shorter set clamps rather than stranding the
+reader past the end.
+
+Movement is continuous across the boundary. `selectStep(+1)` off the last row of
+a page turns to the next and lands on its first; `selectStep(-1)` off the first
+lands on the previous page's last, carrying the selected column either way, with
+the scroll band placing the landing row. **The keys stay yours** — nothing here
+binds them; bind `n`/`p` (or `j`/`k`) to `selectStep`, and `[`/`]` to
+`previousPage`/`nextPage`.
 
 Rows are **virtualized**: only the scrolled-to window plus a small overscan
 has DOM, so a 13k-row view mounts and filters without freezing the tab. A row
