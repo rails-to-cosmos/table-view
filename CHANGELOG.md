@@ -6,6 +6,19 @@ the rails-to-cosmos ELPA archive publishes date-stamped snapshots.
 ## Unreleased
 
 ### Added
+- Browser renderer: cell-level selection. `select(id, col)` stamps one
+  `td` with `.tv-cell-sel` beside the row's `.tv-sel`, `getSelection()`
+  reports `{id, col}`, and `col` is clamped to the columns that exist
+  rather than wrapped. `select(id)` with no column is the whole-row
+  selection it always was; both marks are re-derived on every render, so
+  they survive a scroll, an upsert and a `setRows` that keeps the id.
+- Browser renderer: a committed filter token leaves the box and becomes
+  a removable chip beside it. The query is always the chips and the box
+  together — Enter commits the box whole, a settling debounce commits
+  only the tokens something follows (so a word is never chipped out from
+  under the caret), Backspace on an empty box takes the last chip off, a
+  click takes any chip off, and `onFilter` is handed the whole query
+  joined.
 - Browser renderer: the filter box speaks SCHEMA.md's query micro-syntax
   — `key:value` predicates (only where `key` names a column, so `:work:`
   and `=code=` stay org text), `"quoted text"`, `-negation`, free text
@@ -42,6 +55,18 @@ the rails-to-cosmos ELPA archive publishes date-stamped snapshots.
   keymap; nothing else moves focus or the selection.
 
 ### Changed
+- **Browser renderer: the action toolbar is gone.** Actions render on
+  the hint line as `KEY label` pairs, the way `table-view.el` prints its
+  legend — the keys are the interface, and a button only offered a
+  second way to reach what a key already reaches. Double click and
+  `onAction` dispatch are unchanged. Consumers styling `.tv-btn` have
+  nothing to style.
+- Browser renderer: badge cells render as pills — the palette colour
+  tints the ground, marks a dot and writes the label.
+- Browser renderer: Escape in the filter box walks out one step at a
+  time — it closes the suggestion list if one is open, else drops what
+  is half-typed (the chips stand), else blurs. It previously cleared and
+  blurred in one press.
 - Browser renderer: Org links in cells are underlined always, rather
   than only under the pointer.
 - The browser renderer no longer rebuilds itself on every keystroke. The

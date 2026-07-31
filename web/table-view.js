@@ -14,7 +14,8 @@
  *     onFilter(q)                { ... },   // producer filters; setRows the answer
  *   });
  *   tv.setRows(rows); tv.upsertRow(row); tv.deleteRow(id); tv.applyDelta(ops);
- *   tv.select(id);        // select a row by id and scroll it into view -> bool
+ *   tv.select(id, col);   // select a row (and optionally one cell) -> bool
+ *   tv.getSelection();    // { id, col } — col is null for a whole-row selection
  *   tv.getVisible();      // the filtered + sorted rows, in display order
  *
  *   TableView.parseQuery(q, columnKeys)   // SCHEMA.md's filter micro-syntax
@@ -25,10 +26,23 @@
  *
  * Rendering (renderer-local; SCHEMA.md's "Not part of the contract"):
  *
- * - The chrome — bar, title, filter input, action buttons, table skeleton, hint
- *   — is built once at mount. Updates touch only the row window, the hint text,
- *   the sort arrows and the buttons' disabled state, so the filter input keeps
- *   focus and caret while typing.
+ * - The chrome — bar, title, filter chips, filter input, table skeleton, hint —
+ *   is built once at mount. Updates touch only the row window, the hint line,
+ *   the sort arrows and the chips, so the filter input keeps focus and caret
+ *   while typing.
+ * - There are no toolbar buttons. Actions render on the hint line as `KEY
+ *   label' pairs, the way table-view.el prints its legend: the keys are the
+ *   interface, a consumer binds them and dispatches the command, and a button
+ *   would only offer a second way to reach what a key already reaches.
+ * - Selection is a row and, optionally, one cell of it: `select(id, col)'
+ *   stamps `.tv-cell-sel' on that td, `getSelection()' reports both. The column
+ *   is clamped to the ones that exist, never wrapped, and `select(id)' with no
+ *   column is the whole-row selection this had before. Both classes are
+ *   re-derived from the same state on every render, so they survive a scroll, an
+ *   upsert and a `setRows' that still carries the id.
+ * - Badge cells render as pills: the palette colour tints the ground, marks a
+ *   dot and writes the label, so one hue carries the whole thing in either
+ *   scheme.
  * - Rows are virtualized. `tbody` holds the scrolled-to window plus ~15 rows of
  *   overscan, between two spacer rows standing in for the height of the rest.
  *   Rows outside the window have no DOM: drive selection with `select(id)`
@@ -56,14 +70,22 @@
  *   number of rows behind it. Arrows move, Tab and Enter accept, Esc dismisses;
  *   a click accepts without taking focus. It stays shut when it has nothing to
  *   offer, and inside a quoted token.
- * - Enter in the filter box, with no list open, applies it at once (cancelling
+ * - A committed token leaves the box and becomes a chip. The query is always
+ *   the chips and the box together — chips are where the finished tokens are
+ *   kept, not a second filter — so the box holds only what is still being
+ *   typed. Enter commits the box whole; a settling debounce commits only the
+ *   tokens something follows, so a word is never chipped out from under the
+ *   caret. Backspace on an empty box takes the last chip off, a click takes any
+ *   chip off, and `onFilter' is handed the whole query joined.
+ * - Enter in the filter box, with no list open, commits it at once (cancelling
  *   the pending debounce, so the query is delivered exactly once), blurs the
  *   box, and puts the selection on the first visible row unless it is already
  *   on one — under `onFilter' that last step waits for the producer's
- *   `setRows'. Escape closes the list if it is open, else clears a non-empty
- *   box, and blurs. Both keys stop there rather than bubbling into a consumer's
- *   own keymap. Nothing else moves focus or the selection: a debounce firing on
- *   its own leaves both where the typist left them.
+ *   `setRows'. Escape walks out one step at a time: it closes the list if one
+ *   is open, else drops what is half-typed, else blurs. Both keys stop there
+ *   rather than bubbling into a consumer's own keymap. Nothing else moves focus
+ *   or the selection: a debounce firing on its own leaves both where the typist
+ *   left them.
  *
  * Type-checked with `// @ts-check` + the JSDoc @typedefs below (no build step);
  * run `make web-check`.  The typedefs are the JS mirror of ../SCHEMA.md.
@@ -105,7 +127,9 @@
  *             applyDelta: (ops: Op[]) => void,
  *             getRows: () => Row[],
  *             getVisible: () => Row[],
- *             select: (id: string) => boolean }} Handle  What `mount' returns.
+ *             select: (id: string, col?: number) => boolean,
+ *             getSelection: () => { id: string|null, col: number|null } }} Handle
+ *   What `mount' returns.
  * @typedef {{ search: string, len: number[], cells: string[] }} RowText
  *   A row's cached display data: every cell's text lowercased and joined with
  *   \x1f (free-text filtering searches it), each cell's length (column widths),
@@ -152,8 +176,12 @@
       const raw = displayText(val);
       const badge = (col.badges || []).find((b) => b.value === raw);
       const color = badge && badge.color;
+      // A pill: the palette colour tints the ground, marks the dot and writes
+      // the label, so one hue carries the whole thing in either scheme. A value
+      // the palette does not name stays plain text.
       if (color)
-        return `<span class="tv-badge" style="--tv-badge:${esc(color)}">${esc(raw)}</span>`;
+        return `<span class="tv-pill" style="--tv-badge:${esc(color)}">`
+             + `<i class="tv-dot"></i>${esc(raw)}</span>`;
       return esc(raw);
     }
     const s = typeof val === "string" ? val : displayText(val);
@@ -292,6 +320,7 @@
   const OVERSCAN = 15;         // rows rendered above and below the viewport
   const ROW_H = 30;            // row height until a rendered row can be measured
   const CELL_PAD = 24;         // a cell's horizontal padding, both sides
+  const PILL_CH = 4;           // a badge pill's dot, gap and ground, in characters
   const DEBOUNCE = 120;        // ms of quiet before a filter keystroke re-renders
 
   /** Run CB on the next frame (or soon, where there are no frames). */
@@ -319,6 +348,13 @@
 .tv-filter{font:inherit;padding:4px 8px;border:1px solid var(--tv-border);border-radius:6px;
   background:var(--tv-bg);color:var(--tv-fg);min-width:140px}
 .tv-filter-wrap{position:relative;display:flex}
+.tv-chips{display:flex;flex-wrap:wrap;gap:5px;align-items:center}
+.tv-chip{display:inline-flex;align-items:center;gap:5px;padding:1px 4px 1px 8px;
+  border-radius:999px;font-size:12px;cursor:pointer;color:var(--tv-fg);
+  border:1px solid var(--tv-border);background:var(--tv-alt)}
+.tv-chip:hover{border-color:var(--tv-accent);color:var(--tv-accent)}
+.tv-chip-x{font-style:normal;opacity:.55;padding:0 3px}
+.tv-chip:hover .tv-chip-x{opacity:1}
 /* The suggestion list hangs under the box, over the table. .tv-root clips with
    overflow:hidden, so it scrolls internally rather than growing past it. */
 .tv-ac{position:absolute;top:100%;left:0;min-width:100%;z-index:5;margin-top:2px;
@@ -329,10 +365,6 @@
 .tv-ac-n{color:var(--tv-muted);font-variant-numeric:tabular-nums}
 .tv-ac-item:hover{color:var(--tv-accent)}
 .tv-ac-on{background:var(--tv-sel);color:var(--tv-accent)}
-.tv-btn{font:inherit;padding:4px 10px;border:1px solid var(--tv-border);border-radius:6px;
-  background:var(--tv-bg);color:var(--tv-fg);cursor:pointer}
-.tv-btn:disabled{opacity:.45;cursor:default}
-.tv-btn:not(:disabled):hover{border-color:var(--tv-accent);color:var(--tv-accent)}
 .tv-scroll{overflow:auto}
 .tv-table{border-collapse:collapse;width:100%}
 .tv-table th,.tv-table td{padding:5px 12px;text-align:left;white-space:nowrap;
@@ -344,13 +376,18 @@
 .tv-table td.tv-right,.tv-table th.tv-right{text-align:right;font-variant-numeric:tabular-nums}
 .tv-table tbody tr.tv-alt{background:var(--tv-alt)}
 .tv-table tbody tr.tv-sel{background:var(--tv-sel)}
+.tv-table tbody td.tv-cell-sel{box-shadow:inset 0 0 0 1px var(--tv-accent);border-radius:3px}
 .tv-table tbody tr{cursor:default}
 .tv-table tbody tr.tv-pad td{padding:0;border:0}
-.tv-badge{font-weight:600;color:var(--tv-badge)}
+.tv-pill{display:inline-flex;align-items:center;gap:5px;padding:0 8px;border-radius:999px;
+  font-weight:600;color:var(--tv-badge);
+  background:color-mix(in srgb,var(--tv-badge) 15%,transparent)}
+.tv-dot{flex:none;width:6px;height:6px;border-radius:50%;background:var(--tv-badge)}
 .tv-link{color:var(--tv-accent);text-decoration:underline}
 .tv-arrow{margin-left:4px;opacity:.7}
 .tv-empty{padding:16px 12px;color:var(--tv-muted)}
-.tv-hint{padding:6px 12px;border-top:1px solid var(--tv-border);color:var(--tv-muted);font-size:12px}`;
+.tv-hint{padding:6px 12px;border-top:1px solid var(--tv-border);color:var(--tv-muted);font-size:12px}
+.tv-key{color:var(--tv-fg);font-weight:600}`;
     const el = document.createElement("style");
     el.textContent = css;
     document.head.appendChild(el);
@@ -368,13 +405,14 @@
     const o = opts || {};   // narrowing sticks in closures (a reassigned param would not)
     /**
      * @type {{ view: View, rows: Row[], filter: string,
-     *          selected: string|null, sortKeys: SortKey[] }}
+     *          selected: string|null, selCol: number|null, sortKeys: SortKey[] }}
      */
     const state = {
       view: view || { columns: [] },
       rows: (view && view.rows) ? view.rows.slice() : [],
       filter: "",
       selected: null,
+      selCol: null,
       sortKeys: normalizeSort(view && view.sort),
     };
 
@@ -460,6 +498,9 @@
     input.placeholder = "filter…";
     // The box and its suggestion list travel together, so the list can be
     // positioned against the box and nothing else.
+    const chipsEl = document.createElement("div");
+    chipsEl.className = "tv-chips";
+    chipsEl.style.display = "none";
     const filterWrap = document.createElement("div");
     filterWrap.className = "tv-filter-wrap";
     const acEl = document.createElement("div");
@@ -468,6 +509,7 @@
     filterWrap.appendChild(input);
     filterWrap.appendChild(acEl);
     bar.appendChild(titleEl);
+    bar.appendChild(chipsEl);
     bar.appendChild(filterWrap);
 
     const scroll = document.createElement("div");
@@ -499,8 +541,6 @@
     let colEls = [];
     /** Per-column sort arrow, one per column. @type {HTMLElement[]} */
     let arrowEls = [];
-    /** The action buttons. @type {HTMLButtonElement[]} */
-    let btnEls = [];
 
     // Measured geometry and the window currently in the tbody.
     const geom = { row: ROW_H, head: ROW_H };
@@ -666,6 +706,9 @@
         const len = rowText(r).len;
         for (let i = 0; i < w.length; i++) if (len[i] > w[i]) w[i] = len[i];
       }
+      // A badge cell draws a pill around its text, which the cached length
+      // knows nothing about: the dot, its gap and the ground's padding.
+      for (let i = 0; i < cols.length; i++) if (cols[i].type === "badge") w[i] += PILL_CH;
       widths = w;
       return w;
     }
@@ -725,20 +768,6 @@
       }
     }
 
-    /** Rebuild the action buttons (mount, and a view change). */
-    function renderActions() {
-      for (const b of btnEls) b.remove();
-      btnEls = actions().map((a) => {
-        const b = document.createElement("button");
-        b.className = "tv-btn";
-        b.dataset.cmd = a.command;
-        b.title = a.key || "";
-        b.textContent = a.label || a.command;
-        b.disabled = state.selected === null;
-        bar.appendChild(b);
-        return b;
-      });
-    }
 
     /**
      * A row's <tr>. I is its index in the display order: zebra striping is
@@ -747,10 +776,14 @@
      */
     function rowHTML(r, i) {
       const cols = columns(), cs = r.cells || {};
+      const on = r.id === state.selected;
       let tds = "";
-      for (const c of cols)
-        tds += `<td class="${c.align === "right" ? "tv-right" : ""}">${cellHTML(c, cs[c.key])}</td>`;
-      const cls = (i % 2 ? " tv-alt" : "") + (r.id === state.selected ? " tv-sel" : "");
+      for (let c = 0; c < cols.length; c++) {
+        const cell = (cols[c].align === "right" ? "tv-right" : "")
+                   + (on && c === state.selCol ? " tv-cell-sel" : "");
+        tds += `<td class="${cell}">${cellHTML(cols[c], cs[cols[c].key])}</td>`;
+      }
+      const cls = (i % 2 ? " tv-alt" : "") + (on ? " tv-sel" : "");
       return `<tr class="${cls}" data-id="${esc(r.id)}">${tds}</tr>`;
     }
 
@@ -787,7 +820,7 @@
       applyWidths();
       table.style.display = total ? "" : "none";
       empty.style.display = total ? "none" : "";
-      hint.textContent = hintText(total);
+      hint.innerHTML = hintHTML(total);
       measure();
     }
 
@@ -806,23 +839,57 @@
       }
     }
 
-    function hintText(shown) {
+    /**
+     * The status line: what is on show, how it is sorted, and the actions as
+     * `KEY label' pairs — the way table-view.el prints its legend. The keys are
+     * the interface; a consumer binds them and dispatches the command, and the
+     * renderer offers no button to press instead.
+     */
+    function hintHTML(shown) {
       const total = state.rows.length;
       const count = shown === total ? `${total} rows` : `${shown}/${total} rows`;
       const s = state.sortKeys[0];
       const sort = s ? `sort ${s.column} ${s.ascending ? "asc" : "desc"}` : "unsorted";
-      return `${count} · ${sort}`;
+      let out = `${esc(count)} · ${esc(sort)}`;
+      for (const a of actions()) {
+        if (!a.key) continue;
+        out += ` · <b class="tv-key">${esc(a.key)}</b> ${esc(a.label || a.command)}`;
+      }
+      return out;
     }
 
-    /** @param {string|null} id */
-    function setSelected(id) {
+    /**
+     * COL clamped to a real column index, or null for a whole-row selection.
+     * Clamped rather than wrapped: walking off the last column stays there,
+     * which is what a table does.
+     * @param {number|null|undefined} col  @returns {number|null}
+     */
+    function clampCol(col) {
+      if (col === null || col === undefined) return null;
+      const n = columns().length;
+      if (!n) return null;
+      return Math.max(0, Math.min(n - 1, Math.trunc(col)));
+    }
+
+    /**
+     * Move the selection to row ID, and within it to column COL — or to no
+     * column at all, which is the whole-row look this had before cells were
+     * selectable. Stamps the window in place; the classes are re-derived from
+     * the same state on every render, so a scroll, an upsert or a `setRows'
+     * puts them back on whatever row still carries the id.
+     * @param {string|null} id  @param {number|null} [col]
+     */
+    function setSelected(id, col) {
       state.selected = id ?? null;
+      state.selCol = id === null || id === undefined ? null : clampCol(col);
       for (let i = 0; i < tbody.children.length; i++) {
         const tr = /** @type {HTMLElement} */ (tbody.children[i]);
-        if (tr.dataset.id !== undefined) tr.classList.toggle("tv-sel", tr.dataset.id === id);
+        if (tr.dataset.id === undefined) continue;
+        const on = tr.dataset.id === id;
+        tr.classList.toggle("tv-sel", on);
+        for (let c = 0; c < tr.children.length; c++)
+          tr.children[c].classList.toggle("tv-cell-sel", on && c === state.selCol);
       }
-      const has = id !== null && id !== undefined;
-      for (const b of btnEls) b.disabled = !has;
     }
 
     /**
@@ -842,15 +909,19 @@
      * view. Rows outside the rendered window have no element to click, so this
      * is how a consumer moves the selection. False when no visible row has that
      * id — a filtered-out row does not steal the selection.
-     * @param {string} id  @returns {boolean}
+     *
+     * COL selects one cell of that row, clamped to the columns that exist;
+     * omitted, the selection is the whole row, which is what it always was.
+     * @param {string} id  @param {number} [col]  @returns {boolean}
      */
-    function selectRow(id) {
+    function selectRow(id, col) {
       const rows = ordered();
       const i = rows.findIndex((r) => r.id === id);
       if (i === -1) return false;
       scrollTo(i);
+      state.selCol = clampCol(col);          // so the redraw stamps the cell too
       renderRows(true);
-      setSelected(id);
+      setSelected(id, col);
       return true;
     }
 
@@ -863,7 +934,7 @@
       const rows = ordered();
       if (!rows.length) return;
       if (state.selected !== null && rows.some((r) => r.id === state.selected)) return;
-      selectRow(rows[0].id);
+      selectRow(rows[0].id, state.selCol ?? undefined);
     }
 
     function toggleSort(key) {
@@ -918,7 +989,10 @@
       const th = /** @type {HTMLElement|null} */ (t.closest("th[data-key]"));
       if (th) { toggleSort(th.dataset.key); return; }
       const tr = /** @type {HTMLElement|null} */ (t.closest("tr[data-id]"));
-      if (tr) setSelected(tr.dataset.id ?? null);
+      if (!tr) return;
+      const td = /** @type {HTMLElement|null} */ (t.closest("td"));
+      const at = td ? Array.prototype.indexOf.call(tr.children, td) : -1;
+      setSelected(tr.dataset.id ?? null, at === -1 ? null : at);
     });
 
     scroll.addEventListener("dblclick", (e) => {
@@ -929,13 +1003,6 @@
       if (cmd) dispatch(cmd, rowOf(state.rows, tr));
     });
 
-    bar.addEventListener("click", (e) => {
-      const t = hit(e);
-      const b = t && /** @type {HTMLElement|null} */ (t.closest(".tv-btn[data-cmd]"));
-      if (!b) return;
-      dispatch(b.dataset.cmd, state.rows.find((r) => r.id === state.selected));
-    });
-
     let pending = 0;
     function scheduleWindow() {
       if (pending) return;
@@ -943,9 +1010,56 @@
     }
     scroll.addEventListener("scroll", scheduleWindow);
 
-    /** Adopt the filter box's text: re-filter, and redraw from the top. */
-    function applyFilter() {
+    // ---- chips -------------------------------------------------------------
+    // A committed token leaves the box and becomes a chip. The query is the
+    // chips and the box together, always — chips are where the finished tokens
+    // are kept, not a second filter — so the box holds only what is still being
+    // typed and a long query stops scrolling out of sight.
+
+    /** The committed tokens, each the source text it was written as. */
+    /** @type {string[]} */
+    let chips = [];
+
+    /** The query as it stands: every chip, then whatever is in the box. */
+    function effectiveQuery() {
+      const typed = input.value.trim();
+      if (!chips.length) return typed;
+      const front = chips.join(" ");
+      return typed ? front + " " + typed : front;
+    }
+
+    function renderChips() {
+      let html = "";
+      for (let i = 0; i < chips.length; i++)
+        html += `<span class="tv-chip" data-i="${i}" title="remove">${esc(chips[i])}`
+              + `<i class="tv-chip-x">×</i></span>`;
+      chipsEl.innerHTML = html;
+      chipsEl.style.display = chips.length ? "" : "none";
+    }
+
+    /**
+     * Move the box's finished tokens into chips. A token with nothing after it
+     * is still being typed and stays put, so a word is never chipped out from
+     * under the caret; ALL overrides that, which is what Enter means.
+     * @param {boolean} [all]  @returns {boolean} whether anything moved
+     */
+    function chipUp(all) {
       const v = input.value;
+      const toks = parseQuery(v, columnKeys());
+      if (!toks.length) return false;
+      const last = toks[toks.length - 1];
+      const keep = !all && last.end === v.length ? last : null;
+      for (const t of toks) if (t !== keep) chips.push(v.slice(t.start, t.end));
+      if (keep && toks.length === 1) return false;      // nothing finished yet
+      input.value = keep ? v.slice(keep.start) : "";
+      if (input.setSelectionRange) input.setSelectionRange(input.value.length, input.value.length);
+      renderChips();
+      return true;
+    }
+
+    /** Adopt the query as it stands: re-filter, and redraw from the top. */
+    function applyFilter() {
+      const v = effectiveQuery();
       if (v === state.filter) return;
       state.filter = v;
       dropOrder();                       // `sorted' stands: only the filter moved
@@ -955,13 +1069,20 @@
 
     // With `onFilter', the producer narrows the rows and this hands it the
     // query instead of filtering locally: `state.filter' stays empty, so
-    // `order' is `sorted' and the rows given are the rows shown.
+    // `order' is `sorted' and the rows given are the rows shown. Either way it
+    // is the whole query — chips and box joined — that travels.
+    function deliver() {
+      if (o.onFilter) o.onFilter(effectiveQuery());
+      else applyFilter();
+    }
+
     let debounce = 0;
     function armFilter() {
       if (debounce) clearTimeout(debounce);
       debounce = setTimeout(() => {
         debounce = 0;
-        if (o.onFilter) o.onFilter(input.value);
+        chipUp(false);
+        if (o.onFilter) o.onFilter(effectiveQuery());
         else frame(applyFilter);
       }, DEBOUNCE);
     }
@@ -1135,10 +1256,10 @@
      * query reaches the producer (or the local filter) exactly once, with the
      * text as it stands rather than as it stood a keystroke ago.
      */
-    function flushFilter() {
+    function flushFilter(all) {
       if (debounce) { clearTimeout(debounce); debounce = 0; }
-      if (o.onFilter) o.onFilter(input.value);
-      else applyFilter();                // synchronous: Enter waits for no frame
+      chipUp(all);
+      deliver();                         // synchronous: Enter waits for no frame
     }
 
     /** Set by Enter, consumed by the next `setRows'; see the keydown handler. */
@@ -1169,18 +1290,42 @@
           return;
         }
       }
+      // The box empty, Backspace takes the last chip back off — the keyboard
+      // way to undo a commit, since a chip is otherwise a mouse target.
+      if (e.key === "Backspace" && !input.value && chips.length) {
+        e.preventDefault();
+        e.stopPropagation();
+        chips.pop();
+        renderChips();
+        deliver();
+        return;
+      }
       if (e.key !== "Enter" && e.key !== "Escape") return;
       e.preventDefault();               // and, for Escape, the native search-box clear
       e.stopPropagation();
-      if (e.key === "Escape" && input.value) { input.value = ""; flushFilter(); }
-      else if (e.key === "Enter") {
-        flushFilter();
-        // Remote filtering answers later, with `setRows'; local filtering has
-        // already landed, so one of these two runs and the other is a no-op.
-        if (o.onFilter) handOver = true;
-        else selectFirstVisible();
+      if (e.key === "Escape") {
+        // Escape walks out one step at a time: the half-typed token first, the
+        // box's focus only once there is nothing left in it to drop.
+        if (input.value) { input.value = ""; closeAc(); deliver(); }
+        else input.blur();
+        return;
       }
+      flushFilter(true);                // Enter commits the box whole
+      // Remote filtering answers later, with `setRows'; local filtering has
+      // already landed, so one of these two runs and the other is a no-op.
+      if (o.onFilter) handOver = true;
+      else selectFirstVisible();
       input.blur();
+    });
+
+    chipsEl.addEventListener("mousedown", (e) => e.preventDefault());   // box keeps focus
+    chipsEl.addEventListener("click", (e) => {
+      const t = hit(e);
+      const chip = t && /** @type {HTMLElement|null} */ (t.closest(".tv-chip"));
+      if (!chip) return;
+      chips.splice(Number(chip.dataset.i), 1);
+      renderChips();
+      deliver();
     });
 
     // ---- streaming ---------------------------------------------------------
@@ -1214,7 +1359,6 @@
 
     titleEl.textContent = state.view.title || "Table";
     renderHead();
-    renderActions();
     renderRows(true);
 
     return {
@@ -1225,11 +1369,15 @@
         state.rows = (v && v.rows) ? v.rows.slice() : [];
         state.sortKeys = normalizeSort(v && v.sort);
         state.selected = null;
+        state.selCol = null;
+        state.filter = "";
+        chips = [];
+        input.value = "";
+        renderChips();
         clearTexts();
         dropSorted();
         titleEl.textContent = state.view.title || "Table";
         renderHead();
-        renderActions();
         scroll.scrollTop = 0;
         renderRows(true);
       },
@@ -1291,6 +1439,13 @@
       getRows() { return state.rows.slice(); },
       getVisible() { return ordered().slice(); },
       select: selectRow,
+      /**
+       * Where the selection is: the row's id and the column index within it,
+       * `col' being null for a whole-row selection. A consumer moving the
+       * selection reads this, adds a step, and hands it back to `select'.
+       * @returns {{id: string|null, col: number|null}}
+       */
+      getSelection() { return { id: state.selected, col: state.selCol }; },
     };
   }
 

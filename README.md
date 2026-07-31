@@ -313,7 +313,8 @@ hands the query to the producer, and whatever `setRows` delivers is what shows.
 | `applyDelta(ops)`  | apply windowed insert/delete/reset ops in order                |
 | `getRows()`        | the rows as given, in store order                              |
 | `getVisible()`     | the rows on display: filtered and sorted, in display order     |
-| `select(id)`       | select that row and scroll it into view; false if not visible  |
+| `select(id, col?)` | select that row — and optionally one cell of it — and scroll it into view; false if not visible |
+| `getSelection()`   | `{ id, col }`; `col` is `null` for a whole-row selection       |
 | `el`               | the root element, which also emits the two CustomEvents        |
 
 Rows are **virtualized**: only the scrolled-to window plus a small overscan
@@ -322,6 +323,22 @@ outside the window has no element to click — move the selection with
 `select(id)`, over ids from `getVisible()`, rather than by driving row
 elements. The filter input is built once and never re-created, so focus and
 caret survive typing.
+
+**Selection** is a row and, optionally, one cell of it. `select(id, 2)` stamps
+the third column's `td`; `select(id)` selects the whole row, which is what it
+always did. The column is clamped to the ones that exist, never wrapped, and
+both marks are re-derived on every render, so they survive a scroll, an upsert
+and a `setRows` that still carries the id. `getSelection()` reports `{id, col}`
+— read it, add a step, hand it back to `select` — which is how a consumer binds
+cell movement to keys.
+
+**Actions have no buttons.** They render on the hint line as `KEY label` pairs,
+the way `table-view.el` prints its legend: the keys are the interface, and a
+consumer binds them and dispatches the command (`onAction`, or the
+`tableview-action` event). A double click still runs the default action.
+
+**Badge cells render as pills** — the palette colour tints the ground, marks a
+dot and writes the label, so one hue carries the whole thing in either scheme.
 
 ### The filter box
 
@@ -350,14 +367,23 @@ of rows behind it. **Arrows** move, **Tab**/**Enter** accept, **Escape**
 dismisses, a click accepts without taking focus. It stays shut when it has
 nothing to offer, and inside a quoted token.
 
-**Enter** with no list open applies the filter at once — cancelling the pending
+A committed token leaves the box and becomes a **chip** beside it. The query is
+always the chips and the box together — chips are where the finished tokens are
+kept, so the box holds only what is still being typed and a long query stops
+scrolling out of sight. Enter commits the box whole; a settling debounce commits
+only the tokens something follows, so a word is never chipped out from under the
+caret. **Backspace** on an empty box takes the last chip off, a click takes any
+chip off, and `onFilter` is handed the whole query joined — a producer never
+learns that chips exist.
+
+**Enter** with no list open commits the box at once — cancelling the pending
 debounce, so the query reaches the producer exactly once — blurs the box, and
 puts the selection on the first visible row unless it is already on one (under
-`onFilter`, that last step waits for the producer's `setRows`). **Escape**
-closes the list if it is open, else clears a filled box, and blurs. Both keys
-stop at the input rather than bubbling into a consumer's own keymap, and nothing
-else moves focus or the selection: a debounce firing on its own leaves both
-where the typist left them.
+`onFilter`, that last step waits for the producer's `setRows`). **Escape** walks
+out one step at a time: it closes the list if one is open, else drops what is
+half-typed, else blurs. Both keys stop at the input rather than bubbling into a
+consumer's own keymap, and nothing else moves focus or the selection: a debounce
+firing on its own leaves both where the typist left them.
 
 ## Development
 

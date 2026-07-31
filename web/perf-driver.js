@@ -91,6 +91,11 @@ class Ev {
   stopPropagation() { this.propagationStopped = true; }
 }
 
+/** A text node: ordered among its siblings, invisible to selectors. */
+class TextNode {
+  constructor(t) { this.textContent = String(t); this.tagName = null; this.parentNode = null; }
+}
+
 class El {
   constructor(tag) {
     this.tagName = String(tag).toUpperCase();
@@ -99,14 +104,14 @@ class El {
     this.attrs = new Map();
     this.classes = new Set();
     this.style = {};
-    this.text = "";
     this.on = new Map();
     this.value = "";
     this.disabled = false;
     this.scrollTop = 0;
     this.clientHeight = 0;
   }
-  get children() { return this.childNodes; }
+  /** Elements only, the way a browser's `children' is — text nodes excluded. */
+  get children() { return this.childNodes.filter((c) => c.tagName); }
   get className() { return this.attrs.get("class") || ""; }
   set className(v) {
     this.attrs.set("class", v);
@@ -137,13 +142,18 @@ class El {
     if (i !== -1) { this.childNodes.splice(i, 1); c.parentNode = null; }
   }
   remove() { if (this.parentNode) this.parentNode.removeChild(this); }
-  get textContent() { return this.text + this.childNodes.map((c) => c.textContent).join(""); }
-  set textContent(t) { this.text = String(t); this.childNodes.length = 0; }
+  get textContent() { return this.childNodes.map((c) => c.textContent).join(""); }
+  set textContent(t) {
+    this.childNodes.length = 0;
+    if (String(t) !== "") this.appendChild(new TextNode(t));
+  }
+  // The driver reads `.text' as shorthand for the rendered text.
+  get text() { return this.textContent; }
+  set text(t) { this.textContent = t; }
   get innerHTML() { return ""; }
   set innerHTML(html) {
     bytes += String(html).length;
     this.childNodes.length = 0;
-    this.text = "";
     parseInto(String(html), this);
   }
   addEventListener(type, fn) {
@@ -173,7 +183,7 @@ class El {
   querySelectorAll(sel) {
     const steps = parseSel(sel), out = [];
     const walk = (n) => {
-      for (const c of n.childNodes) { if (fitsAll(c, steps)) out.push(c); walk(c); }
+      for (const c of n.children) { if (fitsAll(c, steps)) out.push(c); walk(c); }
     };
     walk(this);
     return out;
@@ -191,7 +201,7 @@ function parseInto(html, parent) {
   TAG.lastIndex = 0;
   while ((m = TAG.exec(html))) {
     const text = html.slice(last, m.index);
-    if (text.trim()) stack[stack.length - 1].text += decode(text);
+    if (text) stack[stack.length - 1].appendChild(new TextNode(decode(text)));
     last = TAG.lastIndex;
     const tag = m[2].toLowerCase();
     if (m[1]) { if (stack.length > 1) stack.pop(); continue; }
@@ -209,7 +219,7 @@ function parseInto(html, parent) {
     if (!VOID.has(tag) && !m[4]) stack.push(el);
   }
   const tail = html.slice(last);
-  if (tail.trim()) stack[stack.length - 1].text += decode(tail);
+  if (tail) stack[stack.length - 1].appendChild(new TextNode(decode(tail)));
 }
 
 global.CustomEvent = Ev;
@@ -324,6 +334,9 @@ async function measure() {
 
 // ---- smoke -----------------------------------------------------------------
 
+/** The action legend the fixture's view puts on the hint line. */
+const ACT = " · RET Materialize · t Cycle TODO";
+
 let fails = 0;
 const check = (what, got, want) => {
   const ok = JSON.stringify(got) === JSON.stringify(want);
@@ -370,12 +383,19 @@ async function filterQuery() {
   // Local semantics, by column type.
   const box = new El("div");
   const q = TableView.mount(box, view(40));
-  const shown = (query) => {
+  /** Empty the box and take every chip back off, so each case starts clean. */
+  const reset = () => {
     const b = filterOf(box);
     // An empty box offers nothing, so this shuts any list a previous check
-    // left open — an open list would take the Enter below for itself.
+    // left open — an open list would take the keys below for itself.
     b.value = "";
     b.dispatchEvent(new Ev("input"));
+    for (let i = 0; i < 40 && box.querySelectorAll(".tv-chip").length; i++)
+      b.dispatchEvent(new Ev("keydown", { key: "Backspace" }));
+  };
+  const shown = (query) => {
+    reset();
+    const b = filterOf(box);
     b.value = query;
     b.dispatchEvent(new Ev("keydown", { key: "Enter" }));    // applies at once
     return q.getVisible().length;
@@ -416,6 +436,7 @@ async function filterQuery() {
   const items = () => Array.from(box.querySelectorAll(".tv-ac-label")).map((e) => e.text);
   const counts = () => Array.from(box.querySelectorAll(".tv-ac-n")).map((e) => Number(e.text));
   const type = (query) => {
+    reset();
     const b = filterOf(box);
     b.value = query;
     b.dispatchEvent(new Ev("input"));
@@ -498,6 +519,144 @@ async function filterQuery() {
          !!box.querySelector(".tv-table tbody tr.tv-sel")], [true, true]);
 }
 
+/** Cell-level selection, the action legend, chips and badge pills. */
+async function cellsChipsPills() {
+  console.log("\n== cells, chips and pills");
+  const box = new El("div");
+  const seen = [];
+  const settle = () => sleep(200);
+  const t = TableView.mount(box, view(40), {
+    onAction: (command, id) => seen.push(command + " " + id),
+  });
+  box.querySelector(".tv-scroll").clientHeight = 600;
+  const nCols = columns.length;
+  const rowOf = (id) => box.querySelector(`.tv-table tbody tr[data-id=${id}]`);
+  const cellSel = () => box.querySelectorAll(".tv-table tbody td.tv-cell-sel");
+  const colOfSel = () => {
+    const td = cellSel()[0];
+    return td ? td.parentNode.children.indexOf(td) : -1;
+  };
+
+  // --- cell selection
+  const id = t.getVisible()[3].id;
+  check("select with no column is a whole-row selection, as it always was",
+        [t.select(id), !!rowOf(id).classes.has("tv-sel"), cellSel().length], [true, true, 0]);
+  check("and reports no column", t.getSelection(), { id, col: null });
+  check("select with a column stamps that cell", [t.select(id, 2), colOfSel()], [true, 2]);
+  check("and reports it", t.getSelection(), { id, col: 2 });
+  check("only one cell is ever stamped", cellSel().length, 1);
+  check("the row stays selected too", rowOf(id).classes.has("tv-sel"), true);
+  t.select(id, 99);
+  check("a column past the end clamps rather than wrapping", colOfSel(), nCols - 1);
+  t.select(id, -5);
+  check("and so does one before the start", colOfSel(), 0);
+  t.select(id, 2);
+
+  t.upsertRow(makeRow(Number(id.slice(2))));
+  check("the stamp survives an upsert", [t.getSelection().col, colOfSel()], [2, 2]);
+  t.setRows(view(40).rows);
+  check("and a setRows that still carries the id",
+        [t.getSelection().col, colOfSel()], [2, 2]);
+
+  const sc = box.querySelector(".tv-scroll");
+  const at = t.getVisible().findIndex((r) => r.id === id);
+  sc.scrollTop = 3000;
+  sc.dispatchEvent(new Ev("scroll"));
+  await sleep(50);
+  check("scrolled out of the window, the stamp goes with the row", cellSel().length, 0);
+  sc.scrollTop = Math.max(0, at * 30 - 100);
+  sc.dispatchEvent(new Ev("scroll"));
+  await sleep(50);
+  check("and comes back with it", [t.getSelection().col, colOfSel()], [2, 2]);
+
+  const td = rowOf(id).children[3];
+  td.dispatchEvent(new Ev("click"));
+  check("a click selects the cell it landed on", t.getSelection(), { id, col: 3 });
+
+  // --- the action legend, in place of the toolbar
+  check("the toolbar is gone", box.querySelectorAll(".tv-btn").length, 0);
+  check("the bar holds the title, the chips and the filter, and nothing else",
+        box.querySelector(".tv-bar").children.map((e) => e.className),
+        ["tv-title", "tv-chips", "tv-filter-wrap"]);
+  const legend = box.querySelector(".tv-hint").textContent;
+  check("the hint spells every action as KEY label", legend.slice(legend.indexOf(" · RET")), ACT);
+  check("the keys are marked up for emphasis",
+        box.querySelectorAll(".tv-hint .tv-key").map((e) => e.text), ["RET", "t"]);
+  rowOf(id).dispatchEvent(new Ev("dblclick"));
+  check("a double click still dispatches the default action", seen.pop(), "materialize " + id);
+
+  // --- badge pills
+  const pill = box.querySelector(".tv-table tbody td .tv-pill");
+  check("a badge cell renders a pill", !!pill, true);
+  check("tinted from its palette colour", pill.attrs.get("style").indexOf("--tv-badge:#") !== -1, true);
+  check("with a dot before the label", pill.children.map((e) => e.className), ["tv-dot"]);
+  check("and the label after it", STATES.indexOf(pill.text) !== -1, true);
+  check("a text cell is untouched",
+        rowOf(id).children[2].querySelectorAll(".tv-pill").length, 0);
+
+  // --- chips
+  const box2 = new El("div");
+  const t2 = TableView.mount(box2, view(40));
+  const b2 = filterOf(box2);
+  const chipText = () => box2.querySelectorAll(".tv-chip").map((c) => c.text.replace("×", ""));
+  const commit = (q) => {
+    b2.value = q;
+    b2.dispatchEvent(new Ev("keydown", { key: "Enter" }));
+  };
+  commit("state:DONE");
+  check("Enter moves the token out of the box and into a chip",
+        [chipText(), b2.value], [["state:DONE"], ""]);
+  commit("tags:web");
+  check("a second commit adds a second chip", chipText(), ["state:DONE", "tags:web"]);
+  check("and the two AND together", t2.getVisible().length, 3);
+  b2.value = "2026";                       // every row's scheduled date starts here
+  b2.dispatchEvent(new Ev("input"));
+  await settle();
+  check("what is still being typed stays in the box", b2.value, "2026");
+  const composed = t2.getVisible().length;
+  check("and narrows on top of the chips rather than replacing them",
+        [composed > 0, composed <= 3], [true, true]);
+  b2.dispatchEvent(new Ev("keydown", { key: "Enter" }));
+  check("chips and box compose into one query", chipText(),
+        ["state:DONE", "tags:web", "2026"]);
+
+  // The same query typed whole must filter identically — chips are display.
+  const box3 = new El("div");
+  const t3 = TableView.mount(box3, view(40));
+  const b3 = filterOf(box3);
+  b3.value = "state:DONE tags:web 2026";
+  b3.dispatchEvent(new Ev("keydown", { key: "Enter" }));
+  check("a query split into chips filters as the same query typed whole",
+        t3.getVisible().length, composed);
+  check("and chips out token by token", box3.querySelectorAll(".tv-chip").length, 3);
+
+  b2.dispatchEvent(new Ev("keydown", { key: "Backspace" }));
+  check("Backspace on an empty box strips the last chip",
+        chipText(), ["state:DONE", "tags:web"]);
+  const mid = box2.querySelectorAll(".tv-chip")[0];
+  mid.dispatchEvent(new Ev("click"));
+  check("a chip click removes that one", chipText(), ["tags:web"]);
+  check("and reapplies what is left", t2.getVisible().length, 13);
+
+  commit('-priority:A "two words"');
+  check("a chip shows its token verbatim, quotes and negation and all",
+        chipText(), ["tags:web", "-priority:A", '"two words"']);
+
+  // --- remote mode gets the joined query
+  const asked = [];
+  const box4 = new El("div");
+  TableView.mount(box4, view(10), { onFilter: (q) => asked.push(q) });
+  const b4 = filterOf(box4);
+  b4.value = "state:DONE";
+  b4.dispatchEvent(new Ev("keydown", { key: "Enter" }));
+  b4.value = "system";
+  b4.dispatchEvent(new Ev("keydown", { key: "Enter" }));
+  check("onFilter receives chips and box joined into one query string",
+        asked, ["state:DONE", "state:DONE system"]);
+  b4.dispatchEvent(new Ev("keydown", { key: "Backspace" }));
+  check("and again when a chip is stripped", asked.pop(), "state:DONE");
+}
+
 async function smoke() {
   const seen = [];
   const box = new El("div");
@@ -513,7 +672,7 @@ async function smoke() {
 
   console.log("\n== smoke");
   check("rows render", rows().length, 40);
-  check("hint counts and sorts", hint(), "40 rows · sort scheduled asc");
+  check("hint counts and sorts", hint(), "40 rows · sort scheduled asc" + ACT);
   check("links become anchors", box.querySelectorAll(".tv-link").length, 40);
 
   const before = filterOf(box);
@@ -537,26 +696,26 @@ async function smoke() {
   const tr = rows()[3], id = tr.dataset.id;
   tr.click();
   check("a click selects", tr.classes.has("tv-sel"), true);
-  check("and enables the actions", box.querySelector(".tv-btn[data-cmd]").disabled, false);
+  check("no toolbar buttons anywhere", box.querySelectorAll(".tv-btn").length, 0);
   tr.dispatchEvent(new Ev("dblclick"));
   check("a double click runs the RET action", seen.pop(), "materialize " + id);
   rows()[3].querySelector(".tv-link").click();
   check("a link click follows it", seen.pop(), "link org-glance:" + id);
 
   box.querySelector("th[data-key=state]").click();
-  check("a header click sorts", hint(), "40 rows · sort state asc");
+  check("a header click sorts", hint(), "40 rows · sort state asc" + ACT);
   box.querySelector("th[data-key=state]").click();
-  check("and toggles direction", hint(), "40 rows · sort state desc");
+  check("and toggles direction", hint(), "40 rows · sort state desc" + ACT);
 
   t.upsertRow({ id: "h-0", cells: { state: "DONE", priority: "A", title: "changed" } });
-  check("upsert of a known id keeps the count", hint(), "40 rows · sort state desc");
+  check("upsert of a known id keeps the count", hint(), "40 rows · sort state desc" + ACT);
   t.upsertRow({ id: "fresh", cells: { state: "TODO", priority: "A", title: "brand new" } });
   check("upsert appends an unknown id", t.getRows().length, 41);
   t.deleteRow("fresh");
   check("delete drops it", t.getRows().length, 40);
   t.deleteRow(id);
-  check("deleting the selection disables the actions",
-        box.querySelector(".tv-btn[data-cmd]").disabled, true);
+  check("the hint spells each action as its key and label",
+        hint().slice(hint().indexOf(" · RET")), ACT);
   t.upsertRow(makeRow(Number(id.slice(2))));
   t.applyDelta([{ op: "delete", index: 0 }, { op: "insert", index: 0, row: makeRow(999) }]);
   check("apply-delta keeps the count", t.getRows().length, 40);
@@ -616,11 +775,16 @@ async function smoke() {
     check("Enter filters without waiting for the debounce",
           narrowed.length > 0 && narrowed.length < 40, true);
     check("and the hint counts the narrowed set",
-          kHint(), `${narrowed.length}/40 rows · sort scheduled asc`);
+          kHint(), `${narrowed.length}/40 rows · sort scheduled asc` + ACT);
     check("Enter blurs the filter box", kbox.focused, false);
     check("and hands the table the first visible row",
           kSel().dataset.id, narrowed[0].id);
     check("the key stops at the input", seenUp, []);
+
+    // Enter committed the box, so the token is a chip and the box is empty.
+    check("the committed token became a chip",
+          keyed.querySelectorAll(".tv-chip").map((c) => c.text), ["system×"]);
+    check("and left the box empty", kbox.value, "");
 
     const held = kSel().dataset.id;
     kbox.dispatchEvent(new Ev("keydown", { key: "Enter" }));
@@ -631,17 +795,23 @@ async function smoke() {
     // below rather than vacuously true.
     const survivor = narrowed[narrowed.length - 1].id;
 
+    kbox.value = "half-typed";
     kbox.dispatchEvent(new Ev("keydown", { key: "Escape" }));
-    check("Escape clears a filled box", kbox.value, "");
-    check("and applies the clear", kt.getVisible().length, 40);
+    check("Escape drops what is half-typed", kbox.value, "");
+    check("and leaves the chips standing", kt.getVisible().length, narrowed.length);
     const blurs = kbox.blurs;
+    check("without blurring — there was something to drop", kbox.blurs - blurs, 0);
     kbox.dispatchEvent(new Ev("keydown", { key: "Escape" }));
-    check("Escape on an empty box just blurs", [kbox.value, kbox.blurs - blurs], ["", 1]);
+    check("Escape on an empty box blurs instead", kbox.blurs - blurs, 1);
+
+    kbox.dispatchEvent(new Ev("keydown", { key: "Backspace" }));
+    check("Backspace on an empty box takes the chip back off",
+          [keyed.querySelectorAll(".tv-chip").length, kt.getVisible().length], [0, 40]);
 
     kbox.value = "no-such-headline";
     kbox.dispatchEvent(new Ev("keydown", { key: "Enter" }));
     check("Enter with nothing matching selects nothing", kSel(), null);
-    kbox.dispatchEvent(new Ev("keydown", { key: "Escape" }));
+    kbox.dispatchEvent(new Ev("keydown", { key: "Backspace" }));
 
     // Only Enter touches focus or the selection.
     kt.select(survivor);
@@ -652,14 +822,17 @@ async function smoke() {
     check("a debounce firing on its own leaves the selection where it was",
           kSel() && kSel().dataset.id, survivor);
     check("and does not blur anything", kbox.blurs - quiet, 0);
+    check("an unfinished token is not chipped out from under the caret",
+          [kbox.value, keyed.querySelectorAll(".tv-chip").length], ["system", 0]);
   }
 
   t.setRows([]);
   check("no rows says so", box.querySelector(".tv-empty").style.display, "");
   t.setView(view(5));
-  check("setView reloads", hint(), "5 rows · sort scheduled asc");
+  check("setView reloads", hint(), "5 rows · sort scheduled asc" + ACT);
 
   if (typeof TableView.parseQuery === "function") await filterQuery();
+  if (typeof t.getSelection === "function") await cellsChipsPills();
 
   if (typeof t.select !== "function") return;
 
