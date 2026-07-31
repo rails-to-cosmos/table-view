@@ -395,6 +395,19 @@ async function smoke() {
     check("getVisible() is the display order", t.getVisible().length, 40);
   }
 
+  {
+    // onFilter: the producer narrows, the renderer shows what it is given.
+    const asked = [];
+    const remote = new El("div");
+    const rt = TableView.mount(remote, view(10), { onFilter: (q) => asked.push(q) });
+    const rbox = filterOf(remote);
+    rbox.value = "system";
+    rbox.dispatchEvent(new Ev("input"));
+    await settle();
+    check("onFilter takes the query", asked, ["system"]);
+    check("and the rows stay as given", rt.getVisible().length, 10);
+  }
+
   t.setRows([]);
   check("no rows says so", box.querySelector(".tv-empty").style.display, "");
   t.setView(view(5));

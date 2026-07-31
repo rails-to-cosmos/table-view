@@ -11,6 +11,7 @@
  *   const tv = TableView.mount(document.querySelector('#app'), view, {
  *     onAction(command, id, row) { ... },   // dispatch, like the Emacs handler alist
  *     onLink(target, row)        { ... },   // follow an Org link (default: open http[s])
+ *     onFilter(q)                { ... },   // producer filters; setRows the answer
  *   });
  *   tv.setRows(rows); tv.upsertRow(row); tv.deleteRow(id); tv.applyDelta(ops);
  *   tv.select(id);        // select a row by id and scroll it into view -> bool
@@ -35,7 +36,9 @@
  *   scrolling.
  * - Row and header events are delegated from the scroll container, attached
  *   once. `tr.click()` still selects a rendered row.
- * - Filter input is debounced 120ms; the row window renders on a rAF.
+ * - Filter input is debounced 120ms; the row window renders on a rAF. With an
+ *   `onFilter' option the debounced query goes to the producer instead and the
+ *   rows given are the rows shown — no local narrowing.
  *
  * Type-checked with `// @ts-check` + the JSDoc @typedefs below (no build step);
  * run `make web-check`.  The typedefs are the JS mirror of ../SCHEMA.md.
@@ -67,7 +70,8 @@
  *        | { op: "delete", index: number }
  *        | { op: "reset", rows: Row[] }} Op
  * @typedef {{ onAction?: (command: string, id: string, row: Row) => void,
- *             onLink?: (target: string, row: Row | null) => void }} MountOptions
+ *             onLink?: (target: string, row: Row | null) => void,
+ *             onFilter?: (q: string) => void }} MountOptions
  * @typedef {{ el: HTMLElement,
  *             setView: (v: View) => void,
  *             setRows: (rows: Row[]) => void,
@@ -694,10 +698,17 @@
       renderRows(true);
     }
 
+    // With `onFilter', the producer narrows the rows and this hands it the
+    // query instead of filtering locally: `state.filter' stays empty, so
+    // `order' is `sorted' and the rows given are the rows shown.
     let debounce = 0;
     input.addEventListener("input", () => {
       if (debounce) clearTimeout(debounce);
-      debounce = setTimeout(() => { debounce = 0; frame(applyFilter); }, DEBOUNCE);
+      debounce = setTimeout(() => {
+        debounce = 0;
+        if (o.onFilter) o.onFilter(input.value);
+        else frame(applyFilter);
+      }, DEBOUNCE);
     });
 
     // ---- streaming ---------------------------------------------------------

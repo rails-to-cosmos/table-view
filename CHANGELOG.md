@@ -15,6 +15,9 @@ the rails-to-cosmos ELPA archive publishes date-stamped snapshots.
   place in the virtual list into view (rows outside the rendered window
   have no element to click), and `getVisible()` returns the filtered and
   sorted rows in display order.
+- Browser renderer `onFilter` mount option: the debounced filter box
+  hands its query to the producer instead of narrowing locally, for a
+  store too large to hold client-side.
 
 ### Changed
 - The browser renderer no longer rebuilds itself on every keystroke. The

@@ -295,8 +295,12 @@ step. [`web/demo.html`](web/demo.html) runs it by double-clicking.
 const tv = TableView.mount(document.querySelector("#app"), view, {
   onAction(command, id, row) { ... },   // like the Emacs handler alist
   onLink(target, row)        { ... },   // follow an Org link
+  onFilter(q)                { ... },   // producer filters; `setRows' its answer
 });
 ```
+
+With `onFilter` the renderer stops narrowing locally: the debounced filter box
+hands the query to the producer, and whatever `setRows` delivers is what shows.
 
 `mount` returns a live handle:
 
