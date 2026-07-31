@@ -299,6 +299,20 @@ const tv = TableView.mount(document.querySelector("#app"), view, {
 });
 ```
 
+**The handle `mount` returns is this renderer's own surface**, versioned with
+the package and documented here — SCHEMA.md governs what a *producer* sends,
+not what an embedding page may call. Two statics come with it, and they are the
+grammar the renderer itself uses rather than conveniences bolted on:
+
+```js
+TableView.parseQuery(q, keys)   // the filter micro-syntax, tokenized
+TableView.displayText(cell)     // a cell rendered the way the table writes it
+TableView.comparator(column)    // the column's sort function, SCHEMA's rules
+```
+
+A consumer sorting or filtering its own copy of the rows gets the same answers
+the table shows by calling these, instead of reimplementing the precedence.
+
 With `onFilter` the renderer stops narrowing locally: the debounced filter box
 hands the query to the producer, and whatever `setRows` delivers is what shows.
 
@@ -323,6 +337,17 @@ hands the query to the producer, and whatever `setRows` delivers is what shows.
 | `closeFilter()`    | dismiss it and give the keyboard back to the table            |
 | `stripLastToken()` | drop the typed text, else the last chip, and reapply; false if nothing was left |
 | `el`               | the root element, which also emits the two CustomEvents        |
+
+### Theme and layering
+
+Theme is a handshake and the page leads: set `data-theme="dark"` or `"light"`
+on `<html>` and that decides; with neither, `prefers-color-scheme` does. Both
+are watched, so toggling the attribute repaints without a remount.
+
+One z-band, so a consumer knows what it is layering against — row marks at 1,
+the suggestion list at 5, the palette backdrop at 90 and its panel at 91.
+Nothing goes higher: 100 and up is yours, and a consumer's own modal is meant
+to win over the palette.
 
 ### Touch
 
@@ -484,13 +509,13 @@ ladder then ends one step further out:
 | **RET** on an empty box | dissolve and hand over |
 | **Escape** | close the list → drop the typed text → dissolve |
 | **Backspace** on an empty box | nothing — the chips are on the page behind, not in the box being edited |
+| click on the backdrop | as Escape |
 
 The palette also **filters on commit alone**: typing moves the suggestion list
 and nothing else, and RET or a chip strip is what reaches the rows. Narrowing a
 table as each character lands animates something the typist is looking away
 from, and every half-written token is a query of its own. The resident bar and
 omnibox modes keep their 120 ms debounce.
-| click on the backdrop | as Escape |
 
 The applied chips render in the theme's golden (black on `#FFD600`), the
 association its own `ivy-current-match` and `company-tooltip-selection` faces
@@ -547,17 +572,27 @@ own leaves both where the typist left them.
 ## Development
 
 ```sh
-make test       # run the ERT suite in batch mode
-make compile    # byte-compile (surfaces warnings)
-make clean      # remove *.elc
-make web-check  # typecheck web/table-view.js (JSDoc + @ts-check, needs Node)
-make web-perf   # benchmark and smoke-test the browser renderer at 13k rows
+make check        # the full gate: typecheck both sides, then the ERT suite
+make test         # the ERT suite, core and native, in batch mode
+make compile      # byte-compile (surfaces warnings)
+make elisp-check  # byte-compile with warnings as errors (the elisp type check)
+make typecheck    # elisp-check + web-check
+make web-check    # typecheck web/table-view.js (JSDoc + @ts-check, needs Node)
+make web-perf     # benchmark and smoke-test the browser renderer at 13k rows
+make clean        # remove *.elc
+make patch|minor|major   # bump the version everywhere it appears
 ```
+
+`make test` runs `table-view-native-test.el` alongside the core suite. The
+native tests that need the `tvx` helper binary (`cargo build --release` in
+`native/tvx`) **skip** when it is absent rather than failing, so a machine
+without cargo still goes green — read ert's skip count to tell the two apart.
 
 Or directly:
 
 ```sh
-emacs -Q -batch -L . -l table-view-test.el -f ert-run-tests-batch-and-exit
+emacs -Q -batch -L . -l table-view-test.el -l table-view-native-test.el \
+      -f ert-run-tests-batch-and-exit
 ```
 
 ## License

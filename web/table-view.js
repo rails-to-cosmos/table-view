@@ -13,7 +13,10 @@
  *     onLink(target, row)        { ... },   // follow an Org link (default: open http[s])
  *     onFilter(q)                { ... },   // producer filters; setRows the answer
  *   });
+ *   tv.setView(view);     // swap the whole view — columns, title, sort and all
  *   tv.setRows(rows); tv.upsertRow(row); tv.deleteRow(id); tv.applyDelta(ops);
+ *   tv.getRows();         // the store, in producer order, unfiltered
+ *   tv.el;                // the mounted root element
  *   tv.select(id, col);   // select a row (and optionally one cell) -> bool
  *   tv.getSelection();    // { id, col } — col is null for a whole-row selection
  *   tv.getVisible();      // the filtered + sorted rows, in display order
@@ -27,12 +30,29 @@
  *
  *   TableView.parseQuery(q, keys)         // SCHEMA.md's filter micro-syntax
  *   // -> [{ negated, key, value, quoted, start, end, sep }, ...]
+ *   TableView.displayText(cell)           // a cell as the table writes it
+ *   TableView.comparator(column)          // the column's sort function
+ *
+ * The handle is this renderer's own surface, versioned with it; SCHEMA.md
+ * describes what a producer sends, not what a page may call.
  *
  * Also emits DOM CustomEvents on the container: `tableview-action`
  * ({detail:{command,id,row}}) and `tableview-link` ({detail:{target,row}}).
  *
  * Rendering (renderer-local; SCHEMA.md's "Not part of the contract"):
  *
+ * - Theme is a handshake, and the page leads: `data-theme="dark"' or
+ *   `"light"' on `<html>' decides, and only with neither does
+ *   `prefers-color-scheme' get a say. Both are watched, so a page toggling the
+ *   attribute repaints without a remount.
+ * - One z-band, so a consumer knows what it is layering against: the row marks
+ *   sit at 1, the suggestion list at 5, the palette backdrop at 90 and its
+ *   panel at 91. Nothing here goes higher — a consumer's own modal is meant to
+ *   win over the palette, materialize sheets included.
+ * - Which column is multi-valued is resolved once and read everywhere: a
+ *   column declaring `multi: true' settles it, and only when none does is it
+ *   guessed from cell shape. The comparator, the vocabulary, the virtual tag
+ *   keys and the filter's AND/OR rule all read that one verdict.
  * - The chrome — bar, title, filter chips, filter input, table skeleton, hint —
  *   is built once at mount. Updates touch only the row window, the hint line,
  *   the sort arrows and the chips, so the filter input keeps focus and caret
@@ -125,7 +145,7 @@
  * - A suggestion list under the box completes it. A bare word offers, in order:
  *   the column keys it opens; the columns whose declared domain holds it as a
  *   value (`TODO' → `state:TODO'); and, only when nothing exact was found, up
- *   to three tags whose rows merely contain it, dimmed. Exact beats fuzzy and
+ *   to five tags whose rows merely contain it, dimmed. Exact beats fuzzy and
  *   fuzzy never crowds — a scoped count is a substring count and must not dress
  *   like a value match. After `key:' comes that column's value domain
  *   (`values', else the badge palette, else the distinct cell values), each
@@ -623,8 +643,7 @@
 .tv-panel{z-index:91;width:min(560px,80vw);padding:10px;border-radius:8px;
   background:var(--tv-alt);border:1px solid var(--tv-border);
   box-shadow:0 10px 30px #0007}
-.tv-panel .tv-filter-wrap{flex:1 1 auto}
-.tv-panel .tv-filter{flex:1 1 auto;font-size:15px;padding:7px 11px;width:100%}
+.tv-panel .tv-filter{font-size:15px;padding:7px 11px;width:100%}
 /* Applied parts, in the theme's own selection colour — the association its
    ivy and company faces already make. Black on golden either way, which is
    where the contrast is (about 15:1), so this one pair is not theme-split. */
@@ -1437,22 +1456,51 @@
       }
     }
 
+    /**
+     * The furthest this scroller can travel with PORT pixels on show: the
+     * header plus every row of the page, less the viewport.
+     */
+    function maxScroll(port) {
+      return Math.max(0, geom.head + paged().length * geom.row - port);
+    }
+
+    /**
+     * Where the current page sits in the filtered set: 1-based `page' of
+     * `pages', rows `from'..`to' of `total'.  The hint line and the handle
+     * both read it, so the range on screen and the range a consumer is told
+     * are one calculation.
+     * @returns {{page: number, pages: number, from: number, to: number, total: number}}
+     */
+    function pageInfo() {
+      const total = ordered().length;
+      const pages = pageCount();
+      const at = Math.min(page, pages - 1);
+      return pageSize
+        ? { page: at + 1, pages, from: total ? at * pageSize + 1 : 0,
+            to: Math.min(total, (at + 1) * pageSize), total }
+        : { page: 1, pages: 1, from: total ? 1 : 0, to: total, total };
+    }
+
     /** N with thousands grouped, written the same wherever the page runs. */
     function grouped(n) {
       return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
     }
 
-    /** Where in the filtered set this page sits, and the way to either side. */
-    function pagerHTML(total, pages) {
-      const from = page * pageSize + 1;
-      const to = Math.min(total, from + pageSize - 1);
+    /**
+     * Where in the filtered set this page sits, and the way to either side.
+     * The range is `pageInfo''s, so the line a reader sees and the numbers a
+     * consumer reads back are one calculation rather than two that agree.
+     */
+    function pagerHTML() {
+      const p = pageInfo();
       // One row is a range of itself, and says so once rather than twice.
-      const span = from === to ? grouped(from) : `${grouped(from)}–${grouped(to)}`;
+      const span = p.from === p.to
+        ? grouped(p.from) : `${grouped(p.from)}–${grouped(p.to)}`;
       const step = (dir, label, can) =>
         `<b class="tv-pg${can ? "" : " tv-pg-off"}" data-pg="${dir}">${label}</b>`;
-      return `${esc(span)} of ${esc(grouped(total))}`
-           + ` · ${step(-1, "‹ prev", page > 0)}`
-           + ` · ${step(1, "next ›", page < pages - 1)}`;
+      return `${esc(span)} of ${esc(grouped(p.total))}`
+           + ` · ${step(-1, "‹ prev", p.page > 1)}`
+           + ` · ${step(1, "next ›", p.page < p.pages)}`;
     }
 
     /**
@@ -1470,8 +1518,7 @@
       // line it has always been. With more, the range says what the count
       // said and where in the set it is, so it stands in that place rather
       // than beside it.
-      const pages = pageCount();
-      let out = pages > 1 ? pagerHTML(shown, pages) : `${esc(count)}`;
+      let out = pageCount() > 1 ? pagerHTML() : `${esc(count)}`;
       out += ` · ${esc(sort)}`;
       for (const a of actions()) {
         if (!a.key) continue;
@@ -1650,7 +1697,7 @@
       if (was < 0 || i >= was) {                       // downward, and the first pick
         if (foot - from > port * 2 / 3) to = foot - port * 2 / 3;
       } else if (top - from < port / 3) to = top - port / 3;
-      const most = Math.max(0, geom.head + paged().length * rowH - port);
+      const most = maxScroll(port);
       to = Math.max(0, Math.min(most, to));
       if (to === from && !easing) return;              // the band already holds it
       if (calm) { scroll.scrollTop = to; easing = false; return; }
@@ -1708,9 +1755,7 @@
       const first = land === "first";
       // Arriving from the other page, the scroller is wherever the last one
       // left it: put it at the end being arrived at before the band reads it.
-      scroll.scrollTop = first
-        ? 0
-        : Math.max(0, geom.head + rows.length * geom.row - (scroll.clientHeight || 0));
+      scroll.scrollTop = first ? 0 : maxScroll(scroll.clientHeight || 0);
       easing = false;
       // The band wants to know which way this came from; a flip forward is a
       // move down whatever the indices say, and back is a move up.
@@ -1975,9 +2020,7 @@
         return true;
       }
       if (!chips.length) return false;
-      chips.pop();
-      renderChips();
-      deliver();
+      dropChip(chips.length - 1);
       return true;
     }
 
@@ -2429,7 +2472,7 @@
         // nothing at all — a chip is removed by its own click, or by the key
         // the consumer binds over the table, where the chips are on show.
         if (palette) return;
-        if (chips.length) { chips.pop(); renderChips(); deliver(); }
+        if (chips.length) dropChip(chips.length - 1);
         else handOver();
         return;
       }
@@ -2472,14 +2515,19 @@
       turnTo(page + Number(step.dataset.pg), Number(step.dataset.pg) > 0 ? "first" : "last");
     });
 
+    /** Take chip AT off and re-run what is left. */
+    function dropChip(at) {
+      chips.splice(at, 1);
+      renderChips();
+      deliver();
+    }
+
     chipsEl.addEventListener("mousedown", (e) => e.preventDefault());   // box keeps focus
     chipsEl.addEventListener("click", (e) => {
       const t = hit(e);
       const chip = t && /** @type {HTMLElement|null} */ (t.closest(".tv-chip"));
       if (!chip) return;
-      chips.splice(Number(chip.dataset.i), 1);
-      renderChips();
-      deliver();
+      dropChip(Number(chip.dataset.i));
     });
 
     // ---- streaming ---------------------------------------------------------
@@ -2665,15 +2713,7 @@
        * the filtered set on show. Counted from one, the way it reads.
        * @returns {{page: number, pages: number, from: number, to: number, total: number}}
        */
-      pageInfo() {
-        const total = ordered().length;
-        const pages = pageCount();
-        const at = Math.min(page, pages - 1);
-        return pageSize
-          ? { page: at + 1, pages, from: total ? at * pageSize + 1 : 0,
-              to: Math.min(total, (at + 1) * pageSize), total }
-          : { page: 1, pages: 1, from: total ? 1 : 0, to: total, total };
-      },
+      pageInfo,
     };
   }
 

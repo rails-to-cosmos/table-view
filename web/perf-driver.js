@@ -229,6 +229,7 @@ class Ev {
     this.type = type;
     this.detail = init && init.detail;
     this.key = init && init.key;
+    this.ctrlKey = !!(init && init.ctrlKey);
     this.repeat = !!(init && init.repeat);
     this.touches = (init && init.touches) || [];
     this.target = null;
@@ -553,6 +554,36 @@ async function sortOrder() {
   check("undeclared, the cell shapes still find it",
         g.getVisible().length, 2);
 
+  // --- l: every comparator branch, run rather than merely exported
+  // `comparator' is on the static surface, so a consumer sorting its own rows
+  // gets whichever branch its column names -- and until now only two of the
+  // five ever ran here.
+  const sortBy = (col, vals) => vals.slice().sort(TableView.comparator(col));
+  check("number sorts by value, not by digit",
+        sortBy({ key: "n", compare: "number" }, ["10", "9", "100", "1"]),
+        ["1", "9", "10", "100"]);
+  check("numeric is the same branch under its other name",
+        sortBy({ key: "n", compare: "numeric" }, ["10", "9"]), ["9", "10"]);
+  check("an unparsable value sorts after every number",
+        sortBy({ key: "n", compare: "number" }, ["7", "n/a", "2"]), ["2", "7", "n/a"]);
+  check("natural reads the digits inside a string",
+        sortBy({ key: "v", compare: "natural" }, ["v10", "v9", "v1"]),
+        ["v1", "v9", "v10"]);
+  check("version is the same branch under its other name",
+        sortBy({ key: "v", compare: "version" }, ["1.10", "1.9"]), ["1.9", "1.10"]);
+  check("string is plain collation, digits and all",
+        sortBy({ key: "s", compare: "string" }, ["v10", "v9", "v1"]),
+        ["v1", "v10", "v9"]);
+  check("a value order sorts by position",
+        sortBy({ key: "s", values: ["TODO", "NEXT", "DONE"] }, ["DONE", "TODO", "NEXT"]),
+        ["TODO", "NEXT", "DONE"]);
+  check("an unlisted value sorts after the listed ones",
+        sortBy({ key: "s", values: ["TODO", "DONE"] }, ["huh", "DONE"]), ["DONE", "huh"]);
+  check("a number-typed column sorts numerically without naming a comparator",
+        sortBy({ key: "n", type: "number" }, ["10", "9"]), ["9", "10"]);
+  check("and everything else collates",
+        sortBy({ key: "s" }, ["b", "a"]), ["a", "b"]);
+
   // With nothing reordering the rows the window is the store, and the two
   // readings agree -- the mapping has to be invisible in the common case.
   const plain = new El("div");
@@ -680,9 +711,9 @@ async function filterQuery() {
         [3, 13, "state:DONE"]);
 
   // Local semantics, by column type.
-  const box = new El("div");
-  const q = TableView.mount(box, view(40));
-  const { reset, shown, type, items, counts } = probe(box, q);
+  const Q = driver(40);
+  const box = Q.box, q = Q.handle;
+  const { reset, shown, type, items, counts } = Q;
   const all = shown("");
   check("the fixture is 40 rows", all, 40);
   check("badge predicates match a value exactly", shown("state:DONE"), 8);
@@ -895,7 +926,12 @@ async function cellsChipsPills() {
     check("the marks are declared with a crossfade",
           css.indexOf("transition:background-color .08s ease-out") !== -1, true);
     check("and a calm root turns it off", css.indexOf(".tv-calm") !== -1, true);
-    check("no overlay is rendered", box.querySelectorAll(".tv-hl").length, 0);
+    // The discarded design put a sliding bar over the table; the shipped one
+    // marks the row itself. Both halves are asserted -- an absence alone would
+    // pass just as well in a renderer that drew no highlight at all.
+    check("the mark is a class on the selected row",
+          box.querySelectorAll(".tv-table tbody tr.tv-sel").length, 1);
+    check("and no overlay is rendered", box.querySelectorAll(".tv-hl").length, 0);
 
     // A move that leaves the window where it is re-stamps the rows already
     // rendered — the same elements, so the marks have something to fade
@@ -1093,11 +1129,9 @@ async function cellsChipsPills() {
   // Every RET commits what is typed and returns to the table; a longer query is
   // built by coming back to the box, which reopens empty with its chips intact.
   {
-    const boxF = new El("div");
-    const tF = TableView.mount(boxF, view(40));
-    const bF = filterOf(boxF);
+    const F = driver(40);
+    const boxF = F.box, tF = F.handle, bF = F.b(), chipsOf = F.chipsOf;
     const sel = () => boxF.querySelector(".tv-table tbody tr.tv-sel");
-    const chipsOf = () => boxF.querySelectorAll(".tv-chip").map((c) => c.text.replace("×", ""));
 
     bF.focus();                                    // `/'
     bF.value = "review";
@@ -1179,11 +1213,10 @@ async function cellsChipsPills() {
 /** SCHEMA's producer-defined virtual keys: org tags, derived from the rows. */
 async function virtualKeys() {
   console.log("\n== virtual keys");
-  const box = new El("div");
-  const t = TableView.mount(box, view(40));
-  const b = filterOf(box);
+  const P = driver(40);
+  const box = P.box, t = P.handle, b = P.b();
   const KEYS = columns.map((c) => c.key);
-  const { reset, shown, items, counts, type } = probe(box, t);
+  const { reset, shown, items, counts, type } = P;
   /** The rows of one tier: keys end in `:', word completions are dimmed. */
   const tier = (n) => box.querySelectorAll(".tv-ac-item").filter((e) => {
     const label = e.querySelector(".tv-ac-label").text;
@@ -1376,15 +1409,9 @@ async function virtualKeys() {
       { id: "d", cells: { title: "nothing to complete here", tag: ":idea:book:" } },
       { id: "e", cells: { title: "bookmark the alberblanc thread", tag: ":book:" } },
     ];
-    const cbox = new El("div");
-    const ct = TableView.mount(cbox, { columns: own, rows });
-    const cb = filterOf(cbox);
-    const offer = (q) => {
-      cb.value = q;
-      cb.dispatchEvent(new Ev("input"));
-      return cbox.querySelectorAll(".tv-ac-label").map((e) => e.text);
-    };
-    const nums = () => cbox.querySelectorAll(".tv-ac-n").map((e) => Number(e.text));
+    const C = driver({ columns: own, rows });
+    const cbox = C.box, ct = C.handle, cb = C.b();
+    const offer = C.type, nums = C.counts;
     const list = offer("tan");
     check("tan completes to the word it starts, scoped by tag",
           list.indexOf("contact:tanik") !== -1, true);
@@ -1504,12 +1531,7 @@ async function virtualKeys() {
   {
     const at = () => box.querySelectorAll(".tv-ac-item")
       .findIndex((e) => e.classes.has("tv-ac-on"));
-    const press = (key, ctrl) => {
-      const e = new Ev("keydown", { key });
-      e.ctrlKey = !!ctrl;
-      b.dispatchEvent(e);
-      return e;
-    };
+    const press = (key, ctrl) => P.press(key, { ctrlKey: ctrl });
     type("sy");
     check("nothing is active to begin with", at(), -1);
     press("n", true);
@@ -1819,12 +1841,11 @@ async function virtualKeys() {
   // --- palette mode: the filter is summoned, not resident
   {
     const css = document.head.children.map((e) => e.text).join("");
-    const pal = new El("div");
-    const pt = TableView.mount(pal, view(40), { palette: true });
-    const pb = filterOf(pal);
+    const P = driver(40, { palette: true });
+    const pal = P.box, pt = P.handle, pb = P.b(), chipsOf = P.chipsOf;
     const veil = () => pal.querySelector(".tv-veil");
+    /** Whether the overlay is up -- the palette's own sense of "shown". */
     const shown = () => veil().style.display !== "none";
-    const chipsOf = () => pal.querySelectorAll(".tv-chip").map((c) => c.text.replace("×", ""));
 
     check("the page carries the chip row and nothing else",
           pal.querySelector(".tv-root").children.map((e) => e.className),
@@ -2039,11 +2060,10 @@ async function virtualKeys() {
   // --- RET is stage-aware: a key completes and waits, a value completes and goes
   {
     const asked = [];
-    const st = new El("div");
-    const t = TableView.mount(st, view(40), { onFilter: (q) => asked.push(q) });
-    const b = filterOf(st);
-    const labels = () => st.querySelectorAll(".tv-ac-label").map((e) => e.text);
-    const counts = () => st.querySelectorAll(".tv-ac-n").map((e) => Number(e.text));
+    const S = driver(40, { onFilter: (q) => asked.push(q) });
+    const st = S.box, t = S.handle, b = S.b();
+    const labels = S.items, counts = S.counts;
+    // Types without clearing first: this section walks one query forward.
     const type = (q) => { b.value = q; b.dispatchEvent(new Ev("input")); };
     const on = () => st.querySelectorAll(".tv-ac-on").length;
 
@@ -2167,14 +2187,9 @@ async function virtualKeys() {
                           tag: ":article:" } },
       { id: "c", cells: { title: "well-known snake_case survives", tag: ":article:" } },
     ];
-    const box = new El("div");
-    TableView.mount(box, { columns: own, rows });
-    const b = filterOf(box);
-    const offer = (q) => {
-      b.value = q;
-      b.dispatchEvent(new Ev("input"));
-      return box.querySelectorAll(".tv-ac-label").map((e) => e.text);
-    };
+    const W = driver({ columns: own, rows });
+    const box = W.box, b = W.b();
+    const offer = W.type;
 
     // The reported title, verbatim: "Lisp:" must index as lisp and compose a
     // suggestion that reads like the tag it names and no other.
@@ -2212,8 +2227,8 @@ async function virtualKeys() {
     const box = new El("div");
     // Mounted before its rows arrive, which is what a store still loading, or
     // a query that matched nothing, looks like.
-    const t = TableView.mount(box, { columns: own, rows: [] });
-    const b = filterOf(box);
+    const P = driver({ columns: own, rows: [] });
+    const t = P.handle, b = P.b();
     check("nothing to go on yet", t.getVisible().length, 0);
 
     t.setRows([
@@ -2221,31 +2236,15 @@ async function virtualKeys() {
       { id: "b", cells: { title: "two", tag: ":alpha:" } },
       { id: "c", cells: { title: "three", tag: ":beta:" } },
     ]);
-    b.value = "alp";
-    b.dispatchEvent(new Ev("input"));
-    const labels = box.querySelectorAll(".tv-ac-label").map((e) => e.text);
+    const labels = P.type("alp");
     check("the rows arriving give it a vocabulary after all",
           [labels.indexOf("alpha:") !== -1, labels.indexOf("tag:alpha") !== -1], [true, true]);
 
-    const shown = (q) => {
-      b.value = "";
-      b.dispatchEvent(new Ev("input"));
-      b.value = q;
-      b.dispatchEvent(new Ev("keydown", { key: "Enter" }));
-      const n = t.getVisible().length;
-      b.dispatchEvent(new Ev("keydown", { key: "Backspace" }));
-      return n;
-    };
-    check("virtual keys resolve against it", shown("alpha:"), 2);
+    check("virtual keys resolve against it", P.shown("alpha:"), 2);
     check("and repeated ones intersect, the arity being known",
-          shown("tag:alpha tag:beta"), 1);
-    check("rather than offering the raw cell as a value", (() => {
-      b.value = "";
-      b.dispatchEvent(new Ev("input"));
-      b.value = "tag:";
-      b.dispatchEvent(new Ev("input"));
-      return box.querySelectorAll(".tv-ac-label").map((e) => e.text).sort();
-    })(), ["alpha", "beta"]);
+          P.shown("tag:alpha tag:beta"), 1);
+    check("rather than offering the raw cell as a value",
+          P.type("tag:").sort(), ["alpha", "beta"]);
   }
 
   // --- a date column survives a stamp it does not recognise
@@ -2259,35 +2258,24 @@ async function virtualKeys() {
       { id: "c", cells: { title: "three", scheduled: "<2026-09-03 Thu>", tag: ":x:" } },
       { id: "d", cells: { title: "four", scheduled: "", tag: ":x:" } },
     ];
-    const box = new El("div");
-    const t = TableView.mount(box, { columns: own, rows });
-    const b = filterOf(box);
-    const shown = (q) => { b.value = q; b.dispatchEvent(new Ev("keydown", { key: "Enter" }));
-                           const n = t.getVisible().length;
-                           b.dispatchEvent(new Ev("keydown", { key: "Backspace" }));
-                           return n; };
+    const D = driver({ columns: own, rows });
     check("one stamp it cannot parse does not cost the column its prefix matching",
-          shown("scheduled:2026-08"), 2);
-    check("and prefix it is, not substring", shown("scheduled:08"), 0);
+          D.shown("scheduled:2026-08"), 2);
+    check("and prefix it is, not substring", D.shown("scheduled:08"), 0);
 
     // A column of prose is still no date column, whatever dates fall in it.
-    const prose = new El("div");
-    const pt = TableView.mount(prose, { columns: own, rows: rows.map((r, i) => ({
+    const R = driver({ columns: own, rows: rows.map((r, i) => ({
       id: r.id, cells: { title: i < 2 ? "2026-08-0" + i : "a sentence about things",
                          scheduled: r.cells.scheduled, tag: ":x:" } })) });
-    const pb = filterOf(prose);
-    pb.value = "title:sentence";
-    pb.dispatchEvent(new Ev("keydown", { key: "Enter" }));
     check("so a title column matches by substring as it always did",
-          pt.getVisible().length, 2);
+          R.shown("title:sentence"), 2);
   }
 
   // --- three roles, three shapes: filled pill, golden chip, ghost tag
   {
     const css = document.head.children.map((e) => e.text).join("");
-    const box = new El("div");
-    const t = TableView.mount(box, view(40), { pageSize: 0 });
-    const b = filterOf(box);
+    const T = driver(40, { pageSize: 0 });
+    const box = T.box, t = T.handle, b = T.b();
     const tagCell = () => box.querySelectorAll(".tv-table tbody tr[data-id]")[0]
       .children[columns.findIndex((c) => c.key === "tag")];
 
@@ -2447,10 +2435,8 @@ async function virtualKeys() {
 
   // --- the paginator
   {
-    const box = new El("div");
-    const t = TableView.mount(box, view(250), { pageSize: 100 });
-    box.querySelector(".tv-scroll").clientHeight = 600;
-    const b = filterOf(box);
+    const P = driver(250, { pageSize: 100 }, 600);
+    const box = P.box, t = P.handle, b = P.b();
     const hintOf = () => box.querySelector(".tv-hint").textContent;
     const ids = () => t.getVisible().map((r) => r.id);
     const rowsIn = () => box.querySelectorAll(".tv-table tbody tr[data-id]").length;
@@ -3067,10 +3053,9 @@ async function smoke() {
   // both. Asserted here so a shim that ever collapses them again is caught by
   // the check that says they are apart, not by five that quietly still pass.
   check("the header and a row are not the same height", HEAD_PX === ROW_PX, false);
-  const far = new El("div");
-  const big = TableView.mount(far, view(500));
+  const W = driver(500, undefined, 300);      // 10 rows on screen
+  const far = W.box, big = W.handle;
   const sc = far.querySelector(".tv-scroll");
-  sc.clientHeight = 300;                      // 10 rows on screen
   sc.scrollTop = 3000;
   sc.dispatchEvent(new Ev("scroll"));
   await sleep(50);

@@ -24,7 +24,9 @@
     <button id="del">delete selected</button>
   </div>
   <div id="app"></div>
-  <div id="log">click a row (select) · double-click = default action · click a link</div>
+  <div id="log">click a row (select) · double-click = default action · click a link ·
+    <b>/</b> filters (Enter applies and returns to the table, Escape backs out) ·
+    <b>?pal</b> for the overlay, <b>?page=2</b> to paginate</div>
 
   <script src="table-view.js"></script>
   <script>
@@ -38,7 +40,7 @@
                     { value: "DONE", color: "#9ece6a" } ] },
         { key: "priority", header: "Pri", type: "text", sortable: true, values: ["A","B","C"] },
         { key: "title", header: "Headline", type: "text" },
-        { key: "tags", header: "Tags", type: "text" },
+        { key: "tags", header: "Tags", type: "text", multi: true },
         { key: "scheduled", header: "Scheduled", type: "text", sortable: true },
         { key: "effort", header: "Effort", type: "number", align: "right", sortable: true }
       ],
@@ -64,7 +66,13 @@
 
     const log = (m) => (document.getElementById("log").textContent = m);
 
+    // `?pal' summons the filter as an overlay instead of a bar; `?page=N'
+    // pages the rows N at a time. Both are mount options, so the demo reads
+    // them from the query string rather than offering a switch.
+    const q = new URLSearchParams(location.search);
     const tv = TableView.mount(document.getElementById("app"), view, {
+      palette: q.has("pal"),
+      pageSize: Number(q.get("page")) || 0,
       onAction: (command, id, row) =>
         log(`action: ${command}  id=${id}  headline="${TableView.displayText(row.cells.title)}"`),
       onLink: (target, row) => log(`link: ${target}  (from ${row ? row.id : "?"})`),
@@ -79,16 +87,15 @@
       log("upserted new" + n);
     };
     document.getElementById("done").onclick = () => {
-      const rows = tv.getRows();
-      const id = (tv.el.querySelector(".tv-sel") || {}).dataset?.id;
+      const { id } = tv.getSelection();
       if (!id) return log("select a row first");
-      const row = rows.find((r) => r.id === id);
+      const row = tv.getRows().find((r) => r.id === id);
       row.cells.state = "DONE";
       tv.upsertRow(row);
       log("marked " + id + " DONE");
     };
     document.getElementById("del").onclick = () => {
-      const id = (tv.el.querySelector(".tv-sel") || {}).dataset?.id;
+      const { id } = tv.getSelection();
       if (!id) return log("select a row first");
       tv.deleteRow(id);
       log("deleted " + id);

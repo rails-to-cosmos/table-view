@@ -1,15 +1,19 @@
 EMACS ?= emacs
 
-EL  := table-view.el
-TEST := table-view-test.el
+EL   := table-view.el table-view-native.el
+TEST := table-view-test.el table-view-native-test.el
 
 .PHONY: all test compile web-check web-perf elisp-check typecheck check clean
 
 all: compile test
 
-## Run the ERT suite in batch mode.
+## Run the ERT suite in batch mode -- core and native.  Most native tests need
+## the `tvx' helper binary (cargo build in native/tvx); without it they SKIP
+## rather than fail, so a cargo-less machine stays green and the skip count in
+## ert's summary is how you tell which happened.
 test:
-	$(EMACS) -Q -batch -L . -l $(TEST) -f ert-run-tests-batch-and-exit
+	@echo "ert: core + native (native tests needing the tvx binary skip when it is absent)"
+	$(EMACS) -Q -batch -L . $(addprefix -l ,$(TEST)) -f ert-run-tests-batch-and-exit
 
 ## Byte-compile the package (doubles as a lint pass; warnings are surfaced).
 compile:
@@ -34,7 +38,7 @@ web-perf:
 elisp-check:
 	@trap 'rm -f *.elc' EXIT; \
 	  $(EMACS) -Q -batch -L . --eval '(setq byte-compile-error-on-warn t)' \
-	    -f batch-byte-compile $(EL) table-view-native.el
+	    -f batch-byte-compile $(EL)
 
 ## Type-check everything: the elisp sources and the web renderer.
 typecheck: elisp-check web-check

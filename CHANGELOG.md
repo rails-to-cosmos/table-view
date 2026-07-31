@@ -143,9 +143,13 @@ the rails-to-cosmos ELPA archive publishes date-stamped snapshots.
   suggestion and running it is one keystroke and one delivery.
 - Browser renderer: a **danneskjold light palette**, mapped role for role
   from the theme's own `light-*` block (`--tv-bg` #FFFFFF, `--tv-fg`
-  #000000, `--tv-alt` #F8F8FF, `--tv-border` #BDC3C7, `--tv-muted`
-  #7F8C8D, `--tv-sel` #FFD600, `--tv-accent` #4CB5F5) plus a new
-  `--tv-hover` role (#FAFAFA light). Dark is untouched.
+  #000000, `--tv-alt` #F8F8FF, `--tv-border` #E3E6EA, `--tv-muted`
+  #667071, `--tv-sel` #F0FFF0, `--tv-accent` #31769F) plus a new
+  `--tv-hover` role (#FAFAFA). Four roles are lightness-only adjustments
+  of the theme's own: `--tv-muted` and `--tv-accent` to clear WCAG's
+  4.5:1 against the light ground, `--tv-border` to stop a hairline
+  reading as a rule, and `--tv-sel` because golden is the applied
+  filter's colour and the cursor row must not read as the same thing.
 - Browser renderer: selection movement is smooth. The marks crossfade in
   place (80ms), and the viewport eases toward the row — one rAF loop that
   covers 30% of the remaining distance per frame and *retargets*, so a
@@ -237,7 +241,7 @@ the rails-to-cosmos ELPA archive publishes date-stamped snapshots.
 - Browser renderer: a staged suggestion list under the filter box. A
   bare word offers, in order: the column keys it opens; the columns whose
   declared domain holds it as a value (`TODO` → `state:TODO`); and, only
-  when nothing exact was found, up to three tags whose rows merely
+  when nothing exact was found, up to five tags whose rows merely
   contain it, dimmed — exact beats fuzzy, and fuzzy never crowds. After
   `key:` comes that column's value domain (`values`, else the badge
   palette, else the distinct cell values), each shown with the number of
@@ -256,13 +260,16 @@ the rails-to-cosmos ELPA archive publishes date-stamped snapshots.
 - Browser renderer `onFilter` mount option: the debounced filter box
   hands its query to the producer instead of narrowing locally, for a
   store too large to hold client-side.
-- Browser renderer: Enter in the filter box applies it at once
-  (cancelling the pending debounce, so the query is delivered exactly
-  once), blurs the box and puts the selection on the first visible row
-  unless it is already on one — under `onFilter` that last step waits
-  for the producer's `setRows`. Escape clears a filled box and blurs.
-  Both keys stop at the input rather than bubbling into a consumer's
-  keymap; nothing else moves focus or the selection.
+- Browser renderer: Enter and Escape in the filter box are ladders, not
+  single actions. **Enter** cancels the pending debounce so the query is
+  delivered exactly once, commits the typed text to a chip, then puts the
+  selection on the first visible row and blurs — every time, and under
+  `onFilter` without waiting for the producer's `setRows`. **Escape**
+  walks out one step per press: close the suggestion list, drop the typed
+  text, drop the chips, leave. Both keys stop at the input rather than
+  bubbling into a consumer's keymap. (The stage-aware refinement for a
+  half-typed `key:` and the palette's one-step-further ladder are the
+  entries above; this is the shape they refine.)
 
 ### Changed
 - **Browser renderer: sorting follows SCHEMA on all three points it used
@@ -327,6 +334,14 @@ the rails-to-cosmos ELPA archive publishes date-stamped snapshots.
   page) with the `?:hide` / `?:help` affordance. `?` now does a full
   re-render (the legend's line count varies); the O(1) mark-gutter hint
   refresh still touches only the status line.
+
+### Fixed
+- Browser renderer: the filter box no longer loses focus and caret on a
+  re-render — the chrome is built once at mount and only the row window,
+  hint, arrows and chips are rewritten.
+- Browser renderer: a multi-valued column is detected by weighing evidence
+  rather than by a percentage of well-formed cells, so one hand-edited or
+  imported headline no longer costs a corpus its whole tag vocabulary.
 
 ## 0.4.0 — 2026-07-19 (snapshot 20260719.825)
 

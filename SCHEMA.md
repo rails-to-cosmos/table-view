@@ -29,10 +29,11 @@ The whole view. All fields optional except `columns`.
 | `header`   | string        | `key`    | column label                                        |
 | `type`     | enum          | `"text"` | `"text"` \| `"number"` \| `"badge"`                 |
 | `align`    | enum          | `"left"` | `"left"` \| `"right"`                               |
-| `sortable` | bool          | `false`  | column may be sorted on                             |
+| `sortable` | bool          | `false`  | column may be sorted on (opt-in: default is no)     |
 | `badges`   | array<Badge>  | —        | palette for a `"badge"` column                      |
 | `values`   | array<string> | —        | explicit categorical order (sort priority)          |
 | `compare`  | string        | —        | comparator name: `"number"`, `"string"`, `"natural"`|
+| `multi`    | bool          | —        | cells hold a delimited value list (experimental)    |
 
 **Sort order of a column** resolves as: `compare` name → `values` order (else the
 `badges` order for a badge column), unlisted values last → `type: "number"` is
@@ -40,6 +41,15 @@ numeric → otherwise lexicographic.
 
 - `"number"` right-aligns and sorts numerically by convention.
 - `"badge"` colours each cell from `badges`; palette order doubles as sort priority.
+- `sortable` is opt-in: a column says so or it is not sorted on. **Conformance
+  note**: the browser renderer reads it that way; `table-view.el` currently
+  treats columns as sortable unless they opt *out*, so a view relying on the
+  default sorts differently in the two. The contract stands as written and the
+  Emacs renderer is the one to move.
+- `multi` declares the column multi-valued for the filter's AND/OR rule below.
+  A renderer that guesses from cell shape must let the declaration win.
+  *Experimental*: the field is new and the guessing fallback is what most
+  producers still rely on.
 
 ### Badge object
 
@@ -58,7 +68,7 @@ A named command the view can dispatch on the row at point / clicked.
 |-----------|--------|--------------------------------------------------|
 | `key`     | string | key binding (Emacs key description, e.g. `"RET"`)|
 | `command` | string | command name handed to the consumer              |
-| `label`   | string | shown in the hint line / toolbar                 |
+| `label`   | string | shown in the hint line                           |
 
 A renderer dispatches `{command, id, row}` to its consumer; the consumer decides
 what the command does. The renderer never interprets `command` itself. `"RET"` is
@@ -110,6 +120,11 @@ A renderer that stays live accepts, after the initial view:
 - `{ "op": "delete", "index": I }` — drop the row at window index `I`.
 - `{ "op": "reset", "rows": array<Row> }` — replace the whole window.
 
+`I` counts in the **window** — the rows as displayed, after any renderer-local
+sort, filter or page. With none of those in force the window is the producer's
+own row order and the two readings coincide. Ops apply in order, each against
+the window the ones before it left.
+
 Updates key off `id`: an unchanged row keeps its identity so incremental
 rendering leaves untouched lines alone.
 
@@ -123,6 +138,11 @@ delivers them.
   (matching count under the filter, or absent), `has-next`, and for keyset paging
   `next-cursor` / `prev-cursor`. Offset paging uses `offset`; keyset paging uses
   opaque cursors.
+
+This is the producer protocol, where `page-size` travels over the wire. It is
+separate from a renderer paging rows it already holds — the browser renderer
+spells that `pageSize`, a mount option, and it involves no producer at all. A
+view may use either, or both.
 
 ## Filter query (optional)
 
@@ -147,7 +167,9 @@ Predicates sharing one key OR together **when the field is single-valued**
 AND together **when the field is multi-valued** (`tag:a tag:b` = carries
 both, GitHub-label style; a column is multi-valued when its cells hold
 delimited value lists, e.g. org tags — producers and renderers must agree
-per column, glance's `tag` column being the canonical case). Distinct keys and free-text
+per column, glance's `tag` column being the canonical case; `multi: true`
+on the column is how a producer says so, and a renderer guessing from cell
+shape must defer to it). Distinct keys and free-text
 tokens AND. Negations AND regardless. Field-predicate semantics, by column type: `badge` —
 whole-value match, case-insensitive; a producer may add meta-values (e.g.
 glance's `state:active` / `state:inactive` matching keyword groups);
@@ -155,7 +177,7 @@ glance's `state:active` / `state:inactive` matching keyword groups);
 prefix match (`scheduled:2026-08`). Three uniform rules across types:
 `key:none` matches the empty cell (any type; a literal cell value "none" is
 consequently unreachable by predicate); `key:` with nothing typed narrows
-nothing; a predicate value may be quoted (`tags:"two words"`) — only a token
+nothing; a predicate value may be quoted (`tag:"two words"`) — only a token
 that *opens* with a quote is free text.
 
 **Autocomplete (renderer-local).** The renderer may suggest per stage: a
@@ -164,6 +186,13 @@ bare word suggests matching column keys (completing to `key:`); after
 distinct cell values; producer meta-values arrive as ordinary `values`
 entries. Keyboard-first: arrows/Tab select, Enter accepts, Esc dismisses
 before it clears anything.
+
+## Renderer handle
+
+Whatever a renderer exposes to its embedding page — the browser renderer's
+`mount` return value, for instance — is that renderer's own versioned surface,
+not part of this contract. The browser renderer documents its handle in
+`README.md`.
 
 ## Not part of the contract
 
@@ -185,7 +214,7 @@ interaction.
     { "key": "priority", "header": "Pri", "type": "text", "sortable": true,
       "values": ["A", "B", "C"] },
     { "key": "title", "header": "Headline", "type": "text" },
-    { "key": "tags", "header": "Tags", "type": "text" },
+    { "key": "tag", "header": "Tags", "type": "text", "multi": true },
     { "key": "scheduled", "header": "Scheduled", "type": "text", "sortable": true }
   ],
   "actions": [
@@ -197,10 +226,10 @@ interaction.
     { "id": "a1b2", "cells": {
         "state": "NEXT", "priority": "A",
         "title": "[[org-glance:a1b2][Ship table-view.js]]",
-        "tags": ":web:glance:", "scheduled": "2026-08-01" } },
+        "tag": ":web:glance:", "scheduled": "2026-08-01" } },
     { "id": "c3d4", "cells": {
         "state": "TODO", "priority": "B",
-        "title": "Write SCHEMA.md", "tags": ":web:", "scheduled": "2026-08-03" } }
+        "title": "Write SCHEMA.md", "tag": ":web:", "scheduled": "2026-08-03" } }
   ]
 }
 ```

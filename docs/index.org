@@ -16,8 +16,6 @@ up later.
   recompute when a max-holding row changes.
 - [[file:proposals/select-all-matching.org][Bulk “select all matching” (server pagination v2)]] :: act on the
   whole filtered result set without loading it.
-- [[file:proposals/native-backend.org][Native data backend (tvx)]] :: a Rust background process as a fast
-  local =page-fn= over =jsonrpc.el= for 100k–1M rows.
 
 * Design notes (shipped)
 
@@ -25,7 +23,15 @@ Design records for features already in the package.
 
 - [[file:proposals/nulls-ordering.org][Nulls-first / nulls-last ordering]] :: place empty cells at the top
   or the bottom of a sort, independent of direction; the four-stage =^= cycle
-  and the =(COL . DIRECTION-CODE)= encoding.
+  and the =(COL . DIRECTION-CODE)= encoding.  Shipped in =table-view.el=; the
+  browser renderer spells the same idea as the =direction= strings
+  =asc-nulls-first= / =desc-nulls-first= (see [[file:../SCHEMA.md][SCHEMA.md]]).
+- [[file:proposals/native-backend.org][Native data backend (tvx)]] :: a Rust background process as a fast
+  local =page-fn= over =jsonrpc.el= for 100k–1M rows.  Shipped as
+  =table-view-native.el= plus the =tvx= crate in =native/tvx=; the document
+  is kept under =proposals/= as the design record.  Its ERT suite
+  (=table-view-native-test.el=) skips the binary-dependent tests where =tvx=
+  has not been built.
 
 * Bugs
 

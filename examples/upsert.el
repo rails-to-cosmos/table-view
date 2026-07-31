@@ -29,7 +29,8 @@
   (upsert-example--stop)
   (setq upsert-example--tick 0)
   (let ((buf "*live-counter*")
-        (labels '("alpha" "bravo" "charlie")))
+        ;; Deliberately out of order, so the declared sort has something to do.
+        (labels '("charlie" "alpha" "bravo")))
     (table-view-display buf upsert-example--spec nil)
     (setq upsert-example--timer
           (run-with-timer 0.5 1.0
@@ -42,7 +43,10 @@
                        (row `((id . ,label)
                               (cells . ((label . ,label)
                                         (value . ,upsert-example--tick))))))
-                  (table-view-upsert-row buf row))))))))
+                  (table-view-upsert-row buf row)
+                  ;; An upsert appends; the spec's declared sort is applied
+                  ;; here or not at all.
+                  (with-current-buffer buf (table-view-apply-sort)))))))))
 
 (upsert-example--start)
 
