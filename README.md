@@ -380,6 +380,10 @@ the label, so one hue carries it in either scheme.
 
 ### The filter box
 
+Its placeholder teaches the grammar rather than naming the box —
+`tag:book · state:active · -word · "some phrase"` — since what a filter box is
+for is obvious and what it accepts is not.
+
 It speaks [`SCHEMA.md`](SCHEMA.md)'s query micro-syntax: `key:value` field
 predicates — only where `key` names a column, so org text like `:work:` or
 `=code=` never becomes one by accident — plus `"quoted text"`, `-negation`, and
@@ -461,9 +465,9 @@ faces make. `initialQuery`, `getQuery()` and `stripLastToken()` behave exactly
 as they do elsewhere — the chips are the same state, only styled. The overlay
 sits at `z-index` 90/91, leaving 100 and up for a consumer's own modal.
 
-Pass **`omnibox: true`** to make the filter the bar's centrepiece: the title and
-the placeholder go, the input takes the full width, and the applied chips move
-to a row of their own beneath it that collapses when empty. Without it the bar
+Pass **`omnibox: true`** to make the filter the bar's centrepiece: the title
+goes, the input takes the full width, and the applied chips move to a row of
+their own beneath it that collapses when empty. Without it the bar
 is exactly as it was.
 
 Pass **`initialQuery`** to restore a query rather than run one — it arrives as

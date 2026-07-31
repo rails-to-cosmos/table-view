@@ -1338,12 +1338,21 @@ async function virtualKeys() {
           ["tv-bar", "tv-chips", "tv-scroll", "tv-hint"]);
     check("which collapses to nothing while nothing is applied",
           hero.querySelector(".tv-chips").style.display, "none");
-    check("and the box says nothing a bar-wide search box would not",
-          filterOf(hero).placeholder, undefined);
-    check("while the classic bar keeps its placeholder and its inline chips",
-          [filterOf(plain).placeholder,
-           plain.querySelector(".tv-bar").children.map((e) => e.className)],
-          ["filter…", ["tv-title", "tv-chips", "tv-filter-wrap"]]);
+    check("while the classic bar keeps its inline chips",
+          plain.querySelector(".tv-bar").children.map((e) => e.className),
+          ["tv-title", "tv-chips", "tv-filter-wrap"]);
+    // The box teaches the grammar, which is the part nobody can guess, in
+    // every mode — the control is the same control wherever it is put.
+    const TEACH = `tag:book · state:active · -word · "some phrase"`;
+    const summoned = new El("div");
+    TableView.mount(summoned, view(20), { palette: true });
+    check("and every mode's box teaches the query language",
+          [filterOf(plain).placeholder, filterOf(hero).placeholder,
+           filterOf(summoned).placeholder], [TEACH, TEACH, TEACH]);
+    check("in a muted colour that Firefox cannot dim further",
+          css.indexOf(".tv-filter::placeholder{color:var(--tv-muted);opacity:1}") !== -1, true);
+    check("saying nothing about keys — the legend and the list own those",
+          /tab|ret|enter|esc/i.test(TEACH), false);
     check("the control is told to fill, at a larger size",
           [css.indexOf(".tv-omni .tv-filter-wrap{flex:1 1 auto}") !== -1,
            css.indexOf(".tv-omni .tv-filter{flex:1 1 auto;font-size:15px") !== -1],

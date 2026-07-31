@@ -142,7 +142,7 @@
  *   off and then stops: it erases, and erasing is not leaving. The chips are the theme's selection golden, which is the
  *   association its own ivy and company faces make. It supersedes `omnibox',
  *   which stays for consumers that want the control resident.
- * - `omnibox: true' makes the filter the bar: no title, no placeholder, the
+ * - `omnibox: true' makes the filter the bar: no title, the
  *   control takes the width, and the applied chips move to a row of their own
  *   under it that collapses to nothing when empty. A consumer that does not
  *   ask for it sees exactly what it saw before.
@@ -526,6 +526,9 @@
 .tv-title{font-weight:600;font-size:14px;margin-right:auto}
 .tv-filter{font:inherit;padding:4px 8px;border:1px solid var(--tv-border);border-radius:6px;
   background:var(--tv-bg);color:var(--tv-fg);min-width:140px}
+/* Quiet enough to be read past, not so quiet it cannot be read. Firefox dims
+   placeholders on top of the colour, which is what the opacity is undoing. */
+.tv-filter::placeholder{color:var(--tv-muted);opacity:1}
 .tv-filter-wrap{position:relative;display:flex}
 /* Omnibox: the filter is the bar's one control, and it takes the width the
    title was holding. The dropdown hangs under the whole of it. */
@@ -844,14 +847,16 @@
     const input = document.createElement("input");
     input.className = "tv-filter";
     input.type = "search";
-    // Classic bar: the box is one control among others and says what it is.
-    // Omnibox: it is the bar, and a placeholder only repeats that.
-    if (!omnibox) input.placeholder = "filter…";
+    // The box's purpose is obvious; its grammar is not. So the placeholder
+    // teaches that instead — four concrete forms rather than a description of
+    // a syntax, separated by middots so they read as examples and not as one
+    // query someone is meant to complete. Keys are taught by the legend and
+    // the list, so they stay out of it.
+    input.placeholder = `tag:book · state:active · -word · "some phrase"`;
     // The box and its suggestion list travel together, so the list can be
     // positioned against the box and nothing else.
     const chipsEl = document.createElement("div");
     chipsEl.className = "tv-chips";
-    chipsEl.style.display = "none";
     const filterWrap = document.createElement("div");
     filterWrap.className = "tv-filter-wrap";
     const acEl = document.createElement("div");
@@ -2218,11 +2223,18 @@
     if (typeof o.initialQuery === "string" && o.initialQuery.trim()) {
       for (const t of parseQuery(o.initialQuery, queryKeys()))
         chips.push(o.initialQuery.slice(t.start, t.end));
-      renderChips();
       lastQuery = effectiveQuery();
       // Local filtering has to catch up to it; a producer has already filtered.
       if (!o.onFilter) state.filter = lastQuery;
     }
+
+    // Whether or not anything was restored: one function decides what the chip
+    // row shows, including that it shows nothing. Stamping the collapsed state
+    // at creation as well left two places to agree about it, and a mount that
+    // never called this one was a mount whose row was collapsed by the other —
+    // near enough until the two drift, which is the sort of thing that goes
+    // unnoticed because the checks drive the function the mount skipped.
+    renderChips();
 
     titleEl.textContent = state.view.title || "Table";
     renderHead();

@@ -22,6 +22,16 @@ the rails-to-cosmos ELPA archive publishes date-stamped snapshots.
   still, cancelled by 10px of drift or any scroll) runs the row's default
   action, selecting the cell under the finger first, and swallows only
   the touchend that completed it so no click or context menu follows.
+- Browser renderer: the filter box's placeholder teaches the query
+  language rather than naming the box — `tag:book · state:active ·
+  -word · "some phrase"`, in every mode, muted. Four concrete forms
+  instead of a description of a grammar; keys stay out of it, the legend
+  and the suggestion list already teaching those.
+- Browser renderer: **fixed** — the chip row's collapsed state was
+  stamped both at creation and by `renderChips`, so a mount that never
+  called the latter was collapsed by the former. One owner now: mount
+  calls `renderChips()` unconditionally, so the path a raw mount takes
+  and the path the checks drive are the same path.
 - Browser renderer: `palette: true` mount option and `openFilter()` /
   `closeFilter()` on the handle — the filter becomes something you
   summon rather than something resident. The page keeps only the chip
