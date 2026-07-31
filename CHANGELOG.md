@@ -6,6 +6,28 @@ the rails-to-cosmos ELPA archive publishes date-stamped snapshots.
 ## Unreleased
 
 ### Added
+- SCHEMA: the Row object gains an optional **`depth`** (int, 0-based),
+  marked *experimental* — a renderer hint for tree-shaped data, about the
+  row's place among the others rather than about anything shown in it, so
+  it is not a cell, a column or a filter key. A row without one reads as
+  depth 0, and a renderer may ignore it. How it is drawn is renderer-local,
+  and is listed as such.
+- Browser renderer: **outline guides**, behind `tree: true` (experimental)
+  — `depth` drawn as `│ ├─ └─` in one column, the `title` column when the
+  view declares one and the first text column otherwise. Presentation only,
+  like the tag chips: the cells, the filter, the sort and the rows a
+  consumer reads back are the producer's. They are drawn **only while the
+  rows on show are the rows the producer sent**: a sort key in force or a
+  query in force — local, or delivered to a producer that narrowed for us —
+  degrades them to indentation alone, since a connector claims the row above
+  is this row's parent and only the producer's order carries that claim.
+  Adjacency is read off the page, so with a `pageSize` the first row of a
+  page is indented without a connector (whatever it would join to is
+  off-page) and the last reads as the last of its siblings. The column's
+  width allows for what is drawn, 2ch a level with the guides and 1ch
+  without, measured per row so a deep row with a short label costs nothing.
+  `table-view.el` ignores `depth`; glance emits it on every row and serves
+  the matching order under `/headlines?order=document`.
 - Browser renderer: **row marking**, behind `marks: true` — dired's, and
   `table-view.el`'s. A leading checkbox column, chrome the way the pager
   is, so `columns` and `cells` are untouched and SCHEMA.md goes on

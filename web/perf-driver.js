@@ -894,6 +894,180 @@ async function rowMarks() {
   }
 }
 
+// ---- outline guides --------------------------------------------------------
+
+/**
+ * A tree in document order, shaped so every connector case appears once: two
+ * roots, siblings at each level, a nesting, a deep run a shallow row closes,
+ * and a last child at every depth. Ids spell the shape so a failure reads.
+ */
+const TREE = [["a", 0], ["b", 1], ["c", 2], ["d", 2], ["e", 1], ["f", 0], ["g", 1]];
+
+/**
+ * The tree fixture as a view, with no `sort' — document order is the point.
+ * The label header is one character on purpose: a wide one would set the
+ * column's width on its own and the indent allowance would go unmeasured.
+ */
+const treeView = (depths) => ({
+  title: "tree",
+  columns: [{ key: "state", header: "State", type: "text", sortable: true },
+            { key: "title", header: "H", type: "text" }],
+  rows: TREE.map(([id, d]) => ({
+    id,
+    ...(depths ? { depth: d } : {}),
+    cells: { state: id === "a" ? "TODO" : "DONE", title: id + " " + "x".repeat(d) },
+  })),
+});
+
+/**
+ * SCHEMA's experimental `depth', drawn. What is asserted: the connectors a
+ * depth sequence implies, the two degradations that make them honest (a sort
+ * and a filter both break adjacency, and a page boundary breaks it for one
+ * row), and that a view without the field or a mount without the option is
+ * byte for byte the table it always was.
+ */
+async function outlineGuides() {
+  console.log("\n== the outline guides");
+
+  /** The guide each rendered row wears, "" where it wears none. */
+  const guidesOf = (b) => b.querySelectorAll(".tv-table tbody tr[data-id]")
+    .map((tr) => { const g = tr.querySelector(".tv-guide"); return g ? g.text : ""; });
+
+  // --- the drawing itself
+  {
+    const T = driver(treeView(true), { tree: true });
+    check("the guides are the tree the depths spell", guidesOf(T.box),
+          ["", "├─", "│ ├─", "│ └─", "└─", "", "└─"]);
+    // Read one case at a time, so a failure above says which rule broke.
+    const g = guidesOf(T.box);
+    check("a root wears none", [g[0], g[5]], ["", ""]);
+    check("a child with a sibling below it is a tee", g[1], "├─");
+    check("the last child at its level is an ell", [g[4], g[6]], ["└─", "└─"]);
+    check("nesting carries a bar for an ancestor that continues", g[2], "│ ├─");
+    check("and the deep run's last row still closes under it", g[3], "│ └─");
+
+    // The guide is presentation: it sits inside the label cell, ahead of the
+    // producer's own text, and the cells the handle answers with are untouched.
+    const tr = T.box.querySelector("tbody tr[data-id=c]");
+    check("it is drawn in the title column, not the first text one",
+          tr.children.map((td) => !!td.querySelector(".tv-guide")), [false, true]);
+    check("ahead of the cell's own text, inside its td", tr.children[1].text, "│ ├─c xx");
+    check("and the row a consumer reads is the row the producer sent",
+          T.handle.getVisible().map((r) => r.cells.title).slice(0, 3),
+          ["a ", "b x", "c xx"]);
+    // Width: the indent is measured with the text, per row, so the column is
+    // wide enough for the widest indented label — 4ch of text under 4ch of
+    // guide — rather than for the longest label plus the deepest indent.
+    check("the column allows for the indent it draws",
+          T.box.querySelectorAll("colgroup col")[1].style.width, "calc(8ch + 24px)");
+  }
+
+  // --- no depths, no option: the table is exactly the one it always was
+  {
+    const plain = driver(treeView(false), { tree: true });
+    check("rows carrying no depth draw nothing",
+          plain.box.querySelectorAll(".tv-guide").length, 0);
+    const off = driver(treeView(true), { tree: false });
+    check("and neither does depth without the option",
+          off.box.querySelectorAll(".tv-guide").length, 0);
+    check("which leaves the cell the width of its text alone",
+          off.box.querySelectorAll("colgroup col")[1].style.width, "calc(4ch + 24px)");
+    check("and the label cell holding the producer's text and nothing else",
+          off.box.querySelector("tbody tr[data-id=c]").children[1].text, "c xx");
+  }
+
+  // --- a page boundary is not a parentage
+  {
+    const P = driver(treeView(true), { tree: true, pageSize: 3 });
+    // Adjacency is read off the page and nothing else, so page one calls `b'
+    // the last child of `a' — `e' is on page two and this page cannot see it.
+    // That is the trade the page-local rule makes, and it is the reason the
+    // rule is written down rather than assumed.
+    check("page one reads its own rows and no others", guidesOf(P.box),
+          ["", "└─", "  └─"]);
+    P.handle.nextPage();
+    await painted();
+    // Page two opens on `d', a depth-2 row whose parent is on page one. Its
+    // connector would join to a row nobody can see, so it is indented instead
+    // — at the width a drawn level takes, so the column does not step.
+    check("and page two indents its first row rather than claiming a parent",
+          guidesOf(P.box), ["    ", "└─", ""]);
+  }
+
+  // --- a sort breaks adjacency, so the connectors go and the indent stays
+  {
+    const S = driver(treeView(true), { tree: true });
+    S.box.querySelector("th[data-key=state]").dispatchEvent(new Ev("click"));
+    await painted();
+    check("a sort leaves indentation alone and takes the connectors",
+          guidesOf(S.box).map((g) => g.length),
+          S.handle.getVisible().map((r) => r.depth));
+    check("and draws no line at all", guidesOf(S.box).join("").trim(), "");
+    check("the allowance narrows to one column a level with it",
+          S.box.querySelectorAll("colgroup col")[1].style.width, "calc(6ch + 24px)");
+  }
+
+  // --- and so does a filter, local or delivered
+  {
+    const F = driver(treeView(true), { tree: true });
+    F.b().value = "DONE";
+    F.press("Enter");
+    await painted();
+    check("a filter takes them too", guidesOf(F.box).join("").trim(), "");
+    check("leaving the depth as indentation", guidesOf(F.box),
+          F.handle.getVisible().map((r) => " ".repeat(r.depth)));
+
+    // With `onFilter' the producer narrows and `state.filter' never moves, so
+    // the query the renderer DELIVERED is what says the rows were narrowed.
+    // The stub answers with `setRows', which is what a producer does and what
+    // makes the answer a table again.
+    const asked = [];
+    /** @type {*} */
+    let D;
+    D = driver(treeView(true), { tree: true, onFilter: (q) => {
+      asked.push(q);
+      D.handle.setRows(treeView(true).rows.filter((r) => r.cells.state === q));
+    } });
+    check("a delivered query starts with the guides drawn",
+          guidesOf(D.box)[2], "│ ├─");
+    D.b().value = "DONE";
+    D.press("Enter");
+    await painted();
+    check("and a producer-side narrowing degrades them the same way",
+          [asked, guidesOf(D.box).join("").trim()], [["DONE"], ""]);
+    check("with the rows the producer answered with, indented",
+          guidesOf(D.box), D.handle.getVisible().map((r) => " ".repeat(r.depth)));
+  }
+
+  // --- the label column is found by name, and by kind where there is no name
+  {
+    const noTitle = {
+      title: "tree", columns: [{ key: "n", header: "N", type: "number" },
+                               { key: "label", header: "Label", type: "text" }],
+      rows: TREE.map(([id, d]) => ({ id, depth: d, cells: { n: d, label: id } })),
+    };
+    const N = driver(noTitle, { tree: true });
+    check("with no title column the first text column takes the guides",
+          N.box.querySelector("tbody tr[data-id=c]").children
+            .map((td) => !!td.querySelector(".tv-guide")), [false, true]);
+  }
+
+  // --- the other row chrome is untouched
+  {
+    const M = driver(treeView(true), { tree: true, marks: true });
+    M.handle.toggleMark("c");
+    M.handle.select("c", 1);
+    await painted();
+    const tr = M.box.querySelector("tbody tr[data-id=c]");
+    check("marks lead the row and the guide still leads its cell",
+          [tr.children[0].className, tr.children[2].text], ["tv-box", "│ ├─c xx"]);
+    check("and the row wears both grounds as it would without a tree",
+          [tr.classes.has("tv-marked"), tr.classes.has("tv-sel")], [true, true]);
+    check("the cell selection outlines the whole cell, guide and all",
+          M.box.querySelectorAll("td.tv-cell-sel").length, 1);
+  }
+}
+
 // ---- benchmark -------------------------------------------------------------
 
 const results = [];
@@ -3603,6 +3777,7 @@ async function smoke() {
   await sortOrder();
   await metaValues();
   await rowMarks();
+  await outlineGuides();
 
   console.log("\n== the window");
   // The header and a row measure differently, and everything below sums over

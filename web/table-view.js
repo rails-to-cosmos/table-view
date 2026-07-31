@@ -126,6 +126,23 @@
  *   with the view. One predicate gates the class, the box and the count, so
  *   without the option there is nothing to hide rather than something hidden.
  *   Why the ground is what it is: the CSS rule, `tr.tv-marked'.
+ * - `tree: true' (EXPERIMENTAL) draws SCHEMA's optional `depth' as outline
+ *   guides in one column: the `title' column when the view declares one, else
+ *   the first text column. Presentation only, like the tag chips — the cells,
+ *   the widths' measurement, the filter and the sort all still read the text
+ *   the producer sent, and a row carrying no `depth' reads as depth 0, so a
+ *   view without the field renders exactly as it did.
+ *   The guides are drawn ONLY while the rows on show are the rows the producer
+ *   put next to each other: no sort key in force and no query, local or
+ *   delivered. A connector says "this row is the child of the one above it",
+ *   which a sort or a filter makes a lie, so both degrade to indentation alone
+ *   — one space a level, no `│', no `├─'. The degradation is the honest
+ *   reading: adjacency is what a tree drawing claims, and only the producer's
+ *   order carries it.
+ *   Adjacency is read off the PAGE, so the first row of a page is indented
+ *   without a connector: whatever it would join to is off-page, and a page
+ *   boundary is not a parentage. Marks, selection, pills and tags are
+ *   untouched — the guide is a span inside the cell, ahead of its text.
  * - Rows are virtualized. `tbody` holds the scrolled-to window plus ~15 rows of
  *   overscan, between two spacer rows standing in for the height of the rest.
  *   Rows outside the window have no DOM: drive selection with `select(id)`
@@ -243,7 +260,9 @@
  * @typedef {{ column: string, ascending?: boolean, direction?: string }} Sort
  * @typedef {{ column: string, ascending: boolean, nullsFirst: boolean }} SortKey
  *          A normalized sort key (internal).
- * @typedef {{ id: string, cells?: Record<string, Cell> }} Row
+ * @typedef {{ id: string, cells?: Record<string, Cell>, depth?: number }} Row
+ *          `depth' is SCHEMA's experimental tree hint, 0-based; `tree: true'
+ *          draws it and every other mode ignores it.
  * @typedef {{ title?: string,
  *             columns: Column[],
  *             actions?: Action[],
@@ -258,6 +277,7 @@
  *             omnibox?: boolean,
  *             palette?: boolean,
  *             marks?: boolean,
+ *             tree?: boolean,
  *             pageSize?: number,
  *             initialQuery?: string }} MountOptions
  * @typedef {{ el: HTMLElement,
@@ -615,6 +635,18 @@
   const EASE = 0.3;            // fraction of the remaining scroll covered per frame
   const SNAP_PX = 0.5;         // closer than this and the ease is over
 
+  /**
+   * One outline level, drawn (`tree: true'). Two characters each, so a level is
+   * GUIDE_CH wide in the renderer's monospace face and the four line up in a
+   * column whichever of them a row wears.
+   */
+  const GUIDE_BAR = "│ ";      // an ancestor that continues past this row
+  const GUIDE_GAP = "  ";      // an ancestor that does not
+  const GUIDE_TEE = "├─";      // this row, with a sibling below it
+  const GUIDE_ELL = "└─";      // this row, the last of its siblings
+  const GUIDE_CH = 2;          // characters a drawn level takes
+  const INDENT_CH = 1;         // and a degraded one, where there is nothing to draw
+
   /** Run CB when nothing else is pending (or soon, where there is no idle). */
   const idle = (cb) =>
     typeof requestIdleCallback === "function" ? requestIdleCallback(cb) : setTimeout(cb, 0);
@@ -773,6 +805,13 @@
    in the stylesheet rather than in the markup, so the text a copy takes is the
    text the file holds. */
 .tv-tag{text-transform:lowercase}
+/* The outline guides (\`tree: true'): the same muted ink the tags wear, since a
+   guide is scaffolding rather than content. \`pre' is what makes the runs of
+   spaces stand — the cell is nowrap, which collapses them otherwise — and the
+   ink is unselectable so a copy of the row takes the producer's text and not
+   the drawing over it. The face is the root's monospace, which is what makes
+   every level exactly two characters wide. */
+.tv-guide{color:var(--tv-muted);white-space:pre;user-select:none}
 .tv-pill{display:inline-block;padding:0 8px;border-radius:999px;
   font-weight:600;color:var(--tv-ink,var(--tv-badge));
   background:color-mix(in srgb,var(--tv-badge) 15%,transparent)}
@@ -816,6 +855,8 @@
     const omnibox = o.omnibox === true;
     const palette = o.palette === true;
     const marks = o.marks === true;
+    /** Draw SCHEMA's experimental `depth' as outline guides. */
+    const tree = o.tree === true;
     /** How many chrome cells lead a row; what a column index has to skip. */
     const chrome = marks ? 1 : 0;
     /** The marked ids. @type {Set<string>} */
@@ -998,7 +1039,110 @@
     /** The `title' column's index, or -1; where a scoped completion finds words. */
     function titleColumn() { return columns().findIndex((c) => c.key === "title"); }
 
+    // ---- outline guides (`tree: true', experimental) ------------------------
 
+    /**
+     * Where the guides are drawn, or -1 with the option off. SCHEMA says which
+     * rows are nested and says nothing about which column shows it, so this is
+     * the renderer's own reading: the `title' column when the view declares one
+     * — the label column by every producer's convention, and the one the word
+     * index already reads — else the first text column. A view whose label sits
+     * elsewhere gets the wrong column and no harm past that; the escape hatch,
+     * if one is ever wanted, is a key on the option rather than a guess here.
+     * Memoized like `multiAt', and dropped where the columns are rebuilt.
+     */
+    function treeColumn() {
+      if (treeAt !== undefined) return treeAt;
+      if (!tree) return (treeAt = -1);
+      const cols = columns();
+      const named = cols.findIndex((c) => c.key === "title");
+      return (treeAt = named !== -1
+        ? named : cols.findIndex((c) => !c.type || c.type === "text"));
+    }
+    /** @type {number|undefined} */
+    let treeAt;
+
+    /**
+     * ROW's outline depth: SCHEMA's optional 0-based `depth', and 0 for a row
+     * that carries none — which is what makes a view without the field render
+     * exactly as it did, rather than needing the option to be off.
+     * @param {Row} r
+     */
+    function depthOf(r) {
+      const d = r.depth;
+      return typeof d === "number" && d > 0 ? Math.floor(d) : 0;
+    }
+
+    /**
+     * Are the rows on show in the producer's own order? A connector claims the
+     * row above is the row's parent, and only the order the producer sent
+     * carries that claim: a sort key re-orders the rows outright, and a filter
+     * — local, or delivered to a producer that narrowed for us — takes rows out
+     * from between the ones that are left. Either way the neighbours on screen
+     * are not the neighbours in the document, so the guides degrade to plain
+     * indentation instead of drawing a parentage that is not there.
+     */
+    function treeAdjacent() {
+      return !state.sortKeys.length && !state.filter && !lastQuery;
+    }
+
+    /**
+     * What one level of indent costs, in characters. One number, read by the
+     * guides and by the width they have to fit inside — two answers here is a
+     * column that is a level too narrow in one of the two modes.
+     */
+    function levelWidth() { return treeAdjacent() ? GUIDE_CH : INDENT_CH; }
+
+    /** ROW's indent with nothing drawn in it. @param {Row} r */
+    function blankIndent(r) { return " ".repeat(levelWidth() * depthOf(r)); }
+
+    /**
+     * The guide prefix for each row of PAGE, in its order.
+     *
+     * Adjacent, it is a tree drawing computed in one backward pass: `open[l]'
+     * says a row at level `l' still follows with nothing shallower in between,
+     * which is exactly "the level-`l' ancestor has another child to come" — so
+     * a row at depth d wears one column per ancestor level (a bar where that
+     * ancestor continues, blank where it does not) and then its own connector,
+     * a tee where a sibling follows and an ell where none does. Setting
+     * `open[d]' and truncating to `d + 1' closes every deeper level in one
+     * step, which is what keeps the pass linear.
+     *
+     * Row zero is the exception and is indented without a connector: it is the
+     * top of the PAGE, so whatever its connector would join to is off-page, and
+     * a page boundary is not a parentage. It falls back to the same indent the
+     * degraded mode uses, which at this width is the drawing's own, so the
+     * column holds still as pages turn.
+     * @param {Row[]} rows  @returns {string[]}
+     */
+    function treeGuides(rows) {
+      const out = new Array(rows.length);
+      if (!treeAdjacent()) {
+        for (let i = 0; i < rows.length; i++) out[i] = blankIndent(rows[i]);
+        return out;
+      }
+      /** @type {boolean[]} */
+      const open = [];
+      for (let i = rows.length - 1; i >= 0; i--) {
+        const d = depthOf(rows[i]);
+        let s = "";
+        for (let l = 1; l < d; l++) s += open[l] ? GUIDE_BAR : GUIDE_GAP;
+        if (d) s += open[d] ? GUIDE_TEE : GUIDE_ELL;
+        out[i] = s;
+        open[d] = true;
+        open.length = d + 1;
+      }
+      if (out.length) out[0] = blankIndent(rows[0]);
+      return out;
+    }
+
+    /**
+     * The guides the window is being drawn against, one entry per row of the
+     * page. Rebuilt with the rows and reused while the window slides over them,
+     * so scrolling costs nothing and a page turn costs one pass.
+     * @type {string[]|null}
+     */
+    let guides = null;
 
     /**
      * The tag vocabulary, derived once per row set: the tags themselves, the
@@ -1390,10 +1534,21 @@
       const cols = columns(), primary = state.sortKeys[0];
       const w = cols.map((c) =>
         String(c.header || c.key).length + (primary && primary.column === c.key ? 2 : 0));
+      // A guided cell wears its indent ahead of its text, which the cached
+      // lengths know nothing about. Measured over the whole filtered set like
+      // every other width, and per row rather than off the deepest one, so a
+      // deep row with a short title costs the column nothing.
+      const ti = treeColumn(), per = levelWidth();
+      let tw = 0;
       for (const r of ordered()) {
         const len = rowText(r).len;
         for (let i = 0; i < w.length; i++) if (len[i] > w[i]) w[i] = len[i];
+        if (ti !== -1) {
+          const t = len[ti] + per * depthOf(r);
+          if (t > tw) tw = t;
+        }
       }
+      if (ti !== -1 && tw > w[ti]) w[ti] = tw;
       // A badge cell draws a pill around its text, whose padding the cached
       // length knows nothing about.
       for (let i = 0; i < cols.length; i++) if (cols[i].type === "badge") w[i] += PILL_CH;
@@ -1430,6 +1585,7 @@
       headRow.innerHTML = "";
       colEls = [];
       arrowEls = [];
+      treeAt = undefined;          // a different set of columns to find it among
       // The mark column leads and is nobody's column: it is left out of
       // `colEls' and `arrowEls', which stay one entry per column the view
       // declared, so widths and sort arrows keep indexing what they always did.
@@ -1478,11 +1634,16 @@
       const cols = columns(), cs = r.cells || {};
       const on = r.id === state.selected;
       const multi = multiColumn();
+      // The guide is drawn ahead of the cell's own text and inside its td, so
+      // the row's grounds — zebra, mark, selection — and the cell selection's
+      // outline all still describe the whole cell.
+      const ti = treeColumn(), guide = ti !== -1 && guides ? guides[i] : "";
       let tds = marks ? `<td class="tv-box"></td>` : "";
       for (let c = 0; c < cols.length; c++) {
         const cell = (cols[c].align === "right" ? "tv-right" : "")
                    + (on && c === state.selCol ? " tv-cell-sel" : "");
         tds += `<td class="${cell}">`
+             + (c === ti && guide ? `<span class="tv-guide">${guide}</span>` : "")
              + `${cellHTML(cols[c], cs[cols[c].key], dark, c === multi)}</td>`;
       }
       const cls = (i % 2 ? " tv-alt" : "") + (isMarked(r.id) ? " tv-marked" : "")
@@ -1516,6 +1677,10 @@
       if (!force && first === win.first && last === win.last) return;
       win.first = first;
       win.last = last;
+      // The guides describe the page, and FORCE is what every mutator — and a
+      // page turn — redraws with. Scrolling reuses them, so sliding the window
+      // over 13k rows costs no pass over them.
+      if (treeColumn() !== -1 && (force || !guides)) guides = treeGuides(rows);
 
       let html = first > 0 ? padHTML(first * rowH) : "";
       for (let i = first; i < last; i++) html += rowHTML(rows[i], i);
