@@ -336,6 +336,10 @@ hands the query to the producer, and whatever `setRows` delivers is what shows.
 | `openFilter()`     | summon the filter — raises the palette, or focuses the resident box |
 | `closeFilter()`    | dismiss it and give the keyboard back to the table            |
 | `stripLastToken()` | drop the typed text, else the last chip, and reapply; false if nothing was left |
+| `toggleMark(id)`   | mark that row, or unmark it; returns the state it landed in   |
+| `getMarked()`      | the marked ids: those on show in display order, then the rest |
+| `clearMarks()`     | take every mark off                                            |
+| `markedCount()`    | how many rows are marked, the hidden ones counted             |
 | `el`               | the root element, which also emits the two CustomEvents        |
 
 ### Theme and layering
@@ -344,8 +348,8 @@ Theme is a handshake and the page leads: set `data-theme="dark"` or `"light"`
 on `<html>` and that decides; with neither, `prefers-color-scheme` does. Both
 are watched, so toggling the attribute repaints without a remount.
 
-One z-band, so a consumer knows what it is layering against — row marks at 1,
-the suggestion list at 5, the palette backdrop at 90 and its panel at 91.
+One z-band, so a consumer knows what it is layering against — the selection's
+marks at 1, the suggestion list at 5, the palette backdrop at 90 and its panel at 91.
 Nothing goes higher: 100 and up is yours, and a consumer's own modal is meant
 to win over the palette.
 
@@ -362,6 +366,45 @@ one RET and a double click run — selecting the cell under the finger first.
 Drift past 10px or a scroll of any size calls it off, because every touch on a
 list might be the start of a scroll; only the touchend that completes a press is
 swallowed, so no click or context menu follows the action.
+
+### Row marking
+
+Pass **`marks: true`** for dired's row marking. Every row gets a leading
+checkbox — chrome, the way the pager is, so `columns` and `cells` mean exactly
+what they meant and SCHEMA.md goes on calling marking renderer-local. Its header
+is blank, its box is org's own `[ ]`/`[X]` drawn from the row's class, and a
+click on it toggles that row **without moving the selection**: a mark is a
+standing choice about a row and says nothing about where the cursor is. On a
+coarse pointer the box widens to a 44px target and takes the tap; the long
+press that runs a row's default action belongs to the rest of the row.
+
+Without the option the chrome is not merely hidden — one predicate gates the
+column, the wash and the count together, so a consumer who never asked for
+marking cannot get half of it.
+
+Marks are keyed by `id` and held apart from the rows, so one survives a
+`setRows`, an `upsertRow`, a filter that hides its row, a page it is not on and
+a re-sort. `deleteRow` and a delta's `delete` take the mark with the row;
+`setView` drops all of them with the view. `getMarked()` reads the rows on show
+first, in display order, then the hidden ones in the order they were marked —
+stable, so a bulk action over it runs the same way twice.
+
+While anything is marked the status line leads with `N marked · `, counting
+**every** mark — the ones a filter or a page is hiding included, since that is
+the number a bulk action would run over. The rest of the line is unchanged.
+
+A marked row wears a wash of `--tv-muted`, which is neither of the two washes
+that already mean something: frost is the applied filter and `--tv-sel` is the
+cursor. It replaces the zebra stripe rather than layering over it — one
+background slot, and a mark outranks a stripe — while the cursor's rule follows
+the mark's, so a row wearing both reads as the cursor and keeps its checked box,
+the way dired draws its mark under point. The wash is faint because the floor
+binds: the tag ink is `--tv-muted` too, so each theme washes only as far as that
+ink stays above 4.5:1 on it.
+
+**The keys stay yours** — nothing here binds them. `table-view.el` spells them
+`m` (toggle and advance), `u` (unmark and advance) and `U` (unmark all); bind
+those to `toggleMark`/`clearMarks` and the two renderers rhyme.
 
 ### Paging
 

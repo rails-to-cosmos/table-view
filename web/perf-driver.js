@@ -123,8 +123,14 @@ const mixed = (a, b, t) => "#" + rgb(a)
  * as much a palette decision as a colour.
  * @param {string} rule  the selector text, up to and including its `{'
  */
+/** Every stylesheet the renderer injected, as one string. */
+const cssText = () => document.head.children.map((e) => e.text).join("");
+
+/** A CSS percentage as a fraction. */
+const pctOf = (v) => Number(String(v).replace("%", "")) / 100;
+
 function paletteIn(rule) {
-  const css = document.head.children.map((e) => e.text).join("");
+  const css = cssText();
   const at = css.indexOf(rule);
   if (at === -1) return {};
   const decl = css.slice(at + rule.length, css.indexOf("}", at));
@@ -145,8 +151,7 @@ function chipIn(theme) {
   const p = paletteIn(`:root[data-theme="${theme}"] .tv-root{`);
   const frost = p.frost || paletteIn(".tv-root{").frost;
   const ground = p.bg || paletteIn(".tv-root{").bg;
-  const pct = (v) => Number(String(v).replace("%", "")) / 100;
-  const washPct = pct(p["chip-wash"]), edgePct = pct(p["chip-edge"]);
+  const washPct = pctOf(p["chip-wash"]), edgePct = pctOf(p["chip-edge"]);
   return { frost, ground, washPct, edgePct,
            wash: mixed(ground, frost, washPct),
            edge: mixed(ground, frost, edgePct) };
@@ -717,6 +722,176 @@ async function metaValues() {
   });
   check("a multi column still offers its vocabulary, counted",
         [M.type("tag:"), M.counts()], [["api", "web"], [1, 2]]);
+}
+
+/** Six rows with two columns, which is enough to page, filter and sort over. */
+const MARK_VIEW = {
+  title: "marks",
+  columns: [{ key: "state", header: "State", type: "text", sortable: true },
+            { key: "title", header: "Headline", type: "text" }],
+  rows: [["a", "TODO", "alpha"], ["b", "DONE", "bravo"], ["c", "TODO", "charlie"],
+         ["d", "DONE", "delta"], ["e", "TODO", "echo"], ["f", "DONE", "foxtrot"]]
+    .map(([id, state, title]) => ({ id, cells: { state, title } })),
+};
+
+/**
+ * Row marking: the chrome column, what a mark survives, and the ground it puts
+ * a row on. The feature is renderer-local by SCHEMA, so everything here is
+ * about the renderer's own surface — no cell, column or op changes shape.
+ */
+async function rowMarks() {
+  console.log("\n== row marks");
+
+  // --- without the option, nothing at all — and nothing a consumer can turn on
+  //     by accident: the calls are on the handle either way (as `nextPage' is
+  //     with no page size), so the check is that using one paints nothing.
+  {
+    const off = driver(10);
+    check("no marks option, no mark column", off.box.querySelectorAll(".tv-box").length, 0);
+    check("and a row is one cell per declared column",
+          off.box.querySelector("tbody tr[data-id]").children.length, columns.length);
+    off.handle.toggleMark(off.handle.getVisible()[0].id);
+    await painted();
+    check("marking without the option washes no row",
+          off.box.querySelectorAll("tr.tv-marked").length, 0);
+    check("and puts no count on the line",
+          off.box.querySelector(".tv-hint").textContent.indexOf("marked"), -1);
+  }
+
+  // --- the chrome
+  const M = driver(10, { marks: true });
+  const rows = () => M.box.querySelectorAll(".tv-table tbody tr[data-id]");
+  const washed = () => rows().filter((tr) => tr.classes.has("tv-marked"));
+  const hint = () => M.box.querySelector(".tv-hint").textContent;
+  check("marks:true leads the header with a blank box cell",
+        [M.box.querySelectorAll("thead th").length, M.box.querySelector("th.tv-box").text],
+        [columns.length + 1, ""]);
+  check("and every row with a box cell of its own",
+        M.box.querySelectorAll("tbody td.tv-box").length, 10);
+  // The glyph is the class's, drawn by ::before, so the cell itself is empty
+  // and the state has one home rather than two that can disagree.
+  check("which the markup leaves empty, the class carrying the state",
+        [rows()[0].children[0].text, washed().length], ["", 0]);
+  check("the hint line is untouched while nothing is marked",
+        hint(), "10 rows · sort scheduled asc" + ACT);
+  {
+    const css = cssText();
+    check("the box glyph is drawn off the class, both states",
+          [css.indexOf('td.tv-box::before{content:"[ ]"}') !== -1,
+           css.indexOf('tr.tv-marked td.tv-box::before{content:"[X]"}') !== -1],
+          [true, true]);
+  }
+
+  // --- toggling, and what it answers
+  const ids = M.handle.getVisible().map((r) => r.id);
+  check("toggleMark answers the state it landed in",
+        [M.handle.toggleMark(ids[2]), M.handle.toggleMark(ids[2])], [true, false]);
+  check("and leaves nothing behind it", M.handle.markedCount(), 0);
+
+  M.handle.toggleMark(ids[1]);
+  M.handle.toggleMark(ids[3]);
+  await painted();
+  check("a marked row wears the wash class, which is what checks its box",
+        washed().map((tr) => tr.dataset.id), [ids[1], ids[3]]);
+  check("the count leads the hint line, ahead of what is merely on show",
+        hint(), "2 marked · 10 rows · sort scheduled asc" + ACT);
+
+  // --- the pointer: the box is a toggle, and the only cell that is not a
+  //     selection. Everything past it still selects, one column over.
+  M.handle.select(ids[0]);
+  await painted();
+  rows()[3].children[0].click();
+  await painted();
+  check("a click on the box toggles that row", M.handle.getMarked(), [ids[1]]);
+  check("and leaves the cursor where the reader put it", M.handle.getSelection().id, ids[0]);
+  rows()[5].children[3].click();
+  await painted();
+  check("a click past the box selects the column it landed on, counted past it",
+        [M.handle.getSelection().id, M.handle.getSelection().col], [ids[5], 2]);
+  check("and the cell mark lands on that td rather than one over",
+        rows()[5].children.findIndex((td) => td.classes.has("tv-cell-sel")), 3);
+
+  // --- the survival matrix. A mark is an entry in a set of ids, which is why
+  //     it outlives every re-derivation of the rows and only its row's death.
+  {
+    const S = driver(MARK_VIEW, { marks: true, pageSize: 4 });
+    const h = S.handle;
+    h.toggleMark("e");                 // page two, marked first
+    h.toggleMark("b");                 // page one, marked second
+    check("getMarked reads the shown rows first, whatever order they were marked",
+          h.getMarked(), ["b", "e"]);
+    check("and a mark on a page nobody is looking at still counts", h.markedCount(), 2);
+
+    h.upsertRow({ id: "b", cells: { state: "WAIT", title: "bravo again" } });
+    check("an upsert of a marked id keeps its mark", h.getMarked(), ["b", "e"]);
+    h.setRows(MARK_VIEW.rows.slice());
+    check("setRows keeps the marks whose ids came back", h.getMarked(), ["b", "e"]);
+
+    S.shown("charlie");                // a filter that hides both marked rows
+    check("a filter hiding them leaves them marked", h.markedCount(), 2);
+    check("with the shown half empty, getMarked is mark order",
+          h.getMarked(), ["e", "b"]);
+    check("and the line counts every mark, not the ones on show",
+          S.box.querySelector(".tv-hint").textContent, "2 marked · 1/6 rows · unsorted");
+
+    S.reset();
+    check("a page flip keeps them", [h.nextPage(), h.markedCount()], [true, 2]);
+    S.box.querySelector("th[data-key=state]").click();
+    await painted();
+    check("a re-sort keeps them", h.getMarked().sort(), ["b", "e"]);
+
+    h.deleteRow("b");
+    check("deleteRow takes its mark with it", [h.markedCount(), h.getMarked()], [1, ["e"]]);
+    h.clearMarks();
+    check("clearMarks takes the rest", h.markedCount(), 0);
+  }
+
+  // --- the two other ways a row or a view goes away
+  {
+    const D = driver(MARK_VIEW, { marks: true });
+    D.handle.toggleMark("c");
+    D.handle.applyDelta([{ op: "delete", index: 2 }]);      // `c' is the window's third
+    check("a delta's delete drops the mark with the row",
+          [D.handle.markedCount(), D.handle.getRows().length], [0, 5]);
+
+    const N = driver(MARK_VIEW, { marks: true });
+    N.handle.toggleMark("a");
+    N.handle.setView(MARK_VIEW);
+    check("setView drops them with the view they were about", N.handle.markedCount(), 0);
+  }
+
+  // --- the spacers span the chrome, or the virtualized table splits in two
+  {
+    const tall = driver(60, { marks: true }, 300);
+    const pad = tall.box.querySelector("tbody tr.tv-pad td");
+    check("a spacer spans the mark column as well as the data ones",
+          pad.attrs.get("colspan"), String(columns.length + 1));
+  }
+
+  // --- the ground: its own wash, and the ink still legible on it
+  {
+    const css = cssText();
+    const at = css.indexOf(".tv-table tbody tr.tv-marked{\n"
+                         + "  background:color-mix(in srgb,var(--tv-muted) var(--tv-mark-wash)");
+    // One `indexOf' for both halves — that the rule exists, and that what it
+    // washes is the muted ink rather than the frost, which is the applied
+    // filter's identity. Read as an offset, since the ordering check below
+    // compares against it and -1 would let anything past.
+    check("the marked row washes the muted ink, in a rule of its own", at !== -1, true);
+    // The cursor is the other role, and it is the one that wins on a row
+    // wearing both: its rule follows, at equal specificity.
+    check("and the cursor's rule follows it", css.indexOf("tr.tv-sel{background") > at, true);
+    for (const theme of ["light", "dark"]) {
+      const p = paletteIn(`:root[data-theme="${theme}"] .tv-root{`);
+      const ground = mixed(p.bg, p.muted, pctOf(p["mark-wash"]));
+      check(theme + ": the mark ground is neither the page's nor the cursor's",
+            [ground === p.bg, ground === p.sel], [false, false]);
+      // The tag ink IS the colour being washed, so it is the floor that binds:
+      // body text on this ground can only be further from it.
+      check(theme + ": the muted ink the wash is made of still clears AA on it",
+            ratio(p.muted, ground) >= 4.5, true);
+    }
+  }
 }
 
 // ---- benchmark -------------------------------------------------------------
@@ -2878,6 +3053,9 @@ async function virtualKeys() {
     check("there is a coarse-pointer block", coarse.indexOf("@media (pointer:coarse){"), 0);
     for (const [what, rule] of [
       ["rows grow by padding", ".tv-table th,.tv-table td{padding:12px}"],
+      // The one target a finger has to hit dead on: three characters of box are
+      // narrower than a fingertip whatever the padding does for the height.
+      ["and the mark box widens to a real target", ".tv-table td.tv-box{min-width:44px}"],
       ["suggestions too", ".tv-ac-item{padding:12px 12px}"],
       ["and chips", ".tv-chip{padding:13px 8px 13px 12px}"],
       ["the remove mark stops waiting for a hover", ".tv-chip-x{opacity:1"],
@@ -2956,6 +3134,31 @@ async function virtualKeys() {
     sc2.dispatchEvent(new Ev("scroll"));
     await sleep(600);
     check("and a scroll calls it off outright", seen.length, 0);
+
+    // The mark box takes no long press: a finger resting on it is still aiming
+    // at it, and the touchend that completed a press would swallow the click
+    // the toggle arrives on — leaving the box unreachable on the one pointer
+    // its 44px target exists for.
+    {
+      const mbox = new El("div");
+      const acts = [];
+      const mt = TableView.mount(mbox, view(40), {
+        marks: true, onAction: (command, id2) => acts.push(command + " " + id2),
+      });
+      mbox.querySelector(".tv-scroll").clientHeight = 600;
+      const mrow = mbox.querySelectorAll(".tv-table tbody tr[data-id]")[3];
+      mrow.children[0].dispatchEvent(
+        new Ev("touchstart", { touches: [{ clientX: 10, clientY: 10 }] }));
+      await sleep(600);
+      check("a long press on the box runs no row action",
+            [acts.length, mt.getSelection().id], [0, null]);
+      const tap = new Ev("touchend", { touches: [] });
+      mrow.dispatchEvent(tap);
+      check("and its touchend is left alone, so the tap's click still lands",
+            tap.defaultPrevented, false);
+      mrow.children[0].click();
+      check("which is what checks the box", mt.getMarked(), [mrow.dataset.id]);
+    }
 
     // The ease still gives way to a finger — the regression that pass rests on.
     check("touchmove still cancels the scroll ease",
@@ -3399,6 +3602,7 @@ async function smoke() {
   await virtualKeys();
   await sortOrder();
   await metaValues();
+  await rowMarks();
 
   console.log("\n== the window");
   // The header and a row measure differently, and everything below sums over

@@ -28,6 +28,10 @@
  *   tv.nextPage(); tv.previousPage();    // turn a page -> bool
  *   tv.pageInfo();        // { page, pages, from, to, total } over the filtered set
  *
+ *   tv.toggleMark(id);    // mark or unmark a row -> the state it landed in
+ *   tv.getMarked();       // the marked ids: those on show first, then the rest
+ *   tv.clearMarks(); tv.markedCount();
+ *
  *   TableView.parseQuery(q, keys)         // SCHEMA.md's filter micro-syntax
  *   // -> [{ negated, key, value, quoted, start, end, sep }, ...]
  *   TableView.displayText(cell)           // a cell as the table writes it
@@ -45,8 +49,8 @@
  *   `"light"' on `<html>' decides, and only with neither does
  *   `prefers-color-scheme' get a say. Both are watched, so a page toggling the
  *   attribute repaints without a remount.
- * - One z-band, so a consumer knows what it is layering against: the row marks
- *   sit at 1, the suggestion list at 5, the palette backdrop at 90 and its
+ * - One z-band, so a consumer knows what it is layering against: the selection's
+ *   marks sit at 1, the suggestion list at 5, the palette backdrop at 90 and its
  *   panel at 91. Nothing here goes higher — a consumer's own modal is meant to
  *   win over the palette, materialize sheets included.
  * - Which column is multi-valued is resolved once and read everywhere: a
@@ -111,6 +115,17 @@
  *   uses, and the dropdown wears a tag the same way wherever it names one. It
  *   is presentation only: what is searched, sorted and measured is still the
  *   text the producer sent.
+ * - `marks: true' adds dired's row marking, and a fourth row ground with it.
+ *   The chrome is a leading checkbox column — presentation like the pager, so
+ *   the cells and columns a producer sends are untouched and SCHEMA.md keeps
+ *   calling marking renderer-local. Its header is blank, its box is org's own
+ *   `[ ]'/`[X]' drawn from the row's class, and a click on it toggles that row
+ *   without moving the selection. Marks are id-keyed, so they outlive
+ *   `setRows', an upsert, a filter, a page flip and a sort; `deleteRow' and a
+ *   delta's delete drop the mark with the row, and `setView' drops all of them
+ *   with the view. One predicate gates the class, the box and the count, so
+ *   without the option there is nothing to hide rather than something hidden.
+ *   Why the ground is what it is: the CSS rule, `tr.tv-marked'.
  * - Rows are virtualized. `tbody` holds the scrolled-to window plus ~15 rows of
  *   overscan, between two spacer rows standing in for the height of the rest.
  *   Rows outside the window have no DOM: drive selection with `select(id)`
@@ -242,6 +257,7 @@
  *             onFilter?: (q: string) => void,
  *             omnibox?: boolean,
  *             palette?: boolean,
+ *             marks?: boolean,
  *             pageSize?: number,
  *             initialQuery?: string }} MountOptions
  * @typedef {{ el: HTMLElement,
@@ -262,7 +278,11 @@
  *             nextPage: () => boolean,
  *             previousPage: () => boolean,
  *             pageInfo: () => { page: number, pages: number,
- *                               from: number, to: number, total: number } }} Handle
+ *                               from: number, to: number, total: number },
+ *             toggleMark: (id: string) => boolean,
+ *             getMarked: () => string[],
+ *             clearMarks: () => void,
+ *             markedCount: () => number }} Handle
  *   What `mount' returns.
  * @typedef {{ search: string, len: number[], cells: string[] }} RowText
  *   A row's cached display data: every cell's text lowercased and joined with
@@ -630,18 +650,18 @@
    against 1.80:1) — the quieter of the two. Every rule is 1px. */
 .tv-root{--tv-fg:#000000;--tv-muted:#667071;--tv-bg:#FFFFFF;--tv-alt:#F8F8FF;
   --tv-border:#E3E6EA;--tv-accent:#31769F;--tv-sel:#F0FFF0;--tv-hover:#FAFAFA;
-  --tv-frost:${FROST};--tv-chip-wash:45%;--tv-chip-edge:95%;
+  --tv-frost:${FROST};--tv-chip-wash:45%;--tv-chip-edge:95%;--tv-mark-wash:8%;
   color:var(--tv-fg);background:var(--tv-bg);font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
   border:1px solid var(--tv-border);border-radius:8px;overflow:hidden;display:flex;flex-direction:column;max-height:100%}
 @media (prefers-color-scheme:dark){.tv-root{--tv-fg:#FFFFFF;--tv-muted:#A4C2EB;--tv-bg:#000000;
   --tv-alt:#21252B;--tv-border:#2a2d3d;--tv-accent:#4CB5F5;--tv-sel:#373D4F;
-  --tv-hover:#1F1F1F;--tv-chip-wash:18%;--tv-chip-edge:34%;}}
+  --tv-hover:#1F1F1F;--tv-chip-wash:18%;--tv-chip-edge:34%;--tv-mark-wash:30%;}}
 :root[data-theme="dark"] .tv-root{--tv-fg:#FFFFFF;--tv-muted:#A4C2EB;--tv-bg:#000000;
   --tv-alt:#21252B;--tv-border:#2a2d3d;--tv-accent:#4CB5F5;--tv-sel:#373D4F;
-  --tv-hover:#1F1F1F;--tv-chip-wash:18%;--tv-chip-edge:34%;}
+  --tv-hover:#1F1F1F;--tv-chip-wash:18%;--tv-chip-edge:34%;--tv-mark-wash:30%;}
 :root[data-theme="light"] .tv-root{--tv-fg:#000000;--tv-muted:#667071;--tv-bg:#FFFFFF;--tv-alt:#F8F8FF;
   --tv-border:#E3E6EA;--tv-accent:#31769F;--tv-sel:#F0FFF0;--tv-hover:#FAFAFA;
-  --tv-chip-wash:45%;--tv-chip-edge:95%}
+  --tv-chip-wash:45%;--tv-chip-edge:95%;--tv-mark-wash:8%}
 .tv-bar{display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:1px solid var(--tv-border);flex-wrap:wrap}
 .tv-title{font-weight:600;font-size:14px;margin-right:auto}
 .tv-filter{font:inherit;padding:4px 8px;border:1px solid var(--tv-border);border-radius:6px;
@@ -711,7 +731,27 @@
 .tv-table th.tv-sortable:hover{color:var(--tv-accent)}
 .tv-table td.tv-right,.tv-table th.tv-right{text-align:right;font-variant-numeric:tabular-nums}
 .tv-table tbody tr.tv-alt{background:var(--tv-alt)}
+/* A marked row's ground: the muted ink washed over the page's. It REPLACES the
+   zebra rather than layering over it — one background slot, and a mark outranks
+   a stripe — and it is neither of the washes that already say something, frost
+   being the applied filter and --tv-sel the cursor. The cursor's rule follows
+   this one, so a row that is both reads as the cursor and keeps its checked
+   box. Faint because the floor binds: the tag ink is --tv-muted too, so each
+   theme washes only as far as that ink stays above 4.5:1 on it (light 4.6,
+   dark 6.3). */
+.tv-table tbody tr.tv-marked{
+  background:color-mix(in srgb,var(--tv-muted) var(--tv-mark-wash),transparent)}
 .tv-table tbody tr.tv-sel{background:var(--tv-sel)}
+/* The mark column is chrome, the way the pager is: a fixed leading box that no
+   producer sent and no width measurement sees. Blank header, org's own checkbox
+   for a cell, and the box brightens on the rows it is checked on. The glyph is
+   drawn from the row's class rather than written into the cell, so the state
+   has one home: the class the row already carries. */
+.tv-table th.tv-box,.tv-table td.tv-box{width:3ch;color:var(--tv-muted);user-select:none}
+.tv-table td.tv-box{cursor:pointer}
+.tv-table td.tv-box::before{content:"[ ]"}
+.tv-table tbody tr.tv-marked td.tv-box{color:var(--tv-fg)}
+.tv-table tbody tr.tv-marked td.tv-box::before{content:"[X]"}
 /* The selection is the row, and it crossfades in place — no overlay to keep in
    step with the rows underneath it. */
 .tv-table tbody tr,.tv-table tbody td{transition:background-color .08s ease-out,
@@ -748,6 +788,7 @@
    behind a hover nobody can perform. */
 @media (pointer:coarse){
   .tv-table th,.tv-table td{padding:12px}
+  .tv-table td.tv-box{min-width:44px}
   .tv-ac-item{padding:12px 12px}
   .tv-chip{padding:13px 8px 13px 12px}
   .tv-chip-x{opacity:1;padding:0 8px}
@@ -774,6 +815,11 @@
     const o = opts || {};   // narrowing sticks in closures (a reassigned param would not)
     const omnibox = o.omnibox === true;
     const palette = o.palette === true;
+    const marks = o.marks === true;
+    /** How many chrome cells lead a row; what a column index has to skip. */
+    const chrome = marks ? 1 : 0;
+    /** The marked ids. @type {Set<string>} */
+    const marked = new Set();
     /** Rows per page, or 0 for the whole set at once — which is every consumer
      *  that has not asked otherwise. */
     const pageSize = Math.max(0, Math.trunc(Number(o.pageSize) || 0));
@@ -1384,6 +1430,15 @@
       headRow.innerHTML = "";
       colEls = [];
       arrowEls = [];
+      // The mark column leads and is nobody's column: it is left out of
+      // `colEls' and `arrowEls', which stay one entry per column the view
+      // declared, so widths and sort arrows keep indexing what they always did.
+      if (marks) {
+        colgroup.appendChild(document.createElement("col"));
+        const box = document.createElement("th");
+        box.className = "tv-box";      // blank: the count is the hint line's
+        headRow.appendChild(box);
+      }
       for (const c of columns()) {
         const col = document.createElement("col");
         colgroup.appendChild(col);
@@ -1423,20 +1478,22 @@
       const cols = columns(), cs = r.cells || {};
       const on = r.id === state.selected;
       const multi = multiColumn();
-      let tds = "";
+      let tds = marks ? `<td class="tv-box"></td>` : "";
       for (let c = 0; c < cols.length; c++) {
         const cell = (cols[c].align === "right" ? "tv-right" : "")
                    + (on && c === state.selCol ? " tv-cell-sel" : "");
         tds += `<td class="${cell}">`
              + `${cellHTML(cols[c], cs[cols[c].key], dark, c === multi)}</td>`;
       }
-      const cls = (i % 2 ? " tv-alt" : "") + (on ? " tv-sel" : "");
+      const cls = (i % 2 ? " tv-alt" : "") + (isMarked(r.id) ? " tv-marked" : "")
+                + (on ? " tv-sel" : "");
       return `<tr class="${cls}" data-id="${esc(r.id)}">${tds}</tr>`;
     }
 
     /** A spacer row H pixels tall, standing in for the rows outside the window. */
     function padHTML(h) {
-      return `<tr class="tv-pad" style="height:${h}px"><td colspan="${columns().length}"></td></tr>`;
+      return `<tr class="tv-pad" style="height:${h}px">`
+           + `<td colspan="${columns().length + chrome}"></td></tr>`;
     }
 
     /**
@@ -1468,8 +1525,14 @@
       applyWidths();
       table.style.display = total ? "" : "none";
       empty.style.display = total ? "none" : "";
-      hint.innerHTML = hintHTML(ordered().length);
+      renderHint();
       measure();
+    }
+
+    /** The status line, off the state it reads; clears whoever asked for it. */
+    function renderHint() {
+      wantHint = false;
+      hint.innerHTML = hintHTML(ordered().length);
     }
 
     /** Re-read the row and header heights the spacers are sized from. */
@@ -1555,7 +1618,11 @@
         if (!a.key) continue;
         out += ` · <b class="tv-key">${esc(a.key)}</b> ${esc(a.label || a.command)}`;
       }
-      return out;
+      // A standing choice leads the line, ahead of what is merely on show: the
+      // count is of every mark, the ones a filter or a page is hiding included,
+      // which is the number a bulk action would run over. Nothing marked and the
+      // line is the line it has always been.
+      return marks && marked.size ? `${esc(grouped(marked.size))} marked · ${out}` : out;
     }
 
     /**
@@ -1612,19 +1679,86 @@
       return rows.findIndex((r) => r.id === state.selected);
     }
 
-    /** The `tv-sel' and `tv-cell-sel' classes over the rendered window. */
+    /**
+     * The row state the window wears — `tv-sel', `tv-cell-sel' and `tv-marked'
+     * — re-derived from the state rather than rebuilt, which is what leaves the
+     * grounds something to crossfade between. One pass for all three, since a
+     * toggle and a step arrive in the same frame, and three `classList.toggle's
+     * rather than any DOM write: each is a no-op where the state already
+     * matches, so a held movement key rewrites nothing.
+     */
     function stampSelection() {
       const id = state.selected;
       for (let i = 0; i < tbody.children.length; i++) {
         const tr = /** @type {HTMLElement} */ (tbody.children[i]);
-        if (tr.dataset.id === undefined) continue;
-        const on = id !== null && tr.dataset.id === id;
+        const rowId = tr.dataset.id;
+        if (rowId === undefined) continue;
+        const on = id !== null && rowId === id;
         tr.classList.toggle("tv-sel", on);
-        for (let c = 0; c < tr.children.length; c++)
-          tr.children[c].classList.toggle("tv-cell-sel", on && c === state.selCol);
+        tr.classList.toggle("tv-marked", isMarked(rowId));
+        // The chrome cell is nobody's column, so the column a cell selection
+        // names is counted past it.
+        for (let c = chrome; c < tr.children.length; c++)
+          tr.children[c].classList.toggle("tv-cell-sel", on && c - chrome === state.selCol);
       }
     }
 
+
+    // ---- marks -------------------------------------------------------------
+    // Dired's, and kept the way dired keeps them: a set of ids that owes the
+    // rows nothing. A row can be re-sent, re-sorted, filtered away or paged past
+    // and its mark is still the same entry in the same set — which is the whole
+    // reason marking is keyed by `id' and not by a row object or an index.
+
+    /**
+     * Does ID wear a mark the table is drawing? One predicate for the class,
+     * the box and the count, so the option gates all three together: without
+     * `marks' the chrome is not merely hidden, there is nothing to hide.
+     * @param {string} id
+     */
+    function isMarked(id) { return marks && marked.has(id); }
+
+    /** Mark ID, or unmark it. @param {string} id  @returns {boolean} its new state */
+    function toggleMark(id) {
+      const on = !marked.has(id);
+      if (on) marked.add(id); else marked.delete(id);
+      paintMarks();
+      return on;
+    }
+
+    /** Take every mark off. */
+    function clearMarks() {
+      if (!marked.size) return;
+      marked.clear();
+      paintMarks();
+    }
+
+    /**
+     * The marked ids, in the order a reader would read them off: the ones on
+     * show, in display order, then the ones a filter or another page is hiding,
+     * in the order they were marked. Stable either way — a bulk action over this
+     * runs in the same order twice.
+     * @returns {string[]}
+     */
+    function getMarked() {
+      const out = paged().filter((r) => marked.has(r.id)).map((r) => r.id);
+      const shown = new Set(out);
+      for (const id of marked) if (!shown.has(id)) out.push(id);
+      return out;
+    }
+
+    /**
+     * Repaint what a mark moved: the grounds, the boxes and the count, all
+     * through the frame the selection already uses. The count needs asking for
+     * separately because `renderRows' turns back at the door when the window
+     * has not moved, which is the common case for a toggle — and a held `m'
+     * would otherwise rewrite the status line thirty times a second.
+     */
+    function paintMarks() {
+      wantSelection = true;
+      wantHint = true;
+      schedule();
+    }
 
     /**
      * Select the row with ID, scrolling its place in the (virtual) list into
@@ -1677,6 +1811,7 @@
     let frameId = 0;
     let wantWindow = false;      // the scroll moved; re-window if it has to
     let wantSelection = false;   // the selection moved; re-stamp the marks
+    let wantHint = false;        // the count moved; rewrite the status line
     let easeAt = 0;              // where the viewport is heading
     let easing = false;
 
@@ -1696,6 +1831,9 @@
       // value.
       if (wantWindow || wantSelection) renderRows();
       if (wantSelection) stampSelection();
+      // `renderRows' writes the line when it gets that far and clears the flag
+      // doing it, so this is the toggle that never moved the window.
+      if (wantHint) renderHint();
       wantWindow = wantSelection = false;
       if (easing) schedule();
     }
@@ -1867,6 +2005,22 @@
     /** @param {Row[]} rows  @param {HTMLElement} tr */
     const rowOf = (rows, tr) => rows.find((r) => r.id === tr.dataset.id);
 
+    /**
+     * Which column of TR the cell TD is, or null where it is none — no cell at
+     * all, or the mark box, which is chrome and belongs to no column. One
+     * answer for both pointer paths, so the offset the chrome introduces is
+     * applied once rather than at every place a td is turned into an index.
+     * @param {HTMLElement} tr  @param {HTMLElement|null} td  @returns {number|null}
+     */
+    function colOf(tr, td) {
+      if (!td) return null;
+      const at = Array.prototype.indexOf.call(tr.children, td) - chrome;
+      return at < 0 ? null : at;
+    }
+
+    /** Is TARGET inside the mark box of a row this table is marking? */
+    const onBox = (target) => marks && !!target.closest("td.tv-box");
+
     // ---- events (delegated, attached once) ---------------------------------
 
     scroll.addEventListener("click", (e) => {
@@ -1883,9 +2037,15 @@
       if (th) { toggleSort(th.dataset.key); return; }
       const tr = /** @type {HTMLElement|null} */ (t.closest("tr[data-id]"));
       if (!tr) return;
-      const td = /** @type {HTMLElement|null} */ (t.closest("td"));
-      const at = td ? Array.prototype.indexOf.call(tr.children, td) : -1;
-      setSelected(tr.dataset.id ?? null, at === -1 ? null : at);
+      // The box is the one cell that is not a selection: a mark is a standing
+      // choice about a row and says nothing about where the cursor is, so
+      // checking one leaves the cursor where the reader put it.
+      if (onBox(t)) {
+        if (tr.dataset.id !== undefined) toggleMark(tr.dataset.id);
+        return;
+      }
+      setSelected(tr.dataset.id ?? null,
+                  colOf(tr, /** @type {HTMLElement|null} */ (t.closest("td"))));
     });
 
     // A long press is the touch reading of the row's default action — what RET
@@ -1906,18 +2066,23 @@
       const tr = t && /** @type {HTMLElement|null} */ (t.closest("tr[data-id]"));
       const touch = e.touches && e.touches[0];
       if (!tr || !touch) return;
+      // A finger resting on the box is still aiming at the box. Without this
+      // the press falls through to the row's default action, and the touchend
+      // that completes it swallows the click the toggle would have arrived on
+      // — so on the one pointer the 44px target was widened for, the box could
+      // not be checked at all.
+      if (onBox(t)) return;
       cancelPress();
       pressRan = false;
       pressOn = tr.dataset.id ?? null;
       pressX = touch.clientX;
       pressY = touch.clientY;
-      const td = /** @type {HTMLElement|null} */ (t.closest("td"));
-      const at = td ? Array.prototype.indexOf.call(tr.children, td) : -1;
+      const at = colOf(tr, /** @type {HTMLElement|null} */ (t.closest("td")));
       pressAt = setTimeout(() => {
         pressAt = 0;
         if (pressOn === null) return;
         pressRan = true;
-        setSelected(pressOn, at === -1 ? null : at);
+        setSelected(pressOn, at);
         const cmd = defaultCommand();
         if (cmd) dispatch(cmd, state.rows.find((r) => r.id === pressOn));
       }, LONG_PRESS);
@@ -2653,6 +2818,7 @@
         state.selected = null;
         state.selCol = null;
         state.filter = "";
+        marked.clear();          // a different view; these were about the last one
         chips = [];
         input.value = "";
         renderChips();
@@ -2663,7 +2829,16 @@
         scroll.scrollTop = 0;
         renderRows(true);
       },
-      /** @param {Row[]} rows */
+      /**
+       * Replace every row. Marks are deliberately NOT pruned against the new
+       * set: a producer that filters server-side answers a narrowed query
+       * through here, so an id that did not come back is a row being hidden
+       * rather than a row being deleted, and it has to still be marked when the
+       * filter comes off. A delta's `reset' is the same op and keeps them for
+       * the same reason; `deleteRow' and a delta's `delete' are the ones that
+       * say a row is gone, and those do drop it.
+       * @param {Row[]} rows
+       */
       setRows(rows) {
         state.rows = (rows || []).slice();
         clearTexts();
@@ -2687,6 +2862,7 @@
       /** @param {string} id */
       deleteRow(id) {
         state.rows = state.rows.filter((r) => r.id !== id);
+        marked.delete(id);       // the row is gone; a mark on it would outlive it
         texts.delete(id);
         dropDomains();
         if (sorted) unplace(sorted, id);
@@ -2717,6 +2893,7 @@
             const at = gone ? store(gone) : -1;
             if (at !== -1) {
               texts.delete(gone.id);
+              marked.delete(gone.id);      // as `deleteRow': the row is gone
               state.rows.splice(at, 1);
             }
           }
@@ -2755,6 +2932,11 @@
        * @returns {{page: number, pages: number, from: number, to: number, total: number}}
        */
       pageInfo,
+      toggleMark,
+      getMarked,
+      clearMarks,
+      /** How many rows are marked, the hidden ones counted. @returns {number} */
+      markedCount() { return marked.size; },
     };
   }
 

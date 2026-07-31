@@ -6,6 +6,29 @@ the rails-to-cosmos ELPA archive publishes date-stamped snapshots.
 ## Unreleased
 
 ### Added
+- Browser renderer: **row marking**, behind `marks: true` — dired's, and
+  `table-view.el`'s. A leading checkbox column, chrome the way the pager
+  is, so `columns` and `cells` are untouched and SCHEMA.md goes on
+  calling marking renderer-local; blank header, org's own `[ ]`/`[X]` for
+  a box (drawn from the row's class, so the state has one home and a held
+  movement key rewrites no cell), and a click on it toggles that row
+  without moving the selection. On a coarse pointer the box widens to a
+  44px target and takes the tap, the long press staying the row's.
+  Marks are keyed by `id` and held apart from the rows, so one survives a
+  `setRows`, an upsert, a filter that hides its row, a page it is not on
+  and a re-sort; `deleteRow` and a delta's `delete` take the mark with the
+  row, `setView` drops all of them. Handle: `toggleMark(id)` →
+  its new state, `getMarked()` (rows on show first in display order, then
+  the hidden ones in mark order), `clearMarks()`, `markedCount()`. The
+  status line leads with `N marked · `, counting every mark rather than
+  the shown ones. One predicate gates the column, the wash and the count,
+  so without the option there is nothing to hide rather than something
+  hidden. A marked row wears a wash of `--tv-muted` — neither the chips'
+  frost (the applied filter) nor `--tv-sel` (the cursor), whose rule
+  follows so a row that is both reads as the cursor and keeps its box; it
+  replaces the zebra stripe rather than layering over it. The wash is
+  faint because the tag ink *is* `--tv-muted`, so each theme washes only
+  as far as that ink stays above 4.5:1 on it (light 4.6, dark 6.3).
 - Browser renderer: Enter in the suggestion list is stage-aware.
   Completing a **key** (`ta` → `tag:`) keeps focus and reopens the list at
   that key's values with their counts, since `tag:` is half a predicate;
