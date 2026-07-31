@@ -124,6 +124,33 @@ delivers them.
   `next-cursor` / `prev-cursor`. Offset paging uses `offset`; keyset paging uses
   opaque cursors.
 
+## Filter query (optional)
+
+A shared micro-syntax for the filter box, so producers filtering server-side
+(see Paging) and renderers filtering locally agree. Tokens separate on
+whitespace (`&` accepted as an alias); each token is:
+
+- `key:value` — a field predicate, **only when `key` is a column `key`** of
+  the view (`=` accepted as an alias for `:`). Otherwise the token is free
+  text — org cell text like `:work:` or `=code=` never turns into a
+  predicate by accident.
+- `"quoted text"` — free text containing spaces.
+- `-token` — negation of either form.
+- anything else — free text, case-insensitive substring over the row's cells.
+
+Tokens AND together. Field-predicate semantics, by column type: `badge` —
+exact value match; a producer may add meta-values (e.g. glance's
+`state:active` / `state:inactive` matching keyword groups); `text`/`number` —
+case-insensitive substring; date-shaped text cells — prefix match
+(`scheduled:2026-08`), plus `none` for empty.
+
+**Autocomplete (renderer-local).** The renderer may suggest per stage: a
+bare word suggests matching column keys (completing to `key:`); after
+`key:`, that column's value domain — `values`, else the badge palette, else
+distinct cell values; producer meta-values arrive as ordinary `values`
+entries. Keyboard-first: arrows/Tab select, Enter accepts, Esc dismisses
+before it clears anything.
+
 ## Not part of the contract
 
 These are renderer-local behaviours, not producer output: row marking, narrowing,
