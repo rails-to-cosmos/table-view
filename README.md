@@ -316,6 +316,8 @@ hands the query to the producer, and whatever `setRows` delivers is what shows.
 | `select(id, col?)` | select that row — and optionally one cell of it — and scroll it into view; false if not visible |
 | `getSelection()`   | `{ id, col }`; `col` is `null` for a whole-row selection       |
 | `getQuery()`       | the filter query as last delivered (chips + what was committed) |
+| `openFilter()`     | summon the filter — raises the palette, or focuses the resident box |
+| `closeFilter()`    | dismiss it and give the keyboard back to the table            |
 | `stripLastToken()` | drop the typed text, else the last chip, and reapply; false if nothing was left |
 | `el`               | the root element, which also emits the two CustomEvents        |
 
@@ -419,6 +421,26 @@ Emacs minibuffer and vim's insert-mode completion agree on those. Platform
 reality: Chrome-family browsers take C-n for a new window before the page sees
 it, so the arrows are the fallback there; Firefox and system-webview shells
 deliver both.
+
+Pass **`palette: true`** to make the filter something you *summon*. The page
+keeps the chip row and nothing else — an unfiltered table carries no filter
+chrome at all — and `openFilter()` raises a centred overlay holding the input
+and its completions, the way a minibuffer or a Telescope prompt appears. Every
+ladder then ends one step further out:
+
+| key | in the palette |
+|-----|----------------|
+| **RET** | commit the token, dissolve, hand the table over |
+| **RET** on an empty box | dissolve and hand over |
+| **Escape** | close the list → drop the typed text → dissolve |
+| **Backspace** on an empty box | take a chip → … → dissolve |
+| click on the backdrop | as Escape |
+
+The applied chips render in the theme's selection golden (black on `#FFD600`),
+the association its own `ivy-current-match` and `company-tooltip-selection`
+faces make. `initialQuery`, `getQuery()` and `stripLastToken()` behave exactly
+as they do elsewhere — the chips are the same state, only styled. The overlay
+sits at `z-index` 90/91, leaving 100 and up for a consumer's own modal.
 
 Pass **`omnibox: true`** to make the filter the bar's centrepiece: the title and
 the placeholder go, the input takes the full width, and the applied chips move

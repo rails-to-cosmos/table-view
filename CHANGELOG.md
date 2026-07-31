@@ -6,6 +6,18 @@ the rails-to-cosmos ELPA archive publishes date-stamped snapshots.
 ## Unreleased
 
 ### Added
+- Browser renderer: `palette: true` mount option and `openFilter()` /
+  `closeFilter()` on the handle — the filter becomes something you
+  summon rather than something resident. The page keeps only the chip
+  row, so an unfiltered table carries no filter chrome at all, and
+  `openFilter()` raises a centred overlay (upper third, `min(560px,
+  80vw)`, hairline border, `z-index` 90/91 so a consumer's own modal at
+  100+ still wins) holding the input and its completions. Every ladder
+  ends one step further out: RET commits and dissolves, Escape goes list
+  → typed text → dissolve, Backspace goes chips → dissolve, and a click
+  on the backdrop is Escape. Applied chips render in the theme's
+  selection golden, black on `#FFD600`. It supersedes `omnibox`, which
+  stays for consumers that want the control on the page.
 - Browser renderer: `omnibox: true` mount option — the filter becomes the
   bar's centrepiece: no title, no placeholder, the input takes the full
   width, and the applied chips move to a row of their own beneath it that

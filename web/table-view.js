@@ -20,6 +20,7 @@
  *
  *   tv.getQuery();        // the query as last delivered
  *   tv.stripLastToken();  // drop the typed text, else the last chip -> bool
+ *   tv.openFilter(); tv.closeFilter();   // summon and dismiss the filter
  *
  *   TableView.parseQuery(q, keys)         // SCHEMA.md's filter micro-syntax
  *   // -> [{ negated, key, value, quoted, start, end, sep }, ...]
@@ -128,6 +129,15 @@
  *   running it is one keystroke and one delivery.
  *   Only a column completion starts highlighted, so Enter still commits the
  *   word as typed and an arrow is how you step into the offers.
+ * - `palette: true' makes the filter a thing you summon. The page keeps the
+ *   chip row and nothing else — an unfiltered table carries no filter chrome at
+ *   all — and `openFilter()' raises a centred overlay holding the control, the
+ *   way a minibuffer or a Telescope prompt appears. Every ladder ends one step
+ *   further out: RET commits and dissolves, Escape goes list, then text, then
+ *   dissolve, Backspace goes chips then dissolve, and a click on the backdrop
+ *   is Escape. The chips are the theme's selection golden, which is the
+ *   association its own ivy and company faces make. It supersedes `omnibox',
+ *   which stays for consumers that want the control resident.
  * - `omnibox: true' makes the filter the bar: no title, no placeholder, the
  *   control takes the width, and the applied chips move to a row of their own
  *   under it that collapses to nothing when empty. A consumer that does not
@@ -194,6 +204,7 @@
  *             onLink?: (target: string, row: Row | null) => void,
  *             onFilter?: (q: string) => void,
  *             omnibox?: boolean,
+ *             palette?: boolean,
  *             initialQuery?: string }} MountOptions
  * @typedef {{ el: HTMLElement,
  *             setView: (v: View) => void,
@@ -206,7 +217,9 @@
  *             select: (id: string, col?: number) => boolean,
  *             getSelection: () => { id: string|null, col: number|null },
  *             getQuery: () => string,
- *             stripLastToken: () => boolean }} Handle  What `mount' returns.
+ *             stripLastToken: () => boolean,
+ *             openFilter: () => void,
+ *             closeFilter: () => void }} Handle  What `mount' returns.
  * @typedef {{ search: string, len: number[], cells: string[] }} RowText
  *   A row's cached display data: every cell's text lowercased and joined with
  *   \x1f (free-text filtering searches it), each cell's length (column widths),
@@ -517,7 +530,24 @@
 /* Its own row under the box, and no gap at all when nothing is applied. The
    suggestion list is positioned and z-indexed, so it lays over this rather
    than being pushed down by it. */
-.tv-omni > .tv-chips{padding:8px 12px;border-bottom:1px solid var(--tv-border)}
+.tv-omni > .tv-chips,.tv-pal > .tv-chips{padding:8px 12px;
+  border-bottom:1px solid var(--tv-border)}
+/* Palette: the control is summoned, not resident. The veil dims the page and
+   the panel sits in the upper third, where a minibuffer or a Telescope prompt
+   sits — near the eye rather than centred in it. 90/91 leaves 100/101 free for
+   a consumer's own modal, so a materialize sheet still wins over this. */
+.tv-veil{position:fixed;inset:0;z-index:90;background:#0006;
+  display:flex;justify-content:center;align-items:flex-start;padding-top:18vh}
+.tv-panel{z-index:91;width:min(560px,80vw);padding:10px;border-radius:8px;
+  background:var(--tv-alt);border:1px solid var(--tv-border);
+  box-shadow:0 10px 30px #0007}
+.tv-panel .tv-filter-wrap{flex:1 1 auto}
+.tv-panel .tv-filter{flex:1 1 auto;font-size:15px;padding:7px 11px;width:100%}
+/* Applied parts, in the theme's own selection colour — the association its
+   ivy and company faces already make. Black on golden either way, which is
+   where the contrast is (about 15:1), so this one pair is not theme-split. */
+.tv-pal .tv-chip{background:#FFD600;color:#000000;border-color:#E0BC00}
+.tv-pal .tv-chip:hover{border-color:#000000;color:#000000}
 .tv-chips{display:flex;flex-wrap:wrap;gap:5px;align-items:center}
 .tv-chip{display:inline-flex;align-items:center;gap:5px;padding:1px 4px 1px 8px;
   border-radius:999px;font-size:12px;cursor:pointer;color:var(--tv-fg);
@@ -585,6 +615,7 @@
     injectStyle();
     const o = opts || {};   // narrowing sticks in closures (a reassigned param would not)
     const omnibox = o.omnibox === true;
+    const palette = o.palette === true;
 
     /** Is the table being drawn dark? The page's choice outranks the system's. */
     function darkNow() {
@@ -805,8 +836,25 @@
     // fill what the title was using. The applied parts then get a row of their
     // own under it rather than crowding the caret — appended to the root below,
     // between the bar and the table.
-    if (!omnibox) { bar.appendChild(titleEl); bar.appendChild(chipsEl); }
-    bar.appendChild(filterWrap);
+    //
+    // In palette mode there is no bar at all. The page keeps the chip row and
+    // nothing else, so a table nobody has filtered carries no filter chrome
+    // whatever; the control lives in an overlay that `openFilter' summons.
+    if (!omnibox && !palette) { bar.appendChild(titleEl); bar.appendChild(chipsEl); }
+    if (!palette) bar.appendChild(filterWrap);
+
+    // The palette: a backdrop that dims the page and a panel that holds the
+    // control. Built whether or not it is used, so the machinery below has one
+    // input to talk to either way.
+    const veil = document.createElement("div");
+    veil.className = "tv-veil";
+    veil.style.display = "none";
+    const panel = document.createElement("div");
+    panel.className = "tv-panel";
+    if (palette) {
+      panel.appendChild(filterWrap);
+      veil.appendChild(panel);
+    }
 
     const scroll = document.createElement("div");
     scroll.className = "tv-scroll";
@@ -830,16 +878,18 @@
     // the coalescing, which is not motion, stays.
     const calm = typeof matchMedia === "function"
               && matchMedia("(prefers-reduced-motion: reduce)").matches;
-    if (calm || omnibox)
-      root.className = "tv-root" + (calm ? " tv-calm" : "") + (omnibox ? " tv-omni" : "");
+    if (calm || omnibox || palette)
+      root.className = "tv-root" + (calm ? " tv-calm" : "")
+                     + (omnibox && !palette ? " tv-omni" : "") + (palette ? " tv-pal" : "");
 
     const hint = document.createElement("div");
     hint.className = "tv-hint";
 
-    root.appendChild(bar);
-    if (omnibox) root.appendChild(chipsEl);
+    if (!palette) root.appendChild(bar);
+    if (omnibox || palette) root.appendChild(chipsEl);
     root.appendChild(scroll);
     root.appendChild(hint);
+    if (palette) root.appendChild(veil);
 
     /** Per-column <col>, one per column. @type {HTMLElement[]} */
     let colEls = [];
@@ -1377,6 +1427,34 @@
       if (calm) { scroll.scrollTop = to; easing = false; return; }
       easeAt = to;
       easing = true;
+    }
+
+    /**
+     * Summon the control. In palette mode that means raising the overlay; in
+     * the others the box is on the page already and this only takes it. Either
+     * way it is the one entry point a consumer's key binds to.
+     */
+    function openFilter() {
+      if (palette) veil.style.display = "";
+      input.focus();
+      if (input.select) input.select();
+    }
+
+    /** Put it away again, and give the keyboard back to the table. */
+    function closeFilter() {
+      closeAc();
+      if (palette) veil.style.display = "none";
+      input.blur();
+    }
+
+    /**
+     * The end of every ladder: the table takes the selection and the control
+     * goes. In palette mode going means dissolving, which is the same gesture
+     * one step further out — there is no box left on the page to merely blur.
+     */
+    function handOver() {
+      selectFirstVisible();
+      closeFilter();
     }
 
     /** Give the viewport up: whoever is scrolling it now outranks the ease. */
@@ -1969,7 +2047,7 @@
         // decision, and a row of them should not vanish under a resting finger.
         if (e.repeat) return;
         if (chips.length) { chips.pop(); renderChips(); deliver(); }
-        else { selectFirstVisible(); input.blur(); }
+        else handOver();
         return;
       }
       if (e.key !== "Enter" && e.key !== "Escape") return;
@@ -1979,7 +2057,7 @@
         // Escape walks out one step at a time: the half-typed token first, the
         // box's focus only once there is nothing left in it to drop.
         if (input.value) { input.value = ""; closeAc(); deliver(); }
-        else input.blur();
+        else closeFilter();
         return;
       }
       // Enter commits whatever is typed and hands the table back, every time.
@@ -1994,8 +2072,12 @@
         // and then deleted again. Settle it here rather than dropping it.
         if (debounce) { clearTimeout(debounce); debounce = 0; deliver(); }
       }
-      selectFirstVisible();
-      input.blur();
+      handOver();
+    });
+
+    // The backdrop is the palette's own Escape: clicking off it puts it away.
+    veil.addEventListener("mousedown", (e) => {
+      if (hit(e) === veil) { e.preventDefault(); closeFilter(); }
     });
 
     chipsEl.addEventListener("mousedown", (e) => e.preventDefault());   // box keeps focus
@@ -2160,6 +2242,8 @@
        */
       getQuery() { return lastQuery; },
       stripLastToken,
+      openFilter,
+      closeFilter,
     };
   }
 

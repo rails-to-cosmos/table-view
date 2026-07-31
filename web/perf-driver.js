@@ -1507,6 +1507,128 @@ async function virtualKeys() {
           none.querySelectorAll(".tv-chip").length, 0);
   }
 
+  // --- palette mode: the filter is summoned, not resident
+  {
+    const css = document.head.children.map((e) => e.text).join("");
+    const pal = new El("div");
+    const pt = TableView.mount(pal, view(40), { palette: true });
+    const pb = filterOf(pal);
+    const veil = () => pal.querySelector(".tv-veil");
+    const shown = () => veil().style.display !== "none";
+    const chipsOf = () => pal.querySelectorAll(".tv-chip").map((c) => c.text.replace("×", ""));
+
+    check("the page carries the chip row and nothing else",
+          pal.querySelector(".tv-root").children.map((e) => e.className),
+          ["tv-chips", "tv-scroll", "tv-hint", "tv-veil"]);
+    check("no bar at all", pal.querySelectorAll(".tv-bar").length, 0);
+    check("an unfiltered page has no filter chrome whatever",
+          [pal.querySelector(".tv-chips").style.display, shown()], ["none", false]);
+    check("the control exists, put away", [!!pb, shown()], [true, false]);
+    check("and it lives in the panel, not the page",
+          pb.parentNode.parentNode.className, "tv-panel");
+
+    check("the veil is under a consumer's own modal, and over the header",
+          [css.indexOf(".tv-veil{position:fixed;inset:0;z-index:90") !== -1,
+           css.indexOf(".tv-panel{z-index:91") !== -1], [true, true]);
+    check("the panel is the size and place a palette is",
+          css.indexOf("width:min(560px,80vw)") !== -1
+            && css.indexOf("padding-top:18vh") !== -1, true);
+
+    // --- summon and dissolve
+    pt.openFilter();
+    check("openFilter raises it and takes the keyboard", [shown(), pb.focused], [true, true]);
+    pt.closeFilter();
+    check("closeFilter puts it away", [shown(), pb.focused], [false, false]);
+
+    // --- RET: commit, dissolve, hand over
+    pt.openFilter();
+    pb.value = "review";
+    pb.dispatchEvent(new Ev("keydown", { key: "Enter" }));
+    await painted();
+    check("RET commits, dissolves and hands the table over",
+          [chipsOf(), pb.value, shown(),
+           !!pal.querySelector(".tv-table tbody tr.tv-sel")],
+          [["review"], "", false, true]);
+    check("and the chip row is the page's only chrome now",
+          pal.querySelector(".tv-chips").style.display, "");
+
+    pt.openFilter();
+    pb.dispatchEvent(new Ev("keydown", { key: "Enter" }));   // empty box
+    check("RET on an empty box dissolves and hands over", shown(), false);
+
+    // --- the Escape ladder ends in dissolve
+    pt.openFilter();
+    pb.value = "sy";
+    pb.dispatchEvent(new Ev("input"));
+    check("a list is open", pal.querySelectorAll(".tv-ac-item").length > 0, true);
+    pb.dispatchEvent(new Ev("keydown", { key: "Escape" }));
+    check("the first Escape closes the list, and the palette stands",
+          [pal.querySelectorAll(".tv-ac-item").length, shown()], [0, true]);
+    check("with the text still there", pb.value, "sy");
+    pb.dispatchEvent(new Ev("keydown", { key: "Escape" }));
+    check("the second drops the text, and it still stands", [pb.value, shown()], ["", true]);
+    pb.dispatchEvent(new Ev("keydown", { key: "Escape" }));
+    check("the third dissolves it", shown(), false);
+
+    // --- the Backspace ladder ends there too
+    pt.openFilter();
+    pb.value = "sync";
+    pb.dispatchEvent(new Ev("keydown", { key: "Enter" }));
+    await painted();
+    pt.openFilter();
+    check("two chips to walk off", chipsOf().length, 2);
+    pb.dispatchEvent(new Ev("keydown", { key: "Backspace" }));
+    pb.dispatchEvent(new Ev("keydown", { key: "Backspace" }));
+    check("Backspace takes them, one press each", [chipsOf().length, shown()], [0, true]);
+    pb.dispatchEvent(new Ev("keydown", { key: "Backspace" }));
+    check("and with none left it dissolves rather than merely blurring", shown(), false);
+
+    // --- clicking off is the Escape gesture
+    pt.openFilter();
+    pb.value = "half";
+    veil().dispatchEvent(new Ev("mousedown"));
+    check("a click on the backdrop puts it away", shown(), false);
+
+    // --- golden chips, and the floor they have to clear
+    const rgbOf = (h) => { h = h.replace("#", "");
+      return [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16)); };
+    const chan = (c) => (c / 255 <= 0.03928 ? c / 255 / 12.92
+                                            : Math.pow((c / 255 + 0.055) / 1.055, 2.4));
+    const lum = (c) => 0.2126 * chan(c[0]) + 0.7152 * chan(c[1]) + 0.0722 * chan(c[2]);
+    const ratio = (a, b) => { const x = lum(rgbOf(a)) + 0.05, y = lum(rgbOf(b)) + 0.05;
+                              return x > y ? x / y : y / x; };
+    check("palette chips are the theme's selection golden, in black",
+          css.indexOf(".tv-pal .tv-chip{background:#FFD600;color:#000000") !== -1, true);
+    check("which clears the text floor by a distance", ratio("#000000", "#FFD600") >= 7, true);
+    check("and is one pair for both themes — the contrast is in the pair",
+          css.split(".tv-pal .tv-chip{").length, 2);
+
+    // --- restoration and the handle work the same here
+    const back = new El("div");
+    const bt = TableView.mount(back, view(40),
+                               { palette: true, initialQuery: "state:DONE review" });
+    check("initialQuery restores chips in palette mode too",
+          [back.querySelectorAll(".tv-chip").map((c) => c.text.replace("×", "")),
+           bt.getQuery()],
+          [["state:DONE", "review"], "state:DONE review"]);
+    check("the page shows them without the control being summoned",
+          [back.querySelector(".tv-chips").style.display,
+           back.querySelector(".tv-veil").style.display], ["", "none"]);
+    check("and stripLastToken walks them off as ever",
+          [bt.stripLastToken(), bt.getQuery()], [true, "state:DONE"]);
+
+    // --- omnibox is untouched by any of it
+    const omni = new El("div");
+    TableView.mount(omni, view(20), { omnibox: true });
+    check("omnibox still keeps its control on the page",
+          [omni.querySelector(".tv-root").children.map((e) => e.className),
+           omni.querySelectorAll(".tv-veil").length,
+           omni.querySelector(".tv-root").classes.has("tv-pal")],
+          [["tv-bar", "tv-chips", "tv-scroll", "tv-hint"], 0, false]);
+    check("and its chips are not golden",
+          omni.querySelector(".tv-root").classes.has("tv-omni"), true);
+  }
+
   // --- the handle: stripLastToken and getQuery
   {
     const asked = [];
