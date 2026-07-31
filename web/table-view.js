@@ -39,6 +39,13 @@
  * - Filter input is debounced 120ms; the row window renders on a rAF. With an
  *   `onFilter' option the debounced query goes to the producer instead and the
  *   rows given are the rows shown — no local narrowing.
+ * - Enter in the filter box applies it at once (cancelling the pending
+ *   debounce, so the query is delivered exactly once), blurs the box, and puts
+ *   the selection on the first visible row unless it is already on one — under
+ *   `onFilter' that last step waits for the producer's `setRows'. Escape clears
+ *   a non-empty box and blurs. Both keys stop there rather than bubbling into a
+ *   consumer's own keymap. Nothing else moves focus or the selection: a
+ *   debounce firing on its own leaves both where the typist left them.
  *
  * Type-checked with `// @ts-check` + the JSDoc @typedefs below (no build step);
  * run `make web-check`.  The typedefs are the JS mirror of ../SCHEMA.md.
@@ -611,6 +618,35 @@
         scroll.scrollTop = top + rowH - port;
     }
 
+    /**
+     * Select the row with ID, scrolling its place in the (virtual) list into
+     * view. Rows outside the rendered window have no element to click, so this
+     * is how a consumer moves the selection. False when no visible row has that
+     * id — a filtered-out row does not steal the selection.
+     * @param {string} id  @returns {boolean}
+     */
+    function selectRow(id) {
+      const rows = ordered();
+      const i = rows.findIndex((r) => r.id === id);
+      if (i === -1) return false;
+      scrollTo(i);
+      renderRows(true);
+      setSelected(id);
+      return true;
+    }
+
+    /**
+     * Put the selection on the first visible row, unless it is already on one.
+     * What Enter in the filter box hands the table, so the keys a consumer
+     * binds to rows have something to move from.
+     */
+    function selectFirstVisible() {
+      const rows = ordered();
+      if (!rows.length) return;
+      if (state.selected !== null && rows.some((r) => r.id === state.selected)) return;
+      selectRow(rows[0].id);
+    }
+
     function toggleSort(key) {
       const col = colByKey(key);
       if (!col || col.sortable !== true) return;
@@ -711,6 +747,47 @@
       }, DEBOUNCE);
     });
 
+    /**
+     * Apply the box now, cancelling whatever the debounce still owes — so the
+     * query reaches the producer (or the local filter) exactly once, with the
+     * text as it stands rather than as it stood a keystroke ago.
+     */
+    function flushFilter() {
+      if (debounce) { clearTimeout(debounce); debounce = 0; }
+      if (o.onFilter) o.onFilter(input.value);
+      else applyFilter();                // synchronous: Enter waits for no frame
+    }
+
+    /** Set by Enter, consumed by the next `setRows'; see the keydown handler. */
+    let handOver = false;
+
+    // Enter applies and hands the table over; Escape clears and steps out of
+    // the box. Both are the input's own keys — they are stopped here rather
+    // than left to bubble into a consumer's document-level keymap, the way a
+    // focused text field claims Enter anywhere else on the web. Nothing else
+    // touches focus or the selection: a debounce firing on its own leaves both
+    // exactly where the typist left them.
+    //
+    // SCHEMA.md's filter-query section reserves both keys for the autocomplete
+    // it describes (Enter accepts a suggestion, Esc dismisses the list "before
+    // it clears anything"). None of it is built yet; when it is, it takes these
+    // two keys ahead of this handler — an early return here while the list is
+    // open, so accepting a suggestion neither applies the filter nor blurs.
+    input.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter" && e.key !== "Escape") return;
+      e.preventDefault();               // and, for Escape, the native search-box clear
+      e.stopPropagation();
+      if (e.key === "Escape" && input.value) { input.value = ""; flushFilter(); }
+      else if (e.key === "Enter") {
+        flushFilter();
+        // Remote filtering answers later, with `setRows'; local filtering has
+        // already landed, so one of these two runs and the other is a no-op.
+        if (o.onFilter) handOver = true;
+        else selectFirstVisible();
+      }
+      input.blur();
+    });
+
     // ---- streaming ---------------------------------------------------------
 
     /**
@@ -767,6 +844,10 @@
         texts.clear();
         dropSorted();
         renderRows(true);
+        // The answer to an Enter in the filter box: hand the table a selection,
+        // once. Streaming ops leave it alone — `setRows' is what a producer
+        // replies to a query with.
+        if (handOver) { handOver = false; selectFirstVisible(); }
       },
       /** @param {Row} row */
       upsertRow(row) {
@@ -810,22 +891,7 @@
       },
       getRows() { return state.rows.slice(); },
       getVisible() { return ordered().slice(); },
-      /**
-       * Select the row with ID, scrolling its place in the (virtual) list into
-       * view. Rows outside the rendered window have no element to click, so
-       * this is how a consumer moves the selection. False when no visible row
-       * has that id — a filtered-out row does not steal the selection.
-       * @param {string} id  @returns {boolean}
-       */
-      select(id) {
-        const rows = ordered();
-        const i = rows.findIndex((r) => r.id === id);
-        if (i === -1) return false;
-        scrollTo(i);
-        renderRows(true);
-        setSelected(id);
-        return true;
-      },
+      select: selectRow,
     };
   }
 

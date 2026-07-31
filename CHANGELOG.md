@@ -18,6 +18,13 @@ the rails-to-cosmos ELPA archive publishes date-stamped snapshots.
 - Browser renderer `onFilter` mount option: the debounced filter box
   hands its query to the producer instead of narrowing locally, for a
   store too large to hold client-side.
+- Browser renderer: Enter in the filter box applies it at once
+  (cancelling the pending debounce, so the query is delivered exactly
+  once), blurs the box and puts the selection on the first visible row
+  unless it is already on one — under `onFilter` that last step waits
+  for the producer's `setRows`. Escape clears a filled box and blurs.
+  Both keys stop at the input rather than bubbling into a consumer's
+  keymap; nothing else moves focus or the selection.
 
 ### Changed
 - The browser renderer no longer rebuilds itself on every keystroke. The

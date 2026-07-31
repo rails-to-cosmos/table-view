@@ -323,6 +323,14 @@ outside the window has no element to click — move the selection with
 elements. The filter input is built once and never re-created, so focus and
 caret survive typing.
 
+**Enter** in the filter box applies it at once — cancelling the pending
+debounce, so the query reaches the producer exactly once — blurs the box, and
+puts the selection on the first visible row unless it is already on one (under
+`onFilter`, that last step waits for the producer's `setRows`). **Escape**
+clears a filled box and blurs. Both keys stop at the input rather than bubbling
+into a consumer's own keymap, and nothing else moves focus or the selection: a
+debounce firing on its own leaves both where the typist left them.
+
 ## Development
 
 ```sh

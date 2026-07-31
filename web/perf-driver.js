@@ -82,10 +82,13 @@ class Ev {
   constructor(type, init) {
     this.type = type;
     this.detail = init && init.detail;
+    this.key = init && init.key;
     this.target = null;
     this.defaultPrevented = false;
+    this.propagationStopped = false;
   }
   preventDefault() { this.defaultPrevented = true; }
+  stopPropagation() { this.propagationStopped = true; }
 }
 
 class El {
@@ -150,12 +153,16 @@ class El {
   }
   dispatchEvent(ev) {
     if (!ev.target) ev.target = this;
-    for (let n = this; n; n = n.parentNode)
+    for (let n = this; n; n = n.parentNode) {
       for (const fn of (n.on.get(ev.type) || []).slice()) fn.call(n, ev);
+      if (ev.propagationStopped) break;
+    }
     return !ev.defaultPrevented;
   }
   click() { this.dispatchEvent(new Ev("click")); }
-  focus() {} select() {} blur() {} scrollIntoView() {}
+  focus() { this.focused = true; }
+  blur() { this.focused = false; this.blurs = (this.blurs || 0) + 1; }
+  select() {} scrollIntoView() {}
   getBoundingClientRect() { return { height: this.tagName === "THEAD" ? 30 : 30, width: 0 }; }
   matches(sel) { return fitsAll(this, parseSel(sel)); }
   closest(sel) {
@@ -406,6 +413,79 @@ async function smoke() {
     await settle();
     check("onFilter takes the query", asked, ["system"]);
     check("and the rows stay as given", rt.getVisible().length, 10);
+
+    // Enter flushes the pending debounce: one call, with the text as it stands.
+    asked.length = 0;
+    rbox.value = "sys";
+    rbox.dispatchEvent(new Ev("input"));          // debounce armed, not yet due
+    rbox.dispatchEvent(new Ev("keydown", { key: "Enter" }));
+    check("Enter flushes onFilter at once", asked, ["sys"]);
+    check("and blurs the box", rbox.focused, false);
+    check("with no selection yet — the producer has not answered",
+          remote.querySelector(".tv-table tbody tr.tv-sel"), null);
+    await settle();
+    check("and the pending debounce does not fire a second time", asked, ["sys"]);
+    rt.setRows([makeRow(3), makeRow(4)]);          // the producer's answer
+    check("the answer hands the table the first row",
+          remote.querySelector(".tv-table tbody tr.tv-sel").dataset.id, "h-3");
+    rt.setRows([makeRow(5), makeRow(6)]);          // a later, unasked-for setRows
+    check("a later setRows does not move the selection again",
+          remote.querySelector(".tv-table tbody tr.tv-sel"), null);
+  }
+
+  {
+    // Enter and Escape, filtering locally.
+    const keyed = new El("div");
+    const seenUp = [];
+    keyed.addEventListener("keydown", (e) => seenUp.push(e.key));
+    const kt = TableView.mount(keyed, view(40));
+    const kbox = filterOf(keyed);
+    const kHint = () => keyed.querySelector(".tv-hint").textContent;
+    const kSel = () => keyed.querySelector(".tv-table tbody tr.tv-sel");
+
+    kbox.value = "system";
+    kbox.dispatchEvent(new Ev("input"));           // debounce armed, not yet due
+    kbox.dispatchEvent(new Ev("keydown", { key: "Enter" }));
+    const narrowed = kt.getVisible();
+    check("Enter filters without waiting for the debounce",
+          narrowed.length > 0 && narrowed.length < 40, true);
+    check("and the hint counts the narrowed set",
+          kHint(), `${narrowed.length}/40 rows · sort scheduled asc`);
+    check("Enter blurs the filter box", kbox.focused, false);
+    check("and hands the table the first visible row",
+          kSel().dataset.id, narrowed[0].id);
+    check("the key stops at the input", seenUp, []);
+
+    const held = kSel().dataset.id;
+    kbox.dispatchEvent(new Ev("keydown", { key: "Enter" }));
+    check("a second Enter keeps a selection that is still visible",
+          kSel().dataset.id, held);
+
+    // A row that survives the query, so "the selection stayed put" is visible
+    // below rather than vacuously true.
+    const survivor = narrowed[narrowed.length - 1].id;
+
+    kbox.dispatchEvent(new Ev("keydown", { key: "Escape" }));
+    check("Escape clears a filled box", kbox.value, "");
+    check("and applies the clear", kt.getVisible().length, 40);
+    const blurs = kbox.blurs;
+    kbox.dispatchEvent(new Ev("keydown", { key: "Escape" }));
+    check("Escape on an empty box just blurs", [kbox.value, kbox.blurs - blurs], ["", 1]);
+
+    kbox.value = "no-such-headline";
+    kbox.dispatchEvent(new Ev("keydown", { key: "Enter" }));
+    check("Enter with nothing matching selects nothing", kSel(), null);
+    kbox.dispatchEvent(new Ev("keydown", { key: "Escape" }));
+
+    // Only Enter touches focus or the selection.
+    kt.select(survivor);
+    const quiet = kbox.blurs;
+    kbox.value = "system";
+    kbox.dispatchEvent(new Ev("input"));
+    await settle();                                 // the debounce fires on its own
+    check("a debounce firing on its own leaves the selection where it was",
+          kSel() && kSel().dataset.id, survivor);
+    check("and does not blur anything", kbox.blurs - quiet, 0);
   }
 
   t.setRows([]);
