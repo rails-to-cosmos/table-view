@@ -272,6 +272,18 @@ the rails-to-cosmos ELPA archive publishes date-stamped snapshots.
   entries above; this is the shape they refine.)
 
 ### Changed
+- **Browser renderer: a column's completion domain merges its `values`
+  with its badge palette** instead of letting the first shadow the
+  second — declared values in their own order, then any badge value they
+  did not already name. A producer adding meta-values to a badge column
+  no longer thereby deletes that column's concrete keywords from the
+  suggestion list. Values wrapped in asterisks (`*active*`) are read as
+  **producer metas**: dimmed and italic, offered with no count (a local
+  count would read 0 and mislead — the semantics live producer-side, as
+  SCHEMA's meta-values already allow), and accepted verbatim as
+  `state:*active*`. The local evaluator still matches such a token
+  literally, so a view declaring metas is expected to filter through
+  `onFilter`.
 - **Browser renderer: sorting follows SCHEMA on all three points it used
   to differ.** A column's `compare` now outranks its `values`/`badges`
   order, and `"string"` joins `"number"` and `"natural"` as a comparator

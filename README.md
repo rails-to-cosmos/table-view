@@ -477,9 +477,25 @@ A **suggestion list** under the box completes it. A bare word offers, in order:
    finds something, by construction — it was counted from the rows it came from.
 
 Exact beats fuzzy, and fuzzy never crowds. After `key:` comes that column's
-value domain — its `values`, else its badge palette, else the distinct cell
-values — each with the number of rows behind it; a virtual key has no domain to
-offer, so what follows it is ordinary text. **Arrows** move, **Tab**/**Enter**
+value domain: its declared `values` in their own order, then any **badge value
+they did not already name**, else the distinct cell values — each with the
+number of rows behind it. The two are merged rather than one shadowing the
+other, so a column that declares meta-values keeps its concrete keywords in the
+list. A virtual key has no domain to offer, so what follows it is ordinary text.
+
+**Producer meta-values.** A domain value written between asterisks —
+`*active*`, `*inactive*` — is a *producer* meta: a name for a set of values
+that only the producer can resolve. It renders dimmed and italic, apart from
+the concrete values beside it, and **carries no count**, because counting it
+here would print 0 (no cell holds the literal string) beside an entry that in
+fact matches plenty. Accepting one inserts it verbatim, asterisks and all:
+`state:*active*`.
+
+The local evaluator matches such a token **literally**, which is to say it
+matches nothing. That is deliberate rather than a gap: a view that declares
+metas is one whose filtering belongs to the producer, and it is expected to
+pass `onFilter` so the query is answered where the meaning lives. glance does
+exactly this, so its users never reach the literal path. **Arrows** move, **Tab**/**Enter**
 accept, **Escape** dismisses, a click accepts without taking focus. Only a
 column name starts highlighted — a tag name is often the word you were actually
 searching for — so Enter still commits the word as typed.

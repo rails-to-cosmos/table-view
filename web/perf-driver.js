@@ -594,6 +594,85 @@ async function sortOrder() {
         p.getRows().map((r) => r.cells.name), ["", "apple", "fig"]);
 }
 
+
+/**
+ * Producer meta-values: the completion domain merges `values' with the badge
+ * palette, and a starred entry reads as the producer's own rather than as a
+ * value the rows hold.
+ */
+async function metaValues() {
+  console.log("\n== producer meta-values");
+  const cols = [
+    { key: "title", label: "Title" },
+    { key: "state", label: "State", type: "badge",
+      values: ["*active*", "*inactive*"],
+      badges: [{ value: "TODO", color: "#e0af68" },
+               { value: "NEXT", color: "#7aa2f7" },
+               { value: "DONE", color: "#9ece6a" }] },
+  ];
+  const rows = [
+    { id: "1", cells: { title: "one", state: "TODO" } },
+    { id: "2", cells: { title: "two", state: "TODO" } },
+    { id: "3", cells: { title: "three", state: "DONE" } },
+  ];
+  const P = driver({ title: "meta", columns: cols, rows });
+
+  // --- the merge: declared values in their order, then the badges they missed
+  check("the domain is values then the unlisted badges",
+        P.type("state:"), ["*active*", "*inactive*", "TODO", "NEXT", "DONE"]);
+  check("the badge keywords survive alongside the declared values",
+        P.type("state:").indexOf("TODO") !== -1, true);
+
+  // --- a meta reads as a meta
+  P.type("state:");
+  const rowsOf = () => P.box.querySelectorAll(".tv-ac-item");
+  const dimmed = rowsOf().map((e) => e.classes.has("tv-ac-dim"));
+  check("the starred entries are dimmed and the concrete ones are not",
+        dimmed, [true, true, false, false, false]);
+  const nums = rowsOf().map((e) => e.querySelectorAll(".tv-ac-n").length);
+  check("a meta shows no count at all", nums.slice(0, 2), [0, 0]);
+  check("its concrete siblings still do", nums.slice(2), [1, 1, 1]);
+  check("and those counts are the real ones", P.counts(), [2, 0, 1]);
+  const css = document.head.children.map((e) => e.text).join("");
+  check("the dim class is italic as well as faint",
+        /\.tv-ac-dim\{[^}]*font-style:italic/.test(css), true);
+
+  // --- accepted verbatim, asterisks and all
+  P.reset();
+  P.b().value = "state:*act";
+  P.b().dispatchEvent(new Ev("input"));
+  check("a partly typed meta still completes", P.items(), ["*active*"]);
+  P.box.querySelectorAll(".tv-ac-item")[0].dispatchEvent(new Ev("click"));
+  check("accepting inserts it with its asterisks", P.b().value.trim(), "state:*active*");
+
+  // --- and the local evaluator says so honestly
+  check("locally a meta is a literal, so it matches nothing",
+        P.shown("state:*active*"), 0);
+  check("while a concrete value matches as ever", P.shown("state:TODO"), 2);
+
+  // --- regressions either side of the merge
+  const B = driver({
+    title: "meta",
+    columns: [{ key: "title", label: "Title" },
+              { key: "state", label: "State", type: "badge",
+                badges: [{ value: "TODO", color: "#e0af68" },
+                         { value: "DONE", color: "#9ece6a" }] }],
+    rows,
+  });
+  check("a badge column with no values offers its palette, in palette order",
+        B.type("state:"), ["TODO", "DONE"]);
+  check("and every entry keeps its count", B.counts(), [2, 1]);
+
+  const M = driver({
+    title: "meta",
+    columns: [{ key: "title", label: "Title" }, { key: "tag", label: "Tag", multi: true }],
+    rows: [{ id: "1", cells: { title: "one", tag: ":web:api:" } },
+           { id: "2", cells: { title: "two", tag: ":web:" } }],
+  });
+  check("a multi column still offers its vocabulary, counted",
+        [M.type("tag:"), M.counts()], [["api", "web"], [1, 2]]);
+}
+
 // ---- benchmark -------------------------------------------------------------
 
 const results = [];
@@ -3220,6 +3299,7 @@ async function smoke() {
   await cellsChipsPills();
   await virtualKeys();
   await sortOrder();
+  await metaValues();
 
   console.log("\n== the window");
   // The header and a row measure differently, and everything below sums over

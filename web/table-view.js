@@ -534,6 +534,27 @@
     return null;
   }
 
+  /** A producer meta-value, which SCHEMA spells `*active*'. */
+  const META = /^\*.+\*$/;
+
+  /**
+   * The values a column offers for completion: its declared `values' in their
+   * own order, then any badge value they did not already name.  Merged rather
+   * than shadowed — a producer adding meta-values to a badge column would
+   * otherwise delete that column's concrete keywords from the list, which is
+   * the opposite of what declaring them was for.
+   * @param {Column} col  @returns {string[]|null}
+   */
+  function domainValues(col) {
+    const declared = col.values ? col.values.map(String) : null;
+    const badges = col.type === "badge"
+      ? (col.badges || []).map((b) => String(b.value)) : null;
+    if (!declared) return badges;
+    if (!badges) return declared;
+    const named = new Set(declared.map((v) => v.toLowerCase()));
+    return declared.concat(badges.filter((v) => !named.has(v.toLowerCase())));
+  }
+
   // Less-than over raw cell values for a column (mirrors table-view.el).
   /**
    * @param {Column} col
@@ -1208,6 +1229,9 @@
       // Asking for an empty cell is what `none' is for.
       if (!v) return () => true;
       if (v === "none") return (r) => rowText(r).cells[i] === "";
+      // A producer meta (`state:*active*') is matched literally here and so
+      // matches nothing: only the producer knows which keywords it stands for,
+      // and a view that declares metas is expected to filter through `onFilter'.
       if (col.type === "badge") return (r) => rowText(r).cells[i] === v;
       if (dateColumn(i)) return (r) => rowText(r).cells[i].startsWith(v);
       return (r) => rowText(r).cells[i].includes(v);
@@ -2099,7 +2123,7 @@
           counts.set(lower, 1);
           if (found.length < DOMAIN_MAX) found.push(displayText((r.cells || {})[col.key]));
         }
-        const fixed = valueOrder(col);
+        const fixed = domainValues(col);
         d = { list: fixed || found.sort(), counts };
         domains.set(col.key, d);
       }
@@ -2175,14 +2199,16 @@
         let exact = 0;
         const hits = [];
         for (const c of columns()) {
-          if (!valueOrder(c) && columns().indexOf(c) !== multiColumn()) continue;
+          if (!domainValues(c) && columns().indexOf(c) !== multiColumn()) continue;
           const dom = domainOf(c);
           for (const v of dom.list) {
             const lower = String(v).toLowerCase();
             if (!lower.startsWith(p)) continue;
             if (lower === p) exact++;
-            hits.push({ text: c.key + ":" + v, count: dom.counts.get(lower) || 0,
-                        whole: lower === p, full: true, dim: false, pick: false });
+            const meta = META.test(String(v));
+            hits.push({ text: c.key + ":" + v,
+                        count: meta ? -1 : dom.counts.get(lower) || 0,
+                        whole: lower === p, full: true, dim: meta, pick: false });
           }
         }
         // What was typed in full outranks what merely opens with it.
@@ -2191,7 +2217,8 @@
                          || (a.text < b.text ? -1 : 1));
         for (const hit of hits) {
           if (out.length === AC_MAX) break;
-          out.push({ text: hit.text, count: hit.count, full: true, dim: false, pick: false });
+          out.push({ text: hit.text, count: hit.count, full: true,
+                     dim: hit.dim, pick: false });
         }
         // 3. Words the rows finish for it, scoped to the tag they were found
         //    under. Only an EXACT value match makes these redundant — a value
@@ -2215,8 +2242,15 @@
         // Not preselected: with `tag:' typed and no value chosen, Enter has to
         // mean the presence predicate the user wrote, not whichever value
         // happened to sort first.
-        out.push({ text: String(v), count: dom.counts.get(lower) || 0, full: false,
-                   dim: false, pick: false });
+        //
+        // A producer meta stands apart from the concrete values beside it:
+        // dimmed and italic, and with no count. Counting it locally would
+        // print 0 — no cell holds the literal `*active*' — and a 0 beside a
+        // value that in fact matches many rows is worse than no number.
+        // What it means is the producer's to say; see `predicate'.
+        const meta = META.test(String(v));
+        out.push({ text: String(v), count: meta ? -1 : dom.counts.get(lower) || 0,
+                   full: false, dim: meta, pick: false });
         if (out.length === AC_MAX) break;
       }
       return out;
