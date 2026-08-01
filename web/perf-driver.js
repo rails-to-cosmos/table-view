@@ -251,8 +251,9 @@ global.requestAnimationFrame = (fn) => realTimeout(timed(fn), 0);
 let ROW_PX = 30;
 /** The header's, which is deliberately NOT the row's: the renderer keeps the
  *  two apart and every sum over them has to as well. A shim reporting one
- *  number for both lets an arithmetic that confuses them pass. */
-const HEAD_PX = 24;
+ *  number for both lets an arithmetic that confuses them pass. The driver moves
+ *  it to stand in for a header that measures taller once it is drawn. */
+let HEAD_PX = 24;
 const VOID = new Set(["input", "br", "img", "col", "hr", "meta", "link"]);
 const ENTITY = { amp: "&", lt: "<", gt: ">", quot: '"', "#39": "'" };
 const decode = (s) =>
@@ -4095,6 +4096,61 @@ async function smoke() {
   await sleep(400);                       // the viewport eases the whole way there
   check("and the ease carries the window to it",
         far.querySelector("tbody tr.tv-sel").dataset.id, last);
+
+  // --- the ease aims at a row, and a row is measured when it is drawn
+  // A move works its target out from the geometry the last render read, so a
+  // measure landing after that target was set describes a table the target no
+  // longer fits. Standing in for a web font arriving mid-run by moving what the
+  // shim reports a row and the header measure, the way the coarse-pointer check
+  // moves what it reports about the pointer.
+  {
+    const queue = [];
+    const realFrame = global.requestAnimationFrame;
+    global.requestAnimationFrame = (fn) => queue.push(timed(fn));
+    /** Run the queued frame callbacks once. */
+    const oneFrame = () => queue.splice(0).forEach((fn) => fn());
+    /** Run them, and whatever they queue, to a standstill. */
+    const settle = () => { for (let i = 0; i < 200 && queue.length; i++) oneFrame(); };
+    /** How far the last row's foot falls below the fold. */
+    const hidden = (sc, rows, port) =>
+      Math.max(0, HEAD_PX + rows * ROW_PX - (sc.scrollTop + port));
+
+    // Moves outrunning the frames: every target lands before a single render,
+    // so the one that survives is the one worked out from the stalest geometry
+    // of the run and nothing follows to work it out again.
+    const burst = new El("div");
+    const bt = TableView.mount(burst, view(300));
+    const bs = burst.querySelector(".tv-scroll");
+    bs.clientHeight = 300;
+    bt.select(bt.getVisible()[0].id);
+    settle();
+    ROW_PX = 44;
+    for (let i = 0; i < 320; i++) bt.selectStep(1);
+    settle();
+    check("a burst to the end lands the last row whole, and rendered",
+          [hidden(bs, 300, 300), !!burst.querySelector("tbody tr.tv-sel")], [0, true]);
+    ROW_PX = 30;
+
+    // One move a frame, which is the cadence a held key runs at. Every target
+    // but the last is corrected by the move after it; the last one is measured
+    // against on the frame the run ends on, and there is no move after it. The
+    // header is the thing that re-measures here, so what the stale target is
+    // short by is its 16px whatever the set is long.
+    const held = new El("div");
+    const ht = TableView.mount(held, view(300));
+    const hs = held.querySelector(".tv-scroll");
+    hs.clientHeight = 150;
+    ht.select(ht.getVisible()[0].id);
+    settle();
+    for (let i = 0; i < 298; i++) { ht.selectStep(1); oneFrame(); }
+    HEAD_PX = 40;
+    ht.selectStep(1);
+    settle();
+    check("and so does a run of one move a frame",
+          [hidden(hs, 300, 150), !!held.querySelector("tbody tr.tv-sel")], [0, true]);
+    HEAD_PX = 24;
+    global.requestAnimationFrame = realFrame;
+  }
 }
 
 measure()

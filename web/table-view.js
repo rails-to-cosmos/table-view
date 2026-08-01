@@ -2047,12 +2047,23 @@
     let wantHint = false;        // the count moved; rewrite the status line
     let easeAt = 0;              // where the viewport is heading
     let easing = false;
+    /** What that heading is worked out from: the row, its direction, the origin. */
+    let aim = { row: -1, down: true, from: 0 };
 
     function schedule() { if (!frameId) frameId = frame(tick); }
 
     function tick() {
       frameId = 0;
       if (easing) {
+        // The aim is worked out from `geom', and `geom' is only re-read where a
+        // row is DRAWN — past the door `renderRows' turns back at when the
+        // window has not moved. So an ease can otherwise run to its end against
+        // a header or row height some earlier frame read, and park short of the
+        // row it chose. Re-read it here, where the tick already owns the frame,
+        // and take the aim again against what it says.
+        measure();
+        const port = scroll.clientHeight || 0;
+        if (port) easeAt = aimed(port);
         const step = easeAt - scroll.scrollTop;
         if (Math.abs(step) < SNAP_PX) { scroll.scrollTop = easeAt; easing = false; }
         else scroll.scrollTop = scroll.scrollTop + step * EASE;
@@ -2069,6 +2080,19 @@
       if (wantHint) renderHint();
       wantWindow = wantSelection = false;
       if (easing) schedule();
+    }
+
+    /**
+     * Where the viewport has to sit for `aim' to hold, worked out against the
+     * geometry as it now measures and clamped to the content. PORT is the
+     * viewport's height.
+     */
+    function aimed(port) {
+      const top = geom.head + aim.row * geom.row, foot = top + geom.row;
+      let to = aim.from;
+      if (aim.down) { if (foot - aim.from > port * 2 / 3) to = foot - port * 2 / 3; }
+      else if (top - aim.from < port / 3) to = top - port / 3;
+      return Math.max(0, Math.min(maxScroll(port), to));
     }
 
     /**
@@ -2089,18 +2113,18 @@
      * instead of playing back a backlog. The aim is taken from where the ease
      * is going, not from where it is, or each keypress would re-derive against
      * a viewport still in flight and creep.
+     *
+     * The aim is kept rather than only its answer, because a row measures what
+     * it measures when it is drawn: the frame loop works the target out again
+     * from these three each frame, so a measure landing after the move that
+     * chose the row still moves where the ease ends up.
      */
     function easeToRow(i, was) {
-      const rowH = geom.row, port = scroll.clientHeight || 0;
+      const port = scroll.clientHeight || 0;
       if (!port) return;
       const from = easing ? easeAt : scroll.scrollTop;
-      const top = geom.head + i * rowH, foot = top + rowH;
-      let to = from;
-      if (was < 0 || i >= was) {                       // downward, and the first pick
-        if (foot - from > port * 2 / 3) to = foot - port * 2 / 3;
-      } else if (top - from < port / 3) to = top - port / 3;
-      const most = maxScroll(port);
-      to = Math.max(0, Math.min(most, to));
+      aim = { row: i, down: was < 0 || i >= was, from };  // downward, or the first pick
+      const to = aimed(port);
       if (to === from && !easing) return;              // the band already holds it
       if (calm) { scroll.scrollTop = to; easing = false; return; }
       easeAt = to;

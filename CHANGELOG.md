@@ -36,6 +36,26 @@ the rails-to-cosmos ELPA archive publishes date-stamped snapshots.
   executes it, and reads no sortability anywhere, so the differential
   oracle covers exactly what it covered before.
 
+### Fixed
+- **A selection run no longer parks short of the row it chose** (browser
+  renderer). Moving the selection aims the viewport at a row and eases
+  there, and the target was worked out once, at the moment of the move,
+  from the geometry the last render had read. Two ways that target went
+  stale. A synchronous burst of `selectStep` sets every target before a
+  single frame runs, so the one that survived was derived from the
+  stalest geometry of the run and nothing followed to derive it again —
+  the viewport parked less than half way with no selected row drawn at
+  all. And a run at one move a frame ends on a frame whose aim is taken
+  before `renderRows` re-measures, so a header or row height that moved
+  during the run left the last row about 16px under the fold.
+  The ease now keeps the AIM — the row, the direction it was reached
+  from, and the origin — and re-derives the target every frame, with the
+  geometry re-read inside the frame loop rather than only where a row is
+  drawn (`renderRows` turns back at the door when the window has not
+  moved, so an ease could otherwise run to its end without ever
+  re-measuring). Both cases now land the last row whole with the
+  selection rendered; `web/perf-driver.js` pins them.
+
 ### Added
 - **Parity vectors: one manifest, two harnesses** ([`fixtures/parity/`](fixtures/parity/)).
   Nothing executed the same contract case on both renderers, so a
