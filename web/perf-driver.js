@@ -159,20 +159,30 @@ function chipIn(theme) {
 }
 
 /**
- * The flagged-row wash THEME paints: the flag colour it washes (which cascades
- * from the base rule) composited onto that theme's own ground at its own
- * strength. The `chipIn' of the row grounds — read from the sheet, never
- * re-spelled, so an identity swap swaps what is asserted.
- * @param {"light"|"dark"} theme
+ * The wash THEME paints with --tv-NAME at --tv-STRENGTH: the colour (which may
+ * cascade from the base rule) composited onto that theme's own ground at the
+ * strength that theme asks for. The `chipIn' of the row grounds — read from the
+ * sheet, never re-spelled, so an identity swap swaps what is asserted.
+ * @param {"light"|"dark"} theme  @param {string} name  @param {string} strength
  */
-function washIn(theme) {
+function washIn(theme, name, strength) {
   const p = paletteIn(`:root[data-theme="${theme}"] .tv-root{`);
   const base = paletteIn(".tv-root{");
-  const flag = p.flag || base.flag;
+  const colour = p[name] || base[name];
   const ground = p.bg || base.bg;
-  const pct = Number(String(p["flag-wash"]).replace("%", "")) / 100;
-  return { flag, ground, pct, wash: mixed(ground, flag, pct) };
+  const pct = pctOf(p[strength] !== undefined ? p[strength] : base[strength]);
+  return { colour, ground, pct, wash: mixed(ground, colour, pct) };
 }
+
+/**
+ * How far apart two colours sit in sRGB. A contrast ratio answers "can this be
+ * read on that" and says almost nothing about "can this band be seen": the
+ * light cursor row is 1.04:1 against the page it sits on and perfectly plain to
+ * the eye, because what moved was hue rather than luminance. This is the metric
+ * for the second question; what a step of it means is read against another step
+ * in the same theme, the two themes having very different ranges.
+ */
+const apart = (a, b) => Math.hypot(...rgb(a).map((v, i) => v - rgb(b)[i]));
 
 /** A hex colour's channels on 0..1 with their extrema — what hue and sat share. */
 const chroma = (h) => {
@@ -1047,6 +1057,32 @@ async function rowMarks() {
     check("and the checkbox glyph is drawn from the mark, independent of any ground",
           /tr\.tv-marked td\.tv-box::before\{content:"\[X\]"\}/.test(css), true);
 
+    // A column band crosses all of it and contests none of it: the states are
+    // on the tr and the band is on the td, so a row that is marked, flagged and
+    // under the cursor keeps every class it had while the band washes one of
+    // its cells. And the box is nobody's column, so the band is counted past it.
+    h.select("a", 1);
+    await painted();
+    check("a band leaves every row class where it found it",
+          ["tv-marked", "tv-flagged", "tv-sel"].map((c) => rowOfId("a").classes.has(c)),
+          [true, true, true]);
+    const bandIx = () => P.box.querySelectorAll("tbody td.tv-colsel")
+      .map((el) => el.parentNode.children.indexOf(el));
+    check("and lands one past the box on every row, the box never wearing it",
+          [[...new Set(bandIx())], bandIx().length,
+           P.box.querySelectorAll("td.tv-box.tv-colsel").length],
+          [[2], P.box.querySelectorAll("tbody tr[data-id]").length, 0]);
+    check("the crossing is on the cursor row and on no other",
+          P.box.querySelectorAll("tbody td.tv-cell-sel")
+            .map((el) => el.parentNode.dataset.id), ["a"]);
+    check("and a flagged row it merely crosses keeps its own edge cell untouched",
+          [rowOfId("b").children[2].classes.has("tv-colsel"),
+           rowOfId("b").children[2].classes.has("tv-cell-sel")], [true, false]);
+    h.select("a");
+    await painted();
+    check("giving the column back takes the band with it",
+          P.box.querySelectorAll("tbody td.tv-colsel").length, 0);
+
     // --- the hint segment
     check("both counts lead the line, the pending one first",
           P.box.querySelector(".tv-hint").textContent, "2 flagged · 1 marked · 6 rows · unsorted");
@@ -1062,13 +1098,13 @@ async function rowMarks() {
 
   // --- the flag wash, read out of the sheet like the frost
   {
-    const L = washIn("light"), D = washIn("dark");
-    check("both themes wash the one flag var", [L.flag === D.flag, !!L.flag],
+    const L = washIn("light", "flag", "flag-wash"), D = washIn("dark", "flag", "flag-wash");
+    check("both themes wash the one flag var", [L.colour === D.colour, !!L.colour],
           [true, true]);
     check("and each asks for a modest amount of it",
           [L.pct > 0 && L.pct <= 0.3, D.pct > 0 && D.pct <= 0.3], [true, true]);
     check("the flag is a red, which is nothing else the table paints",
-          hue(L.flag) <= 15 || hue(L.flag) >= 345, true);
+          hue(L.colour) <= 15 || hue(L.colour) >= 345, true);
     // The floors are what SET the strengths rather than what they were checked
     // against afterwards: red is dark, and on white the tag ink falls under
     // 4.5:1 by 10%, so the light wash is the most the ink allows and no more.
@@ -1079,7 +1115,7 @@ async function rowMarks() {
       check(`${theme}: the tag ink still clears 4.5:1 on it`,
             ratio(pal.muted, p.wash) >= 4.5, true);
       check(`${theme}: and the wash stays nearer the page than the solid flag`,
-            ratio(p.ground, p.wash) < ratio(p.wash, p.flag), true);
+            ratio(p.ground, p.wash) < ratio(p.wash, p.colour), true);
     }
     // The two strengths are bound by different things, and only one of them is
     // bound by the ink: on white a red this dark drags --tv-muted under 4.5:1
@@ -1088,15 +1124,15 @@ async function rowMarks() {
     // floor -- which is why the two numbers are far apart.
     check("light is the strength the ink caps; two points more would break it",
           ratio(paletteIn(':root[data-theme="light"] .tv-root{').muted,
-                mixed(L.ground, L.flag, L.pct + 0.02)) >= 4.5, false);
+                mixed(L.ground, L.colour, L.pct + 0.02)) >= 4.5, false);
     check("dark has headroom the light side does not",
           ratio(paletteIn(':root[data-theme="dark"] .tv-root{').muted,
-                mixed(D.ground, D.flag, D.pct + 0.06)) >= 4.5, true);
+                mixed(D.ground, D.colour, D.pct + 0.06)) >= 4.5, true);
     // The mark and the flag land at the same lightness on white, so they are
     // told apart by hue rather than by weight — worth pinning, since a future
     // strength change could make them the same wash.
     check("the mark and the flag are different hues, which is what separates them",
-          Math.abs(hue(L.wash) - hue(washIn("light").flag)) < 45, true);
+          Math.abs(hue(L.wash) - hue(L.colour)) < 45, true);
   }
 
   // --- the two presentations: a stepped seam flows, an explicit turn snaps
@@ -1586,6 +1622,26 @@ async function cellsChipsPills() {
     const td = cellSel()[0];
     return td ? td.parentNode.children.indexOf(td) : -1;
   };
+  // The other axis: the band is the column, so it is read across the whole
+  // window rather than off one row.
+  const bandCells = () => box.querySelectorAll(".tv-table tbody td.tv-colsel");
+  const bandHead = () => box.querySelectorAll(".tv-table th.tv-colsel");
+  const dataRows = () => box.querySelectorAll(".tv-table tbody tr[data-id]");
+  /** The column index every band cell sits at — -1 unless they agree on one. */
+  const bandAt = () => {
+    const ix = bandCells().map((el) => el.parentNode.children.indexOf(el));
+    return ix.length && ix.every((v) => v === ix[0]) ? ix[0] : -1;
+  };
+  const headAt = () => {
+    const th = bandHead()[0];
+    return th ? th.parentNode.children.indexOf(th) : -1;
+  };
+  /**
+   * Whether the band reaches every rendered row and the header, once each —
+   * and that there were rows to reach, so an empty window cannot pass it.
+   */
+  const banded = () => [bandAt(), bandCells().length === dataRows().length,
+                        bandHead().length, dataRows().length > 0];
 
   // --- cell selection
   const id = t.getVisible()[3].id;
@@ -1594,29 +1650,51 @@ async function cellsChipsPills() {
   await painted();
   check("select with no column is a whole-row selection, as it always was",
         [!!rowOf(id).classes.has("tv-sel"), cellSel().length], [true, 0]);
+  check("and draws no band at all — head or body, nothing to undo",
+        [bandCells().length, bandHead().length], [0, 0]);
   check("select with a column stamps that cell", t.select(id, 2), true);
   check("and reports it before the frame", t.getSelection(), { id, col: 2 });
   await painted();
   check("the cell is stamped once the frame lands", colOfSel(), 2);
   check("only one cell is ever stamped", cellSel().length, 1);
   check("the row stays selected too", rowOf(id).classes.has("tv-sel"), true);
+  // The column is the second axis, so it is drawn on every row of the window —
+  // and on the header, a band stopping short of which reads as broken.
+  check("the band washes that column on every rendered row, and its header",
+        [banded(), headAt()], [[2, true, 1, true], 2]);
+  check("the crosshair carries both classes: one td, one background slot, the cell winning",
+        [cellSel()[0].classes.has("tv-colsel"), cellSel()[0] === rowOf(id).children[2]],
+        [true, true]);
   t.select(id, 99);
   await painted();
   check("a column past the end clamps rather than wrapping", colOfSel(), nCols - 1);
+  check("and the band clamps with it, header included",
+        [bandAt(), headAt()], [nCols - 1, nCols - 1]);
   t.select(id, -5);
   await painted();
   check("and so does one before the start", colOfSel(), 0);
+  check("the band too", [bandAt(), headAt()], [0, 0]);
   t.select(id, 2);
   await painted();
 
   t.upsertRow(makeRow(Number(id.slice(2))));
   check("the stamp survives an upsert", [t.getSelection().col, colOfSel()], [2, 2]);
+  check("and so does the band it is the crossing of", banded(), [2, true, 1, true]);
   t.setRows(view(40).rows);
   check("and a setRows that still carries the id",
         [t.getSelection().col, colOfSel()], [2, 2]);
+  check("band included", banded(), [2, true, 1, true]);
 
   const sc = box.querySelector(".tv-scroll");
   const at = t.getVisible().findIndex((r) => r.id === id);
+  // Far enough down that the selected row is off the window while rows still
+  // fill it. The band belongs to the COLUMN, so it draws on rows the cursor is
+  // nowhere near, which is the whole of what makes it a locator.
+  sc.scrollTop = 700;
+  sc.dispatchEvent(new Ev("scroll"));
+  await sleep(50);
+  check("the band draws on the rows of a window the selection has left",
+        [cellSel().length, banded()], [0, [2, true, 1, true]]);
   sc.scrollTop = 3000;
   sc.dispatchEvent(new Ev("scroll"));
   await sleep(50);
@@ -1630,6 +1708,7 @@ async function cellsChipsPills() {
   td.dispatchEvent(new Ev("click"));
   check("a click selects the cell it landed on", t.getSelection(), { id, col: 3 });
   check("and stamps it there and then — a click is not a key repeat", colOfSel(), 3);
+  check("moving the whole band with it", [bandAt(), headAt()], [3, 3]);
 
   // --- coalescing: many moves between frames paint once, at the end
   {
@@ -1678,6 +1757,175 @@ async function cellsChipsPills() {
           [tr.classes.has("tv-sel"),
            box.querySelector(".tv-table tbody tr.tv-sel").dataset.id],
           [false, t.getVisible()[3].id]);
+  }
+
+  // --- a whole-row selection is exactly what it was before there were columns
+  {
+    // The classes every rendered row and cell carries, sorted, since the two
+    // ways one is written -- the window's HTML and a `classList.toggle' --
+    // leave them in different orders.
+    const shape = (el) => el.querySelectorAll(".tv-table tbody tr").map((r) =>
+      [[...r.classes].sort().join(" "),
+       r.children.map((c) => [...c.classes].sort().join(" ")).join("|")]);
+    // Tall enough, in a short enough port, that a scroll genuinely re-windows:
+    // 40 rows behind a 15-row overscan are the whole window at every scroll
+    // position, and `renderRows' turns back at the door without rewriting one.
+    const mounted = async () => {
+      const el = new El("div");
+      const h = TableView.mount(el, view(300));
+      el.querySelector(".tv-scroll").clientHeight = 300;
+      await painted();
+      return { el, h };
+    };
+    const A = await mounted(), B = await mounted();
+    const rowId = A.h.getVisible()[2].id;
+    A.h.select(rowId);                       // never had a column
+    B.h.select(rowId, 3);                    // had one, and gave it back
+    await painted();
+    B.h.select(rowId);
+    await painted();
+    check("giving the column back leaves the rows exactly as a row-only mount draws them",
+          JSON.stringify(shape(B.el)) === JSON.stringify(shape(A.el)), true);
+    check("with the band written nowhere rather than merely undone",
+          [B.el.querySelectorAll(".tv-colsel").length,
+           B.el.querySelectorAll(".tv-cell-sel").length,
+           shape(A.el).length > 0], [0, 0, true]);
+    // And still nowhere after a re-window. `renderRows' writes the rows from
+    // scratch and a scroll asks for no re-stamp afterwards, so a band the
+    // window's own HTML wrote would survive here with nothing to clear it --
+    // which is the whole difference between not writing one and undoing one.
+    const scB = B.el.querySelector(".tv-scroll");
+    await sleep(400);                     // the ease is done asking for stamps
+    scB.scrollTop = 3000;
+    scB.dispatchEvent(new Ev("scroll"));
+    await sleep(50);
+    check("and none written by a window the scroll drew fresh",
+          [B.el.querySelectorAll(".tv-colsel").length,
+           B.el.querySelector(".tv-table tbody tr[data-id]").dataset.id
+             !== A.el.querySelector(".tv-table tbody tr[data-id]").dataset.id],
+          [0, true]);
+  }
+
+  // --- two bands and their crossing, and every one of them a ground
+  {
+    const css = cssText();
+    const at = (s) => css.indexOf(s);
+    // One background slot on the one td, settled the way the row stack settles
+    // its own four: equal specificity, and source order is the precedence.
+    check("the column's rule is declared before the cell's, which is what wins the crossing",
+          [at(".tv-table tbody td.tv-colsel{") !== -1,
+           at(".tv-table tbody td.tv-colsel{") < at(".tv-table tbody td.tv-cell-sel{")],
+          [true, true]);
+    // Translucent on the rows, which is what leaves the four row washes reading
+    // through the band; opaque on the sticky header, under which rows scroll.
+    check("the body band is a translucent film of the one column var",
+          /tbody td\.tv-colsel\{background:color-mix\(in srgb,var\(--tv-col\) var\(--tv-col-wash\),transparent\)\}/
+            .test(css), true);
+    check("and the header's is the same wash mixed into the page, so it stays opaque",
+          /th\.tv-colsel\{background:color-mix\(in srgb,var\(--tv-col\) var\(--tv-col-wash\),var\(--tv-bg\)\)\}/
+            .test(css), true);
+    check("the crossing is one step more of that same colour, on the same slot",
+          /tbody td\.tv-cell-sel\{background:color-mix\(in srgb,var\(--tv-col\) var\(--tv-cell-wash\),transparent\)\}/
+            .test(css), true);
+    // The sweep. A background assertion cannot catch an outline sitting beside
+    // it, so every rule whose SELECTOR names any part of the selection is read
+    // whole -- and counted, or a rename would empty the sweep and pass it.
+    // Comments come out first: the ones above these rules say the words this is
+    // hunting for, and a sweep that read them would answer about the prose.
+    const sel = css.replace(/\/\*[\s\S]*?\*\//g, "").split("}")
+      .filter((r) => /\.tv-(sel|colsel|cell-sel)\b/.test((r.split("{")[0] || "")));
+    check("the whole selection is four rules and not one of them draws an edge",
+          [sel.length, sel.some((r) => /border|outline|box-shadow/.test(r))],
+          [4, false]);
+    // The flag's edge is a different channel and must survive the sweep: it is
+    // on the box cell, which no selection rule names.
+    check("while the flag keeps the one edge the table does draw",
+          /tr\.tv-flagged td\.tv-box\{box-shadow:/.test(css), true);
+
+    // The identity, spelled once for both themes the way the frost and the flag
+    // are, in a hue neither they nor the cursor nor the mark occupies.
+    const COL = paletteIn(".tv-root{").col;
+    const gap = (a, b) => Math.min(Math.abs(a - b), 360 - Math.abs(a - b));
+    check("the column identity is one colour, declared once and inherited by both themes",
+          [!!COL, paletteIn(':root[data-theme="dark"] .tv-root{').col,
+           paletteIn(':root[data-theme="light"] .tv-root{').col],
+          [true, undefined, undefined]);
+    check("and its hue is nothing else the table paints",
+          ["#D0E1F9", "#E74C3C", paletteIn(':root[data-theme="light"] .tv-root{').sel,
+           paletteIn(':root[data-theme="light"] .tv-root{').muted,
+           paletteIn(':root[data-theme="dark"] .tv-root{').muted]
+            .every((c) => gap(hue(COL), hue(c)) >= 30), true);
+
+    // The strengths, measured against the grounds each wash can land on -- and
+    // they are different grounds: the band lands on the page, the stripe, a
+    // mark and a flag, while the crossing lands on the cursor row and nowhere
+    // else, the band's own rule losing that one cell to it.
+    for (const theme of ["light", "dark"]) {
+      const p = paletteIn(`:root[data-theme="${theme}"] .tv-root{`);
+      const base = paletteIn(".tv-root{");
+      const band = washIn(theme, "col", "col-wash");
+      const grounds = {
+        page: p.bg,
+        stripe: p.alt,
+        marked: mixed(p.bg, p.muted, pctOf(p["mark-wash"])),
+        flagged: mixed(p.bg, p.flag || base.flag, pctOf(p["flag-wash"])),
+      };
+      for (const [what, g] of Object.entries(grounds)) {
+        const on = mixed(g, band.colour, band.pct);
+        check(`${theme}: the tag ink clears 4.5:1 in the band over ${what}`,
+              ratio(p.muted, on) >= 4.5, true);
+        check(`${theme}: and body text clears 7:1 there`, ratio(p.fg, on) >= 7, true);
+      }
+      // Visible, and quieter than the state it crosses: a locator under a
+      // meaning. Contrast says nothing about either -- the light cursor row is
+      // 1.04:1 against its page -- so both are read as sRGB distance, against
+      // the mark's own step as the yardstick. The zebra will not serve as one:
+      // it is a tenth of the light page and two thirds of the dark one, so a
+      // rule written against it says different things in the two themes.
+      const moved = Object.values(grounds).map((g) => apart(mixed(g, band.colour, band.pct), g));
+      const markStep = apart(grounds.marked, p.bg);
+      check(`${theme}: the band shifts every ground it lands on`,
+            Math.min(...moved) > markStep / 5, true);
+      check(`${theme}: and never as far as a mark shifts the page, a locator staying under a state`,
+            Math.max(...moved) < markStep * 0.9, true);
+      // Translucency is what keeps the four row washes telling themselves apart
+      // inside the band as well as outside it.
+      for (const what of ["stripe", "marked", "flagged"]) {
+        const inside = apart(mixed(grounds[what], band.colour, band.pct),
+                             mixed(grounds.page, band.colour, band.pct));
+        check(`${theme}: a ${what} row still reads as one under the band`,
+              inside > apart(grounds[what], p.bg) / 2, true);
+      }
+      // The crossing. Its one ground is the cursor row, and it has to stay the
+      // most legible cell on the table, being the one being read.
+      const cross = mixed(p.sel, band.colour, pctOf(p["cell-wash"]));
+      check(`${theme}: the crossing keeps the tag ink above 4.5:1`,
+            ratio(p.muted, cross) >= 4.5, true);
+      check(`${theme}: and body text above 7:1`, ratio(p.fg, cross) >= 7, true);
+      check(`${theme}: it steps off its row at least as far as the band steps off its grounds`,
+            apart(cross, p.sel) >= Math.min(...moved), true);
+      check(`${theme}: and takes more of the colour than the band does`,
+            pctOf(p["cell-wash"]) > band.pct, true);
+    }
+    // Which of the two numbers a floor SET, and which was chosen: the same
+    // asymmetry the flag has, the other way up. Dark's cursor row is the
+    // lightest ground either wash lands on, so the ink caps the crossing there
+    // and one point more breaks it; light has room and is set by what reads.
+    const inkAt = (theme, pct) => {
+      const p = paletteIn(`:root[data-theme="${theme}"] .tv-root{`);
+      return ratio(p.muted, mixed(p.sel, paletteIn(".tv-root{").col, pct));
+    };
+    const dpct = pctOf(paletteIn(':root[data-theme="dark"] .tv-root{')["cell-wash"]);
+    const lpct = pctOf(paletteIn(':root[data-theme="light"] .tv-root{')["cell-wash"]);
+    check("dark's crossing is the most the ink allows; one point more would break it",
+          [inkAt("dark", dpct) >= 4.5, inkAt("dark", dpct + 0.01) >= 4.5], [true, false]);
+    check("light has headroom dark does not, and is set by what reads",
+          inkAt("light", lpct + 0.01) >= 4.5, true);
+    // Pale colours need far more of themselves over white than over black --
+    // the frost's story, and this amber's for the same reason.
+    check("which is why the two strengths are far apart, as the chip's are",
+          washIn("light", "col", "col-wash").pct > washIn("dark", "col", "col-wash").pct * 3,
+          true);
   }
 
   // --- the viewport ease: scroll-margin targeting, one retargeting loop

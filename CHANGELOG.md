@@ -35,6 +35,53 @@ the rails-to-cosmos ELPA archive publishes date-stamped snapshots.
   sort. The Rust side needed nothing: `tvx` is handed a sort chain and
   executes it, and reads no sortability anywhere, so the differential
   oracle covers exactly what it covered before.
+- **A cell selection draws its whole column, and every part of the
+  selection is a ground** (browser renderer). `select(id, col)` used to
+  outline the one `td` in the accent colour. It now washes the column it
+  names — `.tv-colsel` on every rendered cell of that column and on its
+  header, since a band stopping short of its header reads as broken — and
+  `.tv-cell-sel`, where that band crosses the cursor row, is one step more
+  of the same wash. Nothing in the selection draws an edge any more: three
+  backgrounds, and the suite sweeps every rule whose selector names one of
+  them for `border`, `outline` and `box-shadow`, counting the rules so a
+  rename cannot quietly empty the sweep. The flag's left edge on the box
+  cell is untouched, being the one edge the table does draw and a channel
+  no selection rule names. `select(id)` with no column is byte-for-byte
+  what it was: the band is written nowhere rather than merely undone, which
+  the suite pins by comparing those rows against a mount that never had a
+  column at all.
+- **`--tv-col`, the selected column's identity** (browser renderer), spelled
+  once for both themes the way `--tv-frost` and `--tv-flag` are, washed at
+  `--tv-col-wash` for the band and `--tv-cell-wash` for the crossing. It is
+  a pale amber (`#FFF3D0`) for two reasons, and the second is the binding
+  one. Amber is the one hue nothing else on the table occupies — frost at
+  215°, the flag at 6°, the light cursor at 120°, the mark's ink at 185°
+  and 215°. And at luminance .899 it sits level with the darkest ground a
+  row can wear, so washing it over a marked or a flagged row shifts the hue
+  without spending the contrast the tag ink needs. Every darker candidate,
+  the muted ink of the original sketch included, dragged that ink under
+  4.5:1 on a marked row well before it became visible at all: the light
+  mark and flag washes already sit at the ink's cap (4.62:1 and 4.61:1
+  against a 4.5 floor), so a wash that composites over one has almost
+  nothing to spend. The band goes on the cells and the row states stay on
+  the row, so the two never contest a background slot, and the band being
+  translucent is what leaves the stripe, the mark, the flag and the cursor
+  all still telling themselves apart inside it — measured rather than
+  assumed: each keeps more than half the step it has outside the band. Both
+  strengths are measured against the grounds each can land on, and those
+  differ, the band falling on the page, the stripe, a mark and a flag while
+  the crossing falls on the cursor row alone. Dark's crossing is the most
+  the ink allows — 9% leaves the tag ink at 4.61:1 there and one point more
+  puts it under the floor — while light has headroom and is set by what
+  reads, its band moving a ground between half and nine tenths as far as a
+  mark moves the page, a locator staying quieter than a state. The two
+  strengths are far apart (35% against 8%) for the reason the chip's are:
+  a pale colour needs much more of itself over white than over black.
+  `washIn` in the driver is now general over any colour-and-strength pair
+  rather than the flag's alone, and `apart` joins `ratio` beside it —
+  contrast answers "can this be read on that" and says almost nothing about
+  "can this band be seen", the light cursor row being 1.04:1 against the
+  page it sits on and perfectly plain to the eye.
 
 ### Fixed
 - **A selection run no longer parks short of the row it chose** (browser

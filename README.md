@@ -509,13 +509,25 @@ When the row under the selection goes — filtered away, deleted, paged past —
 the selection keeps its **place** rather than its id, staying at that visual
 index (clamped), so movement carries on from where the eye is.
 
-**Selection** is a row and, optionally, one cell of it. `select(id, 2)` stamps
-the third column's `td`; `select(id)` selects the whole row, which is what it
-always did. The column is clamped to the ones that exist, never wrapped, and
-both marks are re-derived on every render, so they survive a scroll, an upsert
+**Selection** is a row and, optionally, one cell of it. `select(id, 2)` washes
+the third column — `.tv-colsel` on every rendered cell of it and on its header —
+and stamps `.tv-cell-sel` where that band crosses the cursor row, which is the
+crosshair; `select(id)` selects the whole row with no band anywhere, which is
+what it always did. The column is clamped to the ones that exist, never wrapped,
+and every mark is re-derived on every render, so they survive a scroll, an upsert
 and a `setRows` that still carries the id. `getSelection()` reports `{id, col}`
 — read it, add a step, hand it back to `select` — which is how a consumer binds
 cell movement to keys.
+
+The whole selection is grounds: no outline, border or shadow on any of the
+three. The bands wash `--tv-col`, a pale amber that is the one hue nothing else
+here uses and light enough that laying it over a marked or flagged row shifts
+the hue without spending the contrast the tag ink needs. They sit on the cells,
+where the table paints them above the rows, so the stripe, a mark, a flag and
+the cursor all still read through the column they cross; the crossing takes one
+step more of the same wash, on the same background slot, the cell's rule
+following the column's. Each strength is the most the ink allows on the grounds
+it lands on, which is why the two themes are far apart.
 
 **Actions have no buttons.** They render on the hint line as `KEY label` pairs,
 the way `table-view.el` prints its legend: the keys are the interface, and a

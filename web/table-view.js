@@ -70,12 +70,19 @@
  *   label' pairs, the way table-view.el prints its legend: the keys are the
  *   interface, a consumer binds them and dispatches the command, and a button
  *   would only offer a second way to reach what a key already reaches.
- * - Selection is a row and, optionally, one cell of it: `select(id, col)'
- *   stamps `.tv-cell-sel' on that td, `getSelection()' reports both. The column
- *   is clamped to the ones that exist, never wrapped, and `select(id)' with no
- *   column is the whole-row selection this had before. Both classes are
- *   re-derived from the same state on every render, so they survive a scroll, an
- *   upsert and a `setRows' that still carries the id.
+ * - Selection is a row and, optionally, one cell of it: `select(id, col)' washes
+ *   the whole column (`.tv-colsel' on every rendered td of it and on its th) and
+ *   stamps `.tv-cell-sel' where that band crosses the cursor row, which is the
+ *   crosshair; `getSelection()' reports both. The column is clamped to the ones
+ *   that exist, never wrapped, and `select(id)' with no column is the whole-row
+ *   selection this had before, with no band anywhere. Every class is re-derived
+ *   from the same state on every render, so they survive a scroll, an upsert and
+ *   a `setRows' that still carries the id.
+ * - The whole selection is grounds — no outline, border or shadow on any of the
+ *   three. The bands sit on the cells, where the table paints them above the
+ *   rows, and the body's is translucent, so the zebra, a mark, a flag and the
+ *   cursor all still read through the column they cross; the header's is the
+ *   same wash mixed into the page, the sticky header owing the rows opacity.
  * - Movement is smooth in two places, and neither of them is an overlay. The
  *   marks crossfade where they are (80ms on the tr and td backgrounds), and
  *   the viewport eases toward the row rather than jumping to it. An absolutely
@@ -684,6 +691,15 @@
     // one signal that reads as "about to happen to this row" without being
     // borrowed from the applied filter or the cursor.
     const FLAG = "#E74C3C";
+    // The selected column's identity, spelled once like the two above. Amber is
+    // the one hue nothing else on the table uses (frost 215, flag 6, the light
+    // cursor 120, the mark's ink 185/215), and it is pale on purpose: at
+    // luminance .899 it sits level with the darkest ground a row can wear, so
+    // washing it over one shifts the hue without spending the contrast the tag
+    // ink needs. That is what lets a column be washed at all — every other
+    // candidate darkened a marked or flagged row past 4.5:1 before it became
+    // visible, the light mark and flag washes already sitting at the ink's cap.
+    const COL = "#FFF3D0";
     const css = `
 /* Both palettes are danneskjold-theme's, mapped role for role from
    /home/akatovda/sync/stuff/danneskjold-theme/danneskjold-theme.el — its
@@ -705,17 +721,21 @@
   --tv-border:#E3E6EA;--tv-accent:#31769F;--tv-sel:#F0FFF0;--tv-hover:#FAFAFA;
   --tv-frost:${FROST};--tv-chip-wash:45%;--tv-chip-edge:95%;--tv-mark-wash:8%;
   --tv-flag:${FLAG};--tv-flag-wash:8%;
+  --tv-col:${COL};--tv-col-wash:35%;--tv-cell-wash:60%;
   color:var(--tv-fg);background:var(--tv-bg);font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
   border:1px solid var(--tv-border);border-radius:8px;overflow:hidden;display:flex;flex-direction:column;max-height:100%}
 @media (prefers-color-scheme:dark){.tv-root{--tv-fg:#FFFFFF;--tv-muted:#A4C2EB;--tv-bg:#000000;
   --tv-alt:#21252B;--tv-border:#2a2d3d;--tv-accent:#4CB5F5;--tv-sel:#373D4F;
-  --tv-hover:#1F1F1F;--tv-chip-wash:18%;--tv-chip-edge:34%;--tv-mark-wash:30%;--tv-flag-wash:30%;}}
+  --tv-hover:#1F1F1F;--tv-chip-wash:18%;--tv-chip-edge:34%;--tv-mark-wash:30%;--tv-flag-wash:30%;
+  --tv-col-wash:8%;--tv-cell-wash:9%;}}
 :root[data-theme="dark"] .tv-root{--tv-fg:#FFFFFF;--tv-muted:#A4C2EB;--tv-bg:#000000;
   --tv-alt:#21252B;--tv-border:#2a2d3d;--tv-accent:#4CB5F5;--tv-sel:#373D4F;
-  --tv-hover:#1F1F1F;--tv-chip-wash:18%;--tv-chip-edge:34%;--tv-mark-wash:30%;--tv-flag-wash:30%;}
+  --tv-hover:#1F1F1F;--tv-chip-wash:18%;--tv-chip-edge:34%;--tv-mark-wash:30%;--tv-flag-wash:30%;
+  --tv-col-wash:8%;--tv-cell-wash:9%;}
 :root[data-theme="light"] .tv-root{--tv-fg:#000000;--tv-muted:#667071;--tv-bg:#FFFFFF;--tv-alt:#F8F8FF;
   --tv-border:#E3E6EA;--tv-accent:#31769F;--tv-sel:#F0FFF0;--tv-hover:#FAFAFA;
-  --tv-chip-wash:45%;--tv-chip-edge:95%;--tv-mark-wash:8%;--tv-flag-wash:8%}
+  --tv-chip-wash:45%;--tv-chip-edge:95%;--tv-mark-wash:8%;--tv-flag-wash:8%;
+  --tv-col-wash:35%;--tv-cell-wash:60%}
 .tv-bar{display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:1px solid var(--tv-border);flex-wrap:wrap}
 .tv-title{font-weight:600;font-size:14px;margin-right:auto}
 .tv-filter{font:inherit;padding:4px 8px;border:1px solid var(--tv-border);border-radius:6px;
@@ -826,7 +846,31 @@
 .tv-table tbody tr,.tv-table tbody td{transition:background-color .08s ease-out,
   box-shadow .08s ease-out}
 .tv-calm .tv-table tbody tr,.tv-calm .tv-table tbody td{transition:none}
-.tv-table tbody td.tv-cell-sel{box-shadow:inset 0 0 0 1px var(--tv-accent);border-radius:3px}
+/* A cell selection draws two bands and their crossing, and all three are
+   grounds — no outline, no border, no shadow anywhere in the selection. The
+   column's band is a wash of the amber over whatever the ROW painted: the row
+   states write the tr and these write the td, which the table paints above it,
+   so the two never contest a slot, and the film being translucent is what
+   leaves the zebra, the mark, the flag and the cursor all still reading
+   through it, quieter inside the band than out. The one contest is here,
+   between these two rules on the one td, and it is settled the way the row
+   stack settles its own: equal specificity, source order, cell after column.
+
+   The header is the same wash mixed into the page's ground rather than laid
+   over it — the same colour, arrived at opaquely, because the header is sticky
+   and rows scroll under it.
+
+   Both strengths are measured against the grounds they can land on, and those
+   grounds differ: the film lands on the page, the stripe, a mark and a flag,
+   while the cell lands on the cursor row alone. Light is set by what reads —
+   the band moving a ground between half and nine tenths as far as a mark moves
+   the page, since a locator must stay quieter than a state — and dark's cell by
+   what the ink allows: 9% leaves the tag ink at 4.61:1 on the cursor row and
+   one point more puts it under 4.5, so the dark crosshair reads by the ground
+   beneath it rather than by the point of wash above it. */
+.tv-table th.tv-colsel{background:color-mix(in srgb,var(--tv-col) var(--tv-col-wash),var(--tv-bg))}
+.tv-table tbody td.tv-colsel{background:color-mix(in srgb,var(--tv-col) var(--tv-col-wash),transparent)}
+.tv-table tbody td.tv-cell-sel{background:color-mix(in srgb,var(--tv-col) var(--tv-cell-wash),transparent)}
 .tv-table tbody tr{cursor:default}
 .tv-table tbody tr.tv-pad td{padding:0;border:0}
 /* The third role, and the quietest: no box at all. A filled pill is a state, a
@@ -1637,8 +1681,9 @@
       const multi = multiColumn();
       let tds = marks ? `<td class="tv-box"></td>` : "";
       for (let c = 0; c < cols.length; c++) {
+        const inCol = c === state.selCol;
         const cell = (cols[c].align === "right" ? "tv-right" : "")
-                   + (on && c === state.selCol ? " tv-cell-sel" : "");
+                   + (inCol ? " tv-colsel" : "") + (on && inCol ? " tv-cell-sel" : "");
         tds += `<td class="${cell}">`
              + `${cellHTML(cols[c], cs[cols[c].key], dark, c === multi)}</td>`;
       }
@@ -1855,12 +1900,15 @@
     }
 
     /**
-     * The row state the window wears — `tv-sel', `tv-cell-sel' and `tv-marked'
-     * — re-derived from the state rather than rebuilt, which is what leaves the
-     * grounds something to crossfade between. One pass for all three, since a
-     * toggle and a step arrive in the same frame, and three `classList.toggle's
-     * rather than any DOM write: each is a no-op where the state already
-     * matches, so a held movement key rewrites nothing.
+     * The row and column state the window wears — `tv-sel', `tv-marked',
+     * `tv-flagged', the selected column's `tv-colsel' and the one
+     * `tv-cell-sel' where they cross — re-derived from the state rather than
+     * rebuilt, which is what leaves the grounds something to crossfade
+     * between. One pass for all of them, since a toggle and a step arrive in
+     * the same frame, and `classList.toggle's rather than any DOM write: each
+     * is a no-op where the state already matches, so a held movement key
+     * rewrites nothing. Only the window is stamped, the header apart, which is
+     * all there is to stamp — the rows outside it have no elements.
      */
     function stampSelection() {
       const id = state.selected;
@@ -1874,9 +1922,17 @@
         tr.classList.toggle("tv-flagged", isFlagged(rowId));
         // The chrome cell is nobody's column, so the column a cell selection
         // names is counted past it.
-        for (let c = chrome; c < tr.children.length; c++)
-          tr.children[c].classList.toggle("tv-cell-sel", on && c - chrome === state.selCol);
+        for (let c = chrome; c < tr.children.length; c++) {
+          const inCol = c - chrome === state.selCol;
+          tr.children[c].classList.toggle("tv-colsel", inCol);
+          tr.children[c].classList.toggle("tv-cell-sel", on && inCol);
+        }
       }
+      // A column highlight that stopped at the header would read as broken, and
+      // the header is not rebuilt per window, so it is stamped here rather than
+      // in `rowHTML'. A whole-row selection has no column and clears both.
+      for (let c = chrome; c < headRow.children.length; c++)
+        headRow.children[c].classList.toggle("tv-colsel", c - chrome === state.selCol);
     }
 
 
