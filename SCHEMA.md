@@ -89,21 +89,8 @@ asc/desc place nulls last).
 |---------|-------------------|-----------------------------------------------|
 | `id`    | string            | stable identity; keys updates and marks       |
 | `cells` | object            | column-key → cell value                       |
-| `depth` | int               | outline depth, 0-based (experimental)         |
 
 `cells` maps each column `key` to a value. A missing key renders empty.
-
-- `depth` is a **renderer hint for tree-shaped data**: 0 for a top-level row,
-  one more per level below it. It is about the row's place among the others
-  rather than about anything shown in it, which is why it sits beside `id` and
-  is not a cell, a column, or a filter key. A renderer may ignore it entirely,
-  and a row without one reads as depth 0, so a view that never sends the field
-  renders as it always did. A producer emitting it should also be able to serve
-  the rows in the order they nest — with `sort` omitted, since a renderer that
-  re-sorts scatters the nesting. *Experimental*: the field is new, the two
-  renderers differ on what they do with it (`web/table-view.js` draws it under
-  its own `tree: true` mount option; `table-view.el` ignores it), and nothing
-  else in the contract turns on it.
 
 ### Cell value
 
@@ -210,10 +197,9 @@ not part of this contract. The browser renderer documents its handle in
 ## Not part of the contract
 
 These are renderer-local behaviours, not producer output: row marking, narrowing,
-interactive column reorder/add/remove, help toggles, **computed columns**
-(cells derived by a renderer-side function), and **how `depth` is drawn** —
-connector guides, plain indentation, a fold arrow, or nothing at all. Producers
-emit data; renderers decide interaction.
+interactive column reorder/add/remove, help toggles, and **computed columns**
+(cells derived by a renderer-side function). Producers emit data; renderers
+decide interaction.
 
 ## Example — a glance headline view
 
@@ -237,18 +223,13 @@ emit data; renderers decide interaction.
   ],
   "sort": { "column": "scheduled", "ascending": true },
   "rows": [
-    { "id": "a1b2", "depth": 0, "cells": {
+    { "id": "a1b2", "cells": {
         "state": "NEXT", "priority": "A",
         "title": "[[org-glance:a1b2][Ship table-view.js]]",
         "tag": ":web:glance:", "scheduled": "2026-08-01" } },
-    { "id": "c3d4", "depth": 1, "cells": {
+    { "id": "c3d4", "cells": {
         "state": "TODO", "priority": "B",
         "title": "Write SCHEMA.md", "tag": ":web:", "scheduled": "2026-08-03" } }
   ]
 }
 ```
-
-`c3d4` is a child of `a1b2` in the file it was read from, and this view says so
-while sorting the nesting apart — which is the pairing to keep in mind: a
-producer that means the depths to be read serves them with `sort` omitted, and
-glance spells that `/headlines?order=document`.

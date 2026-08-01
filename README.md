@@ -434,51 +434,6 @@ flagged. Precedence on that one slot is cursor, then flag, then mark, then
 zebra. When either count is nonzero it leads the hint line, the pending one
 first: `2 flagged · 3 marked · 40 rows · sort …`.
 
-### Outline guides (experimental)
-
-Pass **`tree: true`** to draw SCHEMA.md's optional row `depth` as outline
-guides:
-
-```
-Ship the table view
-├─ Write SCHEMA.md
-│  ├─ The Row object
-│  └─ The example
-└─ Wire the producer
-Read the schema
-```
-
-They go in one column — the `title` column when the view declares one, else the
-first text column — as a muted span ahead of the cell's own text. Presentation
-only, like the tag chips: the cells, the filter, the sort and the row a
-consumer reads back are the producer's, and the guide is drawn over none of
-them. A row without a `depth` reads as depth 0, so a view that never sends the
-field renders exactly as it did with the option off.
-
-**They are drawn only while the rows on show are the rows the producer sent.** A
-connector claims the row above is this row's parent, and only the producer's
-own order carries that claim. So a sort key in force — declared by the view or
-clicked by a reader — and a query in force — filtered here, or delivered to a
-producer that narrowed for us — each degrade the guides to indentation alone:
-`depth` spaces, no `│`, no `├─`. Nothing is hidden and nothing is faked; what
-goes is the one part of the drawing that would be a lie.
-
-Adjacency is read off the **page**, so with a `pageSize` the guides describe
-that page and no other: the first row of a page is indented without a
-connector, since whatever it would join to is off-page and a page boundary is
-not a parentage, and the last row of a page reads as the last of its siblings
-because the page has no later one to see. Without a `pageSize` the page is the
-whole filtered set and neither applies.
-
-The column's width allows for what is drawn — 2ch a level with the guides, 1ch
-a level without them — measured per row over the whole filtered set, so a deep
-row with a short label costs the column nothing and the width holds still while
-scrolling.
-
-*Experimental*: `depth` is new in SCHEMA.md, `table-view.el` ignores it, and no
-producer is obliged to send it. glance emits it on every row and serves the
-matching order under `/headlines?order=document`.
-
 ### Paging
 
 Pass **`pageSize`** to show the filtered, sorted set a page at a time. The
