@@ -1,0 +1,92 @@
+{
+  "capability": "render",
+  "doc": "What a cell puts on screen (SCHEMA.md, Cell value): Org links reduced to their descriptions, control characters collapsed, a badge inked from its palette. `text' is the cell's displayed string with the renderer's padding taken off; `inked', when present, is whether the palette coloured it.",
+  "cases": [
+    {
+      "name": "a link cell shows its description",
+      "view": {
+        "title": "link desc",
+        "columns": [{ "key": "title", "header": "Headline" }],
+        "rows": [{ "id": "a", "cells": { "title": "[[org-glance:h-1][Ship it]]" } }]
+      },
+      "expect": { "cells": [{ "row": "a", "column": "title", "text": "Ship it" }] }
+    },
+    {
+      "name": "a link without a description shows its target",
+      "view": {
+        "title": "link target",
+        "columns": [{ "key": "title", "header": "Headline" }],
+        "rows": [{ "id": "a", "cells": { "title": "[[https://example.com]]" } }]
+      },
+      "expect": {
+        "cells": [{ "row": "a", "column": "title", "text": "https://example.com" }]
+      }
+    },
+    {
+      "name": "text around a link survives it",
+      "view": {
+        "title": "link inline",
+        "columns": [{ "key": "title", "header": "Headline" }],
+        "rows": [{ "id": "a", "cells": { "title": "see [[file:d.org][the doc]] now" } }]
+      },
+      "expect": { "cells": [{ "row": "a", "column": "title", "text": "see the doc now" }] }
+    },
+    {
+      "name": "a run of control characters collapses to one space",
+      "doc": "A cell is always one line, so the row keeps its shape.",
+      "view": {
+        "title": "control chars",
+        "columns": [{ "key": "title", "header": "Headline" }],
+        "rows": [{ "id": "a", "cells": { "title": "a\t\nb" } }]
+      },
+      "expect": { "cells": [{ "row": "a", "column": "title", "text": "a b" }] }
+    },
+    {
+      "name": "a badge is inked from its palette and an unnamed value is not",
+      "doc": "The badges carry `group', which neither renderer reads; the ink is the one a group-less palette would give.",
+      "view": {
+        "title": "badge ink",
+        "columns": [
+          { "key": "state", "header": "State", "type": "badge",
+            "badges": [{ "value": "NEXT", "color": "#7aa2f7", "group": "active" }] }
+        ],
+        "rows": [
+          { "id": "n", "cells": { "state": "NEXT" } },
+          { "id": "u", "cells": { "state": "HOLD" } }
+        ]
+      },
+      "expect": {
+        "cells": [
+          { "row": "n", "column": "state", "text": "NEXT", "inked": true },
+          { "row": "u", "column": "state", "text": "HOLD", "inked": false }
+        ]
+      }
+    },
+    {
+      "name": "a number renders as its natural string form",
+      "view": {
+        "title": "number cell",
+        "columns": [{ "key": "n", "header": "N", "type": "number", "align": "right" }],
+        "rows": [{ "id": "a", "cells": { "n": 42 } }]
+      },
+      "expect": { "cells": [{ "row": "a", "column": "n", "text": "42" }] }
+    },
+    {
+      "name": "a null cell and a missing key both render empty",
+      "view": {
+        "title": "empty cells",
+        "columns": [
+          { "key": "a", "header": "A" },
+          { "key": "b", "header": "B" }
+        ],
+        "rows": [{ "id": "r", "cells": { "a": null } }]
+      },
+      "expect": {
+        "cells": [
+          { "row": "r", "column": "a", "text": "" },
+          { "row": "r", "column": "b", "text": "" }
+        ]
+      }
+    }
+  ]
+}

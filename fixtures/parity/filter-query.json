@@ -1,0 +1,68 @@
+{
+  "capability": "query",
+  "doc": "SCHEMA.md's filter micro-syntax, applied end to end: a query in, the ids it leaves out. Browser-renderer only -- table-view.el's `/' is a plain substring over the row, with no grammar to hold to this. One view for every case.",
+  "view": {
+    "title": "query",
+    "columns": [
+      { "key": "state", "header": "State", "type": "badge",
+        "badges": [
+          { "value": "TODO", "color": "#e0af68", "group": "active" },
+          { "value": "DONE", "color": "#9ece6a", "group": "inactive" }
+        ] },
+      { "key": "title", "header": "Headline" },
+      { "key": "tag", "header": "Tags", "multi": true },
+      { "key": "scheduled", "header": "Scheduled" }
+    ],
+    "rows": [
+      { "id": "a", "cells": { "state": "TODO", "title": "ship the parity vectors",
+                              "tag": ":web:api:", "scheduled": "2026-08-01" } },
+      { "id": "b", "cells": { "state": "DONE", "title": "write two words",
+                              "tag": ":web:", "scheduled": "2026-09-02" } },
+      { "id": "c", "cells": { "state": "TODO", "title": "read :work: notes",
+                              "tag": "", "scheduled": "" } }
+    ]
+  },
+  "cases": [
+    { "name": "a column key makes a predicate", "q": "state:DONE",
+      "expect": { "ids": ["b"] } },
+    { "name": "= is an alias for :", "q": "state=DONE", "expect": { "ids": ["b"] } },
+    { "name": "a badge value matches whole and case-insensitively", "q": "state:done",
+      "expect": { "ids": ["b"] } },
+    { "name": "a badge value does not match by substring", "q": "state:DON",
+      "expect": { "ids": [] } },
+    { "name": "a leading hyphen negates", "q": "-state:DONE",
+      "expect": { "ids": ["a", "c"] } },
+    { "name": "a single-valued field ORs its repeats",
+      "doc": "AND would always be empty, so repeating `state' means either.",
+      "q": "state:TODO state:DONE", "expect": { "ids": ["a", "b", "c"] } },
+    { "name": "a multi-valued field ANDs its repeats",
+      "doc": "`tag' declares `multi', so a row must carry both.",
+      "q": "tag:web tag:api", "expect": { "ids": ["a"] } },
+    { "name": "& separates a token like whitespace", "q": "tag:web&tag:api",
+      "expect": { "ids": ["a"] } },
+    { "name": "distinct keys AND", "q": "state:TODO tag:api",
+      "expect": { "ids": ["a"] } },
+    { "name": "none matches the empty cell", "q": "tag:none",
+      "expect": { "ids": ["c"] } },
+    { "name": "a key with nothing typed narrows nothing", "q": "state:",
+      "expect": { "ids": ["a", "b", "c"] } },
+    { "name": "a date-shaped column matches by prefix", "q": "scheduled:2026-08",
+      "expect": { "ids": ["a"] } },
+    { "name": "and not in the middle", "q": "scheduled:08",
+      "expect": { "ids": [] } },
+    { "name": "a text column matches by substring", "q": "title:parity",
+      "expect": { "ids": ["a"] } },
+    { "name": "org tag text is free text, never a predicate", "q": ":work:",
+      "expect": { "ids": ["c"] } },
+    { "name": "an unknown key is free text too", "q": "nope:x",
+      "expect": { "ids": [] } },
+    { "name": "a quoted token is free text with spaces", "q": "\"two words\"",
+      "expect": { "ids": ["b"] } },
+    { "name": "free text reads the whole row", "q": "vectors",
+      "expect": { "ids": ["a"] } },
+    { "name": "a bare hyphen negates the empty term, which matches everything",
+      "q": "-", "expect": { "ids": [] } },
+    { "name": "an empty query filters nothing", "q": "",
+      "expect": { "ids": ["a", "b", "c"] } }
+  ]
+}

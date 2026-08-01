@@ -40,8 +40,9 @@
   (setq native-live--tick 200)
   (let ((buf "*native-live*")
         (spec '((title . "Live workers (native backend)")
-                (columns . (((key . "name") (header . "Worker"))
-                            ((key . "load") (header . "Load") (type . "number") (align . "right"))))
+                (columns . (((key . "name") (header . "Worker") (sortable . t))
+                            ((key . "load") (header . "Load") (type . "number")
+                             (align . "right") (sortable . t))))
                 (sort . ((column . "load") (ascending . nil)))       ; hottest first
                 (pagination . ((page-size . 20) (strategy . offset))))))
     ;; Seed with 200 rows the backend then owns.

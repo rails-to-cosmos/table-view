@@ -29,9 +29,11 @@
 (require 'table-view-native)
 
 (let ((spec '((title . "1,000,000 rows — sorted & filtered in Rust")
-              (columns . (((key . "name") (header . "Name"))
-                          ((key . "num")  (header . "Hash")  (type . "number") (align . "right"))
-                          ((key . "val")  (header . "Index") (type . "number") (align . "right"))))
+              (columns . (((key . "name") (header . "Name") (sortable . t))
+                          ((key . "num")  (header . "Hash")  (type . "number")
+                           (align . "right") (sortable . t))
+                          ((key . "val")  (header . "Index") (type . "number")
+                           (align . "right") (sortable . t))))
               (sort . ((column . "name") (ascending . t)))
               (pagination . ((page-size . 25) (strategy . offset))))))
   ;; SOURCE plist: "gen" N tells the backend to synthesize N rows itself.

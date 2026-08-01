@@ -35,11 +35,14 @@
 
 (let ((spec '((title . "Releases")
               (columns . (((key . "service") (header . "Service") (sortable . t))
-                          ((key . "env") (header . "Env")                           (values . ("dev" "staging" "prod")))
-                          ((key . "version") (header . "Version")                           (compare . "natural"))
+                          ((key . "env") (header . "Env") (sortable . t)
+                           (values . ("dev" "staging" "prod")))
+                          ((key . "version") (header . "Version") (sortable . t)
+                           (compare . "natural"))
                           ((key . "size") (header . "Size") (sortable . t) (align . "right")
                            (compare . sort-methods--size-lessp))   ; a predicate function
-                          ((key . "status") (header . "Status") (type . "badge")                           (badges . (((value . "ok")   (color . "#50fa7b"))
+                          ((key . "status") (header . "Status") (type . "badge") (sortable . t)
+                           (badges . (((value . "ok")   (color . "#50fa7b"))
                                       ((value . "warn") (color . "#f1fa8c"))
                                       ((value . "err")  (color . "#ff5555")))))))
               (actions . (((key . "RET") (label . "Log") (command . "log"))))

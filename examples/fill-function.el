@@ -16,7 +16,7 @@
     (columns . (((key . "name")   (header . "Name") (sortable . t))
                 ((key . "pid")    (header . "PID") (type . "number")
                  (align . "right") (sortable . t))
-                ((key . "status") (header . "Status") (type . "badge")
+                ((key . "status") (header . "Status") (type . "badge") (sortable . t)
                  (badges . (((value . "run")   (color . "#50fa7b"))
                             ((value . "sleep") (color . "#6272a4"))
                             ((value . "stop")  (color . "#ff5555")))))))

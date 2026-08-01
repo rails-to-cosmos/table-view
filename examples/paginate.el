@@ -102,10 +102,11 @@ request and call `table-view-set-page' from the callback instead."
 
 (let* ((db (paginate-example--db 137))
        (spec '((title . "Packages (server-paged)")
-               (columns . (((key . "name")      (header . "Name"))
+               (columns . (((key . "name")      (header . "Name") (sortable . t))
                            ((key . "downloads") (header . "Downloads")
-                            (type . "number") (align . "right"))
+                            (type . "number") (align . "right") (sortable . t))
                            ((key . "status")    (header . "Status") (type . "badge")
+                            (sortable . t)
                             (badges . (((value . "stable") (color . "#50fa7b"))
                                        ((value . "beta")   (color . "#f1fa8c"))
                                        ((value . "alpha")  (color . "#ff5555")))))))

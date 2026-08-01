@@ -21,6 +21,7 @@
 "use strict";
 
 const path = require("path");
+const fs = require("fs");
 
 // ---- metrics ---------------------------------------------------------------
 
@@ -659,6 +660,64 @@ async function sortOrder() {
   p.applyDelta([{ op: "delete", index: 0 }]);
   check("with no sort the window is the store",
         p.getRows().map((r) => r.cells.name), ["", "apple", "fig"]);
+}
+
+
+/**
+ * The conformance vectors both renderers' suites execute (../fixtures/parity),
+ * off one manifest: this driver and table-view-test.el. The manifest says which
+ * capabilities are this harness's, and a listed one with no runner below fails
+ * rather than skipping, so it cannot claim one that is missing. `query' is this
+ * renderer's alone — table-view.el has no query grammar — which is why the
+ * split is in the manifest rather than assumed on either side.
+ */
+async function parityVectors() {
+  console.log("\n== parity vectors");
+  const dir = path.join(__dirname, "..", "fixtures", "parity");
+  const read = (f) => JSON.parse(fs.readFileSync(path.join(dir, f), "utf8"));
+  const manifest = read("manifest.json");
+  const mine = manifest.harnesses["web/perf-driver.js"];
+
+  // A vector file the manifest forgot is a vector nobody runs.
+  check("the manifest lists every vector file",
+        fs.readdirSync(dir).filter((f) => f !== "manifest.json").sort(),
+        manifest.vectors.map((v) => v.file).sort());
+
+  const runners = {
+    sort: (c, view, name) =>
+      check(name, driver(view).handle.getVisible().map((r) => r.id), c.expect.order),
+
+    render: (c, view, name) => {
+      const { box } = driver(view, undefined, 300);
+      const keys = view.columns.map((col) => col.key);
+      for (const want of c.expect.cells) {
+        const at = `${name} [${want.row}.${want.column}]`;
+        const tr = box.querySelector(`.tv-table tbody tr[data-id=${want.row}]`);
+        const td = tr && tr.children[keys.indexOf(want.column)];
+        check(at, td && td.text, want.text);
+        if ("inked" in want)
+          check(at + " ink", !!(td && td.querySelector(".tv-pill")), want.inked);
+      }
+    },
+
+    query: (c, view, name) => {
+      const p = driver(view, undefined, 300);
+      p.commit(c.q);
+      check(name, p.handle.getVisible().map((r) => r.id), c.expect.ids);
+    },
+  };
+
+  for (const cap of mine)
+    check(`the ${cap} capability the manifest gives this harness has a runner`,
+          typeof runners[cap], "function");
+
+  for (const v of manifest.vectors) {
+    if (mine.indexOf(v.capability) === -1) continue;
+    const file = read(v.file);
+    check(`${v.file} declares ${v.capability}`, file.capability, v.capability);
+    for (const c of file.cases)
+      runners[v.capability](c, c.view || file.view, `${v.file}: ${c.name}`);
+  }
 }
 
 
@@ -3993,6 +4052,7 @@ async function smoke() {
   await sortOrder();
   await metaValues();
   await rowMarks();
+  await parityVectors();
 
   console.log("\n== the window");
   // The header and a row measure differently, and everything below sums over

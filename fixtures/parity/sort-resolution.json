@@ -1,0 +1,163 @@
+{
+  "capability": "sort",
+  "doc": "SCHEMA.md, Column object: `compare' name -> `values' order (else the badge order), unlisted values last -> `type: number' -> lexicographic. One case per rung, plus the chain.",
+  "cases": [
+    {
+      "name": "a compare name outranks the value order",
+      "doc": "`values' would lead with TODO; `compare' is named on the same column and wins, so the order is alphabetical.",
+      "view": {
+        "title": "compare beats values",
+        "columns": [
+          { "key": "state", "header": "State", "sortable": true,
+            "values": ["TODO", "DONE"], "compare": "string" }
+        ],
+        "sort": { "column": "state", "ascending": true },
+        "rows": [
+          { "id": "t", "cells": { "state": "TODO" } },
+          { "id": "d", "cells": { "state": "DONE" } }
+        ]
+      },
+      "expect": { "order": ["d", "t"] }
+    },
+    {
+      "name": "without one the value order rules",
+      "doc": "The same view with `compare' dropped sorts by the declared order, which is not alphabetical.",
+      "view": {
+        "title": "values order",
+        "columns": [
+          { "key": "state", "header": "State", "sortable": true,
+            "values": ["TODO", "DONE"] }
+        ],
+        "sort": { "column": "state", "ascending": true },
+        "rows": [
+          { "id": "d", "cells": { "state": "DONE" } },
+          { "id": "t", "cells": { "state": "TODO" } }
+        ]
+      },
+      "expect": { "order": ["t", "d"] }
+    },
+    {
+      "name": "a value the order does not name sorts after every one it does",
+      "view": {
+        "title": "unlisted last",
+        "columns": [
+          { "key": "p", "header": "P", "sortable": true, "values": ["high", "low"] }
+        ],
+        "sort": { "column": "p", "ascending": true },
+        "rows": [
+          { "id": "l", "cells": { "p": "low" } },
+          { "id": "h", "cells": { "p": "high" } },
+          { "id": "m", "cells": { "p": "medium" } }
+        ]
+      },
+      "expect": { "order": ["h", "l", "m"] }
+    },
+    {
+      "name": "a badge palette is the value order of a badge column",
+      "doc": "No `values' here: the palette's own order doubles as the sort priority. The badges also carry `group', which neither renderer reads.",
+      "view": {
+        "title": "badge order",
+        "columns": [
+          { "key": "state", "header": "State", "type": "badge", "sortable": true,
+            "badges": [
+              { "value": "NEXT", "color": "#7aa2f7", "group": "active" },
+              { "value": "TODO", "color": "#e0af68", "group": "active" },
+              { "value": "DONE", "color": "#9ece6a", "group": "inactive" }
+            ] }
+        ],
+        "sort": { "column": "state", "ascending": true },
+        "rows": [
+          { "id": "d", "cells": { "state": "DONE" } },
+          { "id": "n", "cells": { "state": "NEXT" } },
+          { "id": "t", "cells": { "state": "TODO" } }
+        ]
+      },
+      "expect": { "order": ["n", "t", "d"] }
+    },
+    {
+      "name": "a number column sorts by value, not by digit",
+      "view": {
+        "title": "number type",
+        "columns": [
+          { "key": "n", "header": "N", "type": "number", "align": "right", "sortable": true }
+        ],
+        "sort": { "column": "n", "ascending": true },
+        "rows": [
+          { "id": "c", "cells": { "n": "100" } },
+          { "id": "a", "cells": { "n": "9" } },
+          { "id": "b", "cells": { "n": "10" } }
+        ]
+      },
+      "expect": { "order": ["a", "b", "c"] }
+    },
+    {
+      "name": "a compare name outranks the number type too",
+      "doc": "Same cells, `compare: string' on a `type: number' column: 10 collates before 9.",
+      "view": {
+        "title": "compare beats type",
+        "columns": [
+          { "key": "n", "header": "N", "type": "number", "compare": "string", "sortable": true }
+        ],
+        "sort": { "column": "n", "ascending": true },
+        "rows": [
+          { "id": "a", "cells": { "n": "9" } },
+          { "id": "b", "cells": { "n": "10" } }
+        ]
+      },
+      "expect": { "order": ["b", "a"] }
+    },
+    {
+      "name": "natural reads the digits inside a string",
+      "view": {
+        "title": "natural",
+        "columns": [
+          { "key": "v", "header": "V", "compare": "natural", "sortable": true }
+        ],
+        "sort": { "column": "v", "ascending": true },
+        "rows": [
+          { "id": "c", "cells": { "v": "item10" } },
+          { "id": "b", "cells": { "v": "item2" } },
+          { "id": "a", "cells": { "v": "item1" } }
+        ]
+      },
+      "expect": { "order": ["a", "b", "c"] }
+    },
+    {
+      "name": "everything else collates",
+      "doc": "No compare, no values, no number type. Same-case ASCII, where codepoint order and collation agree.",
+      "view": {
+        "title": "default",
+        "columns": [{ "key": "name", "header": "Name", "sortable": true }],
+        "sort": { "column": "name", "ascending": true },
+        "rows": [
+          { "id": "p", "cells": { "name": "pear" } },
+          { "id": "a", "cells": { "name": "apple" } },
+          { "id": "f", "cells": { "name": "fig" } }
+        ]
+      },
+      "expect": { "order": ["a", "f", "p"] }
+    },
+    {
+      "name": "a sort array orders by the first key, then the next",
+      "doc": "SCHEMA: `sort' may be a list, first key primary. Each key carries its own direction.",
+      "view": {
+        "title": "chain",
+        "columns": [
+          { "key": "dept", "header": "Dept", "sortable": true },
+          { "key": "score", "header": "Score", "type": "number", "align": "right",
+            "sortable": true }
+        ],
+        "sort": [
+          { "column": "dept", "ascending": true },
+          { "column": "score", "ascending": false }
+        ],
+        "rows": [
+          { "id": "a", "cells": { "dept": "ops", "score": 2 } },
+          { "id": "c", "cells": { "dept": "eng", "score": 1 } },
+          { "id": "b", "cells": { "dept": "eng", "score": 2 } }
+        ]
+      },
+      "expect": { "order": ["b", "c", "a"] }
+    }
+  ]
+}

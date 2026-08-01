@@ -16,8 +16,8 @@ consumer-registered command handlers.
 (table-view-display
  "*books*"
  '((title . "Books")
-   (columns . (((key . "title") (header . "Title"))
-               ((key . "year")  (header . "Year") (type . "number"))))
+   (columns . (((key . "title") (header . "Title") (sortable . t))
+               ((key . "year")  (header . "Year") (type . "number") (sortable . t))))
    (rows . (((id . "1") (cells . ((title . "SICP") (year . 1996))))
             ((id . "2") (cells . ((title . "PAIP") (year . 1992)))))))
  nil)
@@ -75,9 +75,9 @@ git clone https://github.com/rails-to-cosmos/table-view
 (require 'table-view)
 
 (let ((spec '((title . "Books")
-              (columns . (((key . "title") (header . "Title"))
+              (columns . (((key . "title") (header . "Title") (sortable . t))
                           ((key . "year")  (header . "Year") (type . "number")
-                           (align . "right"))))
+                           (align . "right") (sortable . t))))
               (actions . (((key . "RET") (label . "Open") (command . "open"))))
               (sort . ((column . "year") (ascending . nil)))   ; descending
               (rows . (((id . "1") (cells . ((title . "SICP") (year . 1996))))
@@ -117,7 +117,7 @@ Open one and `M-x eval-buffer`.
 | `n` / `p`                | next / previous data row (stops on the last / first row, never leaving the table body)                                                        |
 | `f` / `b`                | forward / backward — by **column** (cell) on any table line (header or data row), by **char** elsewhere                                        |
 | `M-<left>` / `M-<right>` | move the column at point left / right (org-table style); point follows the column                                                              |
-| `^`                      | sort by the column at point — a data cell **or its header**; repeat cycles asc → asc nulls-first → desc → desc nulls-first (empty cells sort last by default); off a column, cycles every column asc/desc |
+| `^`                      | sort by the column at point — a data cell **or its header**, and only a column declaring `sortable`; repeat cycles asc → asc nulls-first → desc → desc nulls-first (empty cells sort last by default); off a column, cycles every sortable column asc/desc |
 | `C-u ^`                  | add the column at point as a secondary (tie-breaker) sort key; a following run of `^` then toggles that key's direction                        |
 | `g`                      | revert: `revert-buffer` (`special-mode`) runs `table-view-revert` — clear filter/narrow & refresh (client) or re-fetch the current page (paged), preserving the sort |
 | `m` / `u` / `M` / `U`    | toggle mark on the current row / unmark it / mark all visible rows / unmark all (marked rows get a `*` gutter column) |
@@ -170,10 +170,10 @@ for a column whose key is `"name"`). Booleans are `t` / omitted.
 | `header`   | header label                                                                                                                                                                                        |
 | `type`     | `"number"` (numeric sort), `"badge"` (colored from a palette), or omitted (string)                                                                                                                  |
 | `align`    | `"right"` to right-justify; omitted means left                                                                                                                                                      |
-| `sortable` | whether `^` can sort by this column — **sortable by default**; set to `false` to opt out |
+| `sortable` | whether `^` can sort by this column — **opt-in**: a column declares it or `^` passes over it, per [SCHEMA.md](SCHEMA.md). The spec's own `sort` opens as written either way |
 | `values`   | ordered list of the column's expected values, e.g. `["low","medium","high"]`; that order becomes the sort order (categorical). Colours stay in `badges` — `values` is ordering only                 |
 | `compare`  | sort method override: `"number"`, `"string"`, or `"natural"` (number-aware, so `2 < 10`); a name registered in `table-view-comparators`; or (in an elisp spec) a `(a b) -> bool` predicate function |
-| `badges`   | for `type: "badge"`: list of `{ "value": V, "color": C }`; declared order is also the sort priority                                                                                                 |
+| `badges`   | for `type: "badge"`: list of `{ "value": V, "color": C }`; declared order is also the sort priority. A badge's optional `group` (a producer's own label, e.g. glance's `active`/`inactive`) is read by neither renderer and ignored here                    |
 
 **Action**
 
@@ -704,6 +704,13 @@ make patch|minor|major   # bump the version everywhere it appears
 native tests that need the `tvx` helper binary (`cargo build --release` in
 `native/tvx`) **skip** when it is absent rather than failing, so a machine
 without cargo still goes green — read ert's skip count to tell the two apart.
+
+Both renderers also execute the shared conformance vectors in
+[`fixtures/parity/`](fixtures/parity/) — one manifest, two harnesses, so a
+change that moves one renderer's reading of [SCHEMA.md](SCHEMA.md) and not the
+other's turns a suite red. The manifest names which capabilities each harness
+runs: `sort` and `render` on both, `query` on the browser renderer alone, since
+`/` here is a plain substring over the row with no grammar to hold to.
 
 Or directly:
 

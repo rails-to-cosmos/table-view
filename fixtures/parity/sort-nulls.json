@@ -1,0 +1,96 @@
+{
+  "capability": "sort",
+  "doc": "Where empty cells land. Bare asc/desc put them last whatever the direction; asking for them first is spelled `direction' by the browser renderer and `nulls' by table-view.el, so a view that wants both sends both and each renderer takes the half it reads (SCHEMA.md, Sort object).",
+  "cases": [
+    {
+      "name": "ascending puts the blank last",
+      "view": {
+        "title": "nulls last asc",
+        "columns": [{ "key": "name", "header": "Name", "sortable": true }],
+        "sort": { "column": "name", "ascending": true },
+        "rows": [
+          { "id": "p", "cells": { "name": "pear" } },
+          { "id": "e", "cells": { "name": "" } },
+          { "id": "a", "cells": { "name": "apple" } },
+          { "id": "f", "cells": { "name": "fig" } }
+        ]
+      },
+      "expect": { "order": ["a", "f", "p", "e"] }
+    },
+    {
+      "name": "descending puts it last as well",
+      "doc": "The direction reverses the filled cells and leaves the blank where it was: nulls are settled outside the sign.",
+      "view": {
+        "title": "nulls last desc",
+        "columns": [{ "key": "name", "header": "Name", "sortable": true }],
+        "sort": { "column": "name", "ascending": false },
+        "rows": [
+          { "id": "p", "cells": { "name": "pear" } },
+          { "id": "e", "cells": { "name": "" } },
+          { "id": "a", "cells": { "name": "apple" } },
+          { "id": "f", "cells": { "name": "fig" } }
+        ]
+      },
+      "expect": { "order": ["p", "f", "a", "e"] }
+    },
+    {
+      "name": "nulls-first leads with the blank, ascending",
+      "doc": "`direction' for the browser, `nulls' for Emacs, in one object: the additive rule makes each renderer ignore the other's field.",
+      "view": {
+        "title": "nulls first asc",
+        "columns": [{ "key": "name", "header": "Name", "sortable": true }],
+        "sort": { "column": "name", "direction": "asc-nulls-first", "nulls": "first" },
+        "rows": [
+          { "id": "p", "cells": { "name": "pear" } },
+          { "id": "e", "cells": { "name": "" } },
+          { "id": "a", "cells": { "name": "apple" } },
+          { "id": "f", "cells": { "name": "fig" } }
+        ]
+      },
+      "expect": { "order": ["e", "a", "f", "p"] }
+    },
+    {
+      "name": "nulls-first leads with it descending and reverses the rest",
+      "doc": "The browser reads the direction string alone; Emacs reads `ascending' beside `nulls', so both are spelled out.",
+      "view": {
+        "title": "nulls first desc",
+        "columns": [{ "key": "name", "header": "Name", "sortable": true }],
+        "sort": { "column": "name", "direction": "desc-nulls-first",
+                  "ascending": false, "nulls": "first" },
+        "rows": [
+          { "id": "p", "cells": { "name": "pear" } },
+          { "id": "e", "cells": { "name": "" } },
+          { "id": "a", "cells": { "name": "apple" } },
+          { "id": "f", "cells": { "name": "fig" } }
+        ]
+      },
+      "expect": { "order": ["e", "p", "f", "a"] }
+    },
+    {
+      "name": "a null cell is a blank",
+      "view": {
+        "title": "null cell",
+        "columns": [{ "key": "name", "header": "Name", "sortable": true }],
+        "sort": { "column": "name", "ascending": true },
+        "rows": [
+          { "id": "n", "cells": { "name": null } },
+          { "id": "x", "cells": { "name": "zed" } }
+        ]
+      },
+      "expect": { "order": ["x", "n"] }
+    },
+    {
+      "name": "a missing key is a blank",
+      "view": {
+        "title": "missing key",
+        "columns": [{ "key": "name", "header": "Name", "sortable": true }],
+        "sort": { "column": "name", "ascending": true },
+        "rows": [
+          { "id": "m", "cells": {} },
+          { "id": "x", "cells": { "name": "zed" } }
+        ]
+      },
+      "expect": { "order": ["x", "m"] }
+    }
+  ]
+}

@@ -23,9 +23,10 @@ Refuses a `locked' row, to show the gate keeping it."
     t))
 
 (let ((spec '((title . "Downloads")
-              (columns . (((key . "name")  (header . "File"))
-                          ((key . "size")  (header . "Size") (type . "number") (align . "right"))
-                          ((key . "state") (header . "State") (type . "badge")
+              (columns . (((key . "name")  (header . "File") (sortable . t))
+                          ((key . "size")  (header . "Size") (type . "number")
+                           (align . "right") (sortable . t))
+                          ((key . "state") (header . "State") (type . "badge") (sortable . t)
                            (badges . (((value . "ready")  (color . "#50fa7b"))
                                       ((value . "locked") (color . "#ff5555")))))))
               (actions . (((key . "d") (label . "Delete") (command . "delete") (bulk . t))))

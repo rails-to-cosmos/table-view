@@ -606,6 +606,27 @@ load order and check the row-id order equals EXPECTED."
     (should (equal (table-view--badge-color col "err") "red"))
     (should-not (table-view--badge-color col "unknown"))))
 
+(ert-deftest tv-test-badge-group-field-is-ignored ()
+  ;; SCHEMA.md's additive rule: a producer field this renderer does not know
+  ;; renders as if it were absent.  glance emits `group' on every badge; the
+  ;; palette is read by `value', so the colour, the ink and the sort order are
+  ;; the ones a group-less palette would give.
+  (tv-test--with-display
+      "{ \"columns\": [ {\"key\":\"s\",\"header\":\"S\",\"type\":\"badge\",\"sortable\":true,
+                         \"badges\":[ {\"value\":\"NEXT\",\"color\":\"green\",\"group\":\"active\"},
+                                      {\"value\":\"DONE\",\"color\":\"red\",\"group\":\"inactive\"} ]} ],
+         \"sort\": { \"column\": \"s\", \"ascending\": true },
+         \"rows\": [ {\"id\":\"a\",\"cells\":{\"s\":\"DONE\"}},
+                     {\"id\":\"b\",\"cells\":{\"s\":\"NEXT\"}} ] }"
+    (let ((col (table-view--column table-view--spec "s")))
+      (should (equal (table-view--badge-color col "NEXT") "green"))
+      (should (equal (table-view--badge-color col "DONE") "red")))
+    (should (equal (tv-test--ids table-view--rows) '("b" "a")))   ; palette order
+    (goto-char (point-min))
+    (should (search-forward "NEXT" nil t))
+    (should (equal (get-text-property (match-beginning 0) 'face)
+                   '(:foreground "green" :weight bold)))))
+
 ;;; Navigation (f/b)
 
 (defun tv-test--col-at-point ()
@@ -1139,18 +1160,29 @@ This is the set-rows contract: a backend-delivered value wins over the `value-fn
     (should (equal (tv-test--ids table-view--rows)
                    '("b" "c" "a")))))                        ; low, medium, high
 
-;;; Sortable defaults to true
+;;; Sortable is opt-in
 
-(ert-deftest tv-test-sortable-defaults-true-opt-out-false ()
+(ert-deftest tv-test-sortable-is-opt-in ()
+  ;; SCHEMA.md: a column says `sortable' or it is not sorted on.  An omitted
+  ;; flag reads the same as an explicit false.
   (tv-test--with-display
       "{ \"columns\": [ {\"key\":\"a\",\"header\":\"A\"},
                         {\"key\":\"b\",\"header\":\"B\",\"sortable\":true},
                         {\"key\":\"c\",\"header\":\"C\",\"sortable\":false} ],
          \"rows\": [] }"
     (let ((keys (table-view--sortable-keys)))
-      (should (member "a" keys))          ; omitted -> sortable by default
-      (should (member "b" keys))          ; explicit true
-      (should-not (member "c" keys)))))   ; explicit false -> opt out
+      (should-not (member "a" keys))      ; omitted -> not sortable
+      (should (member "b" keys))          ; explicit true -> opt in
+      (should-not (member "c" keys)))))   ; explicit false
+
+(ert-deftest tv-test-sortable-gates-the-sort-command ()
+  ;; The flag reaches `^': a view declaring none refuses to sort at all.
+  (tv-test--with-display
+      "{ \"columns\": [ {\"key\":\"a\",\"header\":\"A\"} ],
+         \"rows\": [ {\"id\":\"x\",\"cells\":{\"a\":\"1\"}} ] }"
+    (call-interactively #'table-view-sort-cycle)
+    (should-not table-view--sort-keys)
+    (should-not table-view--sorted)))
 
 ;;; Row deletion
 
@@ -1508,8 +1540,9 @@ push-down can be tested)."
 (defun tv-test--paged-spec (page-size strategy)
   (list (cons 'title "Paged")
         (cons 'columns
-              (list (list (cons 'key "num") (cons 'header "Num") (cons 'type "number"))
-                    (list (cons 'key "name") (cons 'header "Name"))))
+              (list (list (cons 'key "num") (cons 'header "Num") (cons 'type "number")
+                          (cons 'sortable t))
+                    (list (cons 'key "name") (cons 'header "Name") (cons 'sortable t))))
         (cons 'pagination (list (cons 'page-size page-size) (cons 'strategy strategy)))))
 
 (defmacro tv-test--with-paged (size page-size &rest body)
@@ -2403,6 +2436,99 @@ a small one, or one with a fill-fn, is rendered in elisp as usual."
           (table-view-display " *tvr-c*" (funcall spec (funcall rows-n 150 "c")) nil #'ignore) ; fill-fn
           (should-not calls))
       (dolist (b '(" *tvr-a*" " *tvr-b*" " *tvr-c*")) (when (get-buffer b) (kill-buffer b))))))
+
+;;; Parity vectors (fixtures/parity)
+;;
+;; The conformance vectors both renderers' suites execute -- this file and
+;; web/perf-driver.js -- off one manifest.  A capability the manifest lists for
+;; this harness must have a runner below, so the manifest cannot claim one that
+;; is missing; the capabilities it lists for the other harness are that
+;; harness's, and `query' is deliberately not among ours (`/' here is a plain
+;; substring over the row, with no grammar to hold to).
+
+(defconst tv-test--parity-dir
+  (expand-file-name "fixtures/parity"
+                    (file-name-directory (or load-file-name buffer-file-name)))
+  "Directory holding the shared conformance vectors.")
+
+(defun tv-test--parity-read (name)
+  "Parse the vector file NAME under `tv-test--parity-dir'."
+  (with-temp-buffer
+    (insert-file-contents (expand-file-name name tv-test--parity-dir))
+    (table-view-parse (buffer-string))))
+
+(defun tv-test--parity-files (capability)
+  "Vector file names the manifest gives CAPABILITY."
+  (let ((manifest (tv-test--parity-read "manifest.json")))
+    (should (member capability
+                    (alist-get 'table-view-test\.el (alist-get 'harnesses manifest))))
+    (delq nil (mapcar (lambda (v)
+                        (and (equal (alist-get 'capability v) capability)
+                             (alist-get 'file v)))
+                      (alist-get 'vectors manifest)))))
+
+(defmacro tv-test--parity-each (capability &rest body)
+  "Display each CAPABILITY case's view, then run BODY with CASE and NAME bound."
+  (declare (indent 1))
+  `(dolist (file (tv-test--parity-files ,capability))
+     (let ((vectors (tv-test--parity-read file)))
+       (should (equal (alist-get 'capability vectors) ,capability))
+       (should (alist-get 'cases vectors))
+       (dolist (case (alist-get 'cases vectors))
+         (let ((name (format "%s: %s" file (alist-get 'name case)))
+               (buf (get-buffer-create " *tv-parity*")))
+           (unwind-protect
+               (progn
+                 (table-view-display buf (or (alist-get 'view case)
+                                             (alist-get 'view vectors))
+                                     nil)
+                 (with-current-buffer buf ,@body))
+             (kill-buffer buf)))))))
+
+(defun tv-test--parity-cell (key)
+  "Return (TEXT . INKED) for column KEY on the current line.
+TEXT is the cell as rendered with the padding taken off; INKED says whether
+any of it carries a foreground colour, which is what a badge palette adds."
+  (let ((pos (line-beginning-position)) (eol (line-end-position)) found)
+    (while (and (not found) (< pos eol))
+      (let ((next (or (next-single-property-change pos 'table-view-col nil eol) eol)))
+        (if (equal (get-text-property pos 'table-view-col) key)
+            (setq found (cons pos next))
+          (setq pos next))))
+    (should found)
+    (cons (string-trim (buffer-substring-no-properties (car found) (cdr found)))
+          (and (cl-loop for p from (car found) below (cdr found)
+                        thereis (let ((f (get-text-property p 'face)))
+                                  (and (consp f) (plist-get f :foreground))))
+               t))))
+
+(ert-deftest tv-test-parity-manifest-matches-this-harness ()
+  "The manifest gives this harness exactly the capabilities it runs.
+A capability added there without a runner here would otherwise be listed
+and never executed."
+  (should (equal (alist-get 'table-view-test\.el
+                            (alist-get 'harnesses (tv-test--parity-read "manifest.json")))
+                 '("sort" "render"))))
+
+(ert-deftest tv-test-parity-sort ()
+  "Every `sort' vector orders the rows the way SCHEMA.md says."
+  (tv-test--parity-each "sort"
+    (should (equal (cons name (tv-test--visible-ids))
+                   (cons name (alist-get 'order (alist-get 'expect case)))))))
+
+(ert-deftest tv-test-parity-render ()
+  "Every `render' vector puts the declared text, and ink, on screen."
+  (tv-test--parity-each "render"
+    (dolist (want (alist-get 'cells (alist-get 'expect case)))
+      (let ((where (format "%s [%s.%s]" name (alist-get 'row want)
+                           (alist-get 'column want))))
+        (should (table-view--goto-id (alist-get 'row want)))
+        (let ((got (tv-test--parity-cell (alist-get 'column want))))
+          (should (equal (cons where (car got))
+                         (cons where (alist-get 'text want))))
+          (when (assq 'inked want)
+            (should (equal (cons where (cdr got))
+                           (cons where (and (alist-get 'inked want) t))))))))))
 
 (provide 'table-view-test)
 ;;; table-view-test.el ends here

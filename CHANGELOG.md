@@ -5,7 +5,74 @@ the rails-to-cosmos ELPA archive publishes date-stamped snapshots.
 
 ## Unreleased
 
+### Changed
+- **Breaking — `sortable` is opt-in in `table-view.el` too.** SCHEMA.md
+  has always read it that way and so has the browser renderer: a column
+  declares `sortable` or it is not sorted on. This renderer took the
+  opposite default, sorting by any column that did not opt *out*, so one
+  view answered `^` differently in the two. `table-view--sortable-keys`
+  now requires the flag, which is the list `^` walks, the list it cycles
+  when point is off a column, and the list it refuses a named column
+  against. **A consumer relying on the default must now declare it** —
+  `(sortable . t)`, or `"sortable": true`, on every column `^` should
+  reach. The repo's own `examples/` are the enumeration and all eleven
+  were living off the default; seven teach `^` in their header comments
+  and were plainly broken by the flip — `minimal`, `org-links`,
+  `native`, `native-live` and `paginate` declared it on no column at
+  all, `multi-sort` invites `^` on "any column" while its badge column
+  had none, and `sort-methods`, the example *about* per-column sort
+  methods, reached three of its five columns by the default alone. The
+  other four (`bulk`, `delete`, `fill-function`, `upsert`) advertise the
+  key through the hint line rather than their prose. Every one now
+  declares what it demonstrates. A spec's own `sort` is untouched by
+  this: that says what the view opens as, while the flag says what the
+  user may reach — how the browser renderer has always read the pair. The old
+  test pinned the wrong side of the divergence —
+  `tv-test-sortable-defaults-true-opt-out-false` asserted that an
+  omitted flag meant sortable, so it pinned the bug rather than the
+  contract; it is replaced by `tv-test-sortable-is-opt-in` and by a
+  second test that carries the flag all the way to `^` refusing to
+  sort. The Rust side needed nothing: `tvx` is handed a sort chain and
+  executes it, and reads no sortability anywhere, so the differential
+  oracle covers exactly what it covered before.
+
 ### Added
+- **Parity vectors: one manifest, two harnesses** ([`fixtures/parity/`](fixtures/parity/)).
+  Nothing executed the same contract case on both renderers, so a
+  divergence could sit quietly in two green suites — which is how the
+  `sortable` default survived as long as it did. A vector is a view plus
+  what it must produce; the manifest gives each file a capability and
+  names which harness runs which, and a harness fails on a capability
+  listed for it with no runner rather than skipping, so the manifest
+  cannot claim one that is missing. `sort` (15 cases: the `compare` →
+  `values` → badge-palette → `type: "number"` → collation ladder,
+  unlisted values last, a multi-key chain, and where blanks land under
+  each direction and each nulls spelling) and `render` (7 cases, 9 cell
+  assertions: a link's description, a link without one, control
+  characters collapsing, badge ink present and absent, empty cells) run
+  on both. `query` (20 cases) is the browser renderer's alone —
+  `table-view.el`'s `/` is a plain substring over the row, with no
+  grammar to hold to — and the manifest carries that asymmetry rather
+  than either side assuming it. `make web-perf` runs 54 checks over the
+  vectors, `make test` the 22 el-capable cases as two ERT tests that
+  name the failing case and cell. A vector file the manifest forgot to
+  list is itself one of the checks.
+- **SCHEMA.md: `group` on a Badge, and one rule for every unknown field.**
+  `group` is an optional producer label over palette entries — glance
+  emits `active`/`inactive` across the org keyword groups — and carries
+  no meaning to the contract: colour, sort priority and matching all
+  still read `value`. Neither renderer reads it today, which the
+  contract now says outright rather than leaving a producer to guess,
+  alongside the general rule that makes sending it safe: **an unknown
+  field renders as if it were absent**, in every object the document
+  defines. That rule is what lets a field land in a producer before the
+  renderers read it, and it is also how a field one renderer implements
+  alone travels in the same object — `Sort`'s `direction` is the
+  browser's and `nulls` is this renderer's, so a view wanting nulls
+  first everywhere sends both and each takes the half it knows. A
+  conformance note now says that where the Sort object is defined, and
+  the parity vectors do exactly that. `table-view.el`'s tolerance of
+  `group` is pinned by a test rather than assumed.
 - Browser renderer: **row marking**, behind `marks: true` — dired's, and
   `table-view.el`'s. A leading checkbox column, chrome the way the pager
   is, so `columns` and `cells` are untouched and SCHEMA.md goes on

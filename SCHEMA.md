@@ -9,6 +9,16 @@ table-view. It is the single source of truth; the renderers implement it.
 The contract is JSON values. How they reach a renderer — embedded literal, an
 HTTP `GET`, a WebSocket frame — is out of scope here.
 
+**Unknown fields are ignored.** Every object below is open: a producer may send
+fields this document does not name, and a renderer must render as if they were
+absent. That is what makes the contract additive — a field can land in a
+producer before the renderers read it, and a renderer that never learns it stays
+correct. It is also how a field one renderer implements alone (`Sort`'s
+`direction` and `nulls` below) travels in the same object.
+
+Conformance notes are marked in place, and the [parity
+vectors](fixtures/parity/) execute what both renderers implement.
+
 ## View object
 
 The whole view. All fields optional except `columns`.
@@ -41,11 +51,9 @@ numeric → otherwise lexicographic.
 
 - `"number"` right-aligns and sorts numerically by convention.
 - `"badge"` colours each cell from `badges`; palette order doubles as sort priority.
-- `sortable` is opt-in: a column says so or it is not sorted on. **Conformance
-  note**: the browser renderer reads it that way; `table-view.el` currently
-  treats columns as sortable unless they opt *out*, so a view relying on the
-  default sorts differently in the two. The contract stands as written and the
-  Emacs renderer is the one to move.
+- `sortable` is opt-in: a column says so or it is not sorted on. Both renderers
+  read it that way. It gates what the *user* may sort by — a view's declared
+  `sort` opens as written whether or not its column opts in.
 - `multi` declares the column multi-valued for the filter's AND/OR rule below.
   A renderer that guesses from cell shape must let the declaration win.
   *Experimental*: the field is new and the guessing fallback is what most
@@ -57,8 +65,16 @@ numeric → otherwise lexicographic.
 |---------|--------|-------------------------------------------|
 | `value` | string | cell value this badge matches             |
 | `color` | string | CSS/Emacs colour (e.g. `"#50fa7b"`)       |
+| `group` | string | optional label grouping palette entries   |
 
 A cell whose value has no matching badge renders uncoloured.
+
+`group` names a class of values the producer keeps together — glance emits
+`"active"` / `"inactive"` over the org keyword groups. It carries no meaning to
+the contract: colour, sort order and matching all read `value`. A renderer may
+use it to group or separate a palette it lists (a filter's value suggestions, a
+legend), and one that ignores it is conformant — an unknown field, by the rule
+above, and neither renderer reads it today.
 
 ## Action object
 
@@ -82,6 +98,13 @@ the conventional default row action.
 `ascending` is a boolean (`true` asc, `false` desc). A `direction` string extends
 this with null placement: `"asc-nulls-first"`, `"desc-nulls-first"` (bare
 asc/desc place nulls last).
+
+**Conformance note**: `direction` is the browser renderer's. `table-view.el`
+spells null placement with a `nulls` field of its own — `"first"` or `"last"`
+(the default) — and reads `ascending` for the direction. Neither renderer reads
+the other's spelling, so a producer that wants nulls first everywhere sends
+both in the one object and each takes the half it knows; the parity vectors do
+exactly that.
 
 ## Row object
 
@@ -208,9 +231,9 @@ decide interaction.
   "title": "Inbox — glance",
   "columns": [
     { "key": "state", "header": "State", "type": "badge", "sortable": true,
-      "badges": [ { "value": "TODO", "color": "#e0af68" },
-                  { "value": "NEXT", "color": "#7aa2f7" },
-                  { "value": "DONE", "color": "#9ece6a" } ] },
+      "badges": [ { "value": "TODO", "color": "#e0af68", "group": "active" },
+                  { "value": "NEXT", "color": "#7aa2f7", "group": "active" },
+                  { "value": "DONE", "color": "#9ece6a", "group": "inactive" } ] },
     { "key": "priority", "header": "Pri", "type": "text", "sortable": true,
       "values": ["A", "B", "C"] },
     { "key": "title", "header": "Headline", "type": "text" },

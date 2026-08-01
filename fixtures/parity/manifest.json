@@ -1,0 +1,26 @@
+{
+  "doc": [
+    "Conformance vectors for SCHEMA.md, executed by both renderers' suites.",
+    "One manifest, two harnesses: web/perf-driver.js (make web-perf) and",
+    "table-view-test.el (make test). A vector file declares a capability; a",
+    "harness runs the capabilities listed for it below and fails on any it does",
+    "not implement, so the manifest cannot quietly claim one that is missing.",
+    "The split is the honest one: table-view.el has no query grammar, so the",
+    "query vectors are the browser renderer's alone."
+  ],
+  "capabilities": {
+    "sort": "mount the view and read the row ids in display order",
+    "render": "mount the view and read a cell's displayed text and badge ink",
+    "query": "apply a filter query and read the row ids it leaves"
+  },
+  "harnesses": {
+    "web/perf-driver.js": ["sort", "render", "query"],
+    "table-view-test.el": ["sort", "render"]
+  },
+  "vectors": [
+    { "file": "sort-resolution.json", "capability": "sort" },
+    { "file": "sort-nulls.json", "capability": "sort" },
+    { "file": "render-cells.json", "capability": "render" },
+    { "file": "filter-query.json", "capability": "query" }
+  ]
+}

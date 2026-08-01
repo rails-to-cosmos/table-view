@@ -1401,12 +1401,11 @@ screen instead of drifting or following its row."
 
 (defun table-view--sortable-keys ()
   "Keys of the columns the user may sort by.
-Columns are sortable by default; a column opts out with `sortable' set
-to a false value."
+Sortable is opt-in (SCHEMA.md): a column carries a non-nil `sortable' or
+`^' passes over it.  A spec's declared `sort' is unaffected -- that says
+what the view opens as, and this flag says what the user may reach."
   (delq nil (mapcar (lambda (c)
-                      (let ((s (assq 'sortable c)))
-                        (when (or (null s) (cdr s))
-                          (alist-get 'key c))))
+                      (and (alist-get 'sortable c) (alist-get 'key c)))
                     (table-view--columns table-view--spec))))
 
 (defun table-view-filter (pattern)
