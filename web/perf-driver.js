@@ -158,18 +158,19 @@ function chipIn(theme) {
 }
 
 /**
- * The flagged-row wash THEME paints: the amber it washes (which cascades from
- * the base rule) composited onto that theme's own ground at its own strength.
- * The `chipIn' of the row grounds — read from the sheet, never re-spelled.
+ * The flagged-row wash THEME paints: the flag colour it washes (which cascades
+ * from the base rule) composited onto that theme's own ground at its own
+ * strength. The `chipIn' of the row grounds — read from the sheet, never
+ * re-spelled, so an identity swap swaps what is asserted.
  * @param {"light"|"dark"} theme
  */
 function washIn(theme) {
   const p = paletteIn(`:root[data-theme="${theme}"] .tv-root{`);
   const base = paletteIn(".tv-root{");
-  const amber = p.amber || base.amber;
+  const flag = p.flag || base.flag;
   const ground = p.bg || base.bg;
   const pct = Number(String(p["flag-wash"]).replace("%", "")) / 100;
-  return { amber, ground, pct, wash: mixed(ground, amber, pct) };
+  return { flag, ground, pct, wash: mixed(ground, flag, pct) };
 }
 
 /** A hex colour's channels on 0..1 with their extrema — what hue and sat share. */
@@ -981,7 +982,7 @@ async function rowMarks() {
     // The cursor takes the one background slot, so the flag needs a second
     // channel or it stops saying anything under the cursor. That is the edge.
     check("the flag's edge is on the box cell, where no other state writes",
-          /tr\.tv-flagged td\.tv-box\{box-shadow:inset 3px 0 0 var\(--tv-amber\)\}/
+          /tr\.tv-flagged td\.tv-box\{box-shadow:inset 3px 0 0 var\(--tv-flag\)\}/
             .test(css), true);
     check("and the checkbox glyph is drawn from the mark, independent of any ground",
           /tr\.tv-marked td\.tv-box::before\{content:"\[X\]"\}/.test(css), true);
@@ -999,24 +1000,43 @@ async function rowMarks() {
           P.box.querySelector(".tv-hint").textContent, "6 rows · unsorted");
   }
 
-  // --- the amber wash, read out of the sheet like the frost
+  // --- the flag wash, read out of the sheet like the frost
   {
     const L = washIn("light"), D = washIn("dark");
-    check("both themes wash the one amber var", [L.amber === D.amber, !!L.amber],
+    check("both themes wash the one flag var", [L.flag === D.flag, !!L.flag],
           [true, true]);
     check("and each asks for a modest amount of it",
           [L.pct > 0 && L.pct <= 0.3, D.pct > 0 && D.pct <= 0.3], [true, true]);
-    check("amber is a warm hue, which neither the frost nor the cursor is",
-          hue(L.amber) >= 30 && hue(L.amber) <= 60, true);
+    check("the flag is a red, which is nothing else the table paints",
+          hue(L.flag) <= 15 || hue(L.flag) >= 345, true);
+    // The floors are what SET the strengths rather than what they were checked
+    // against afterwards: red is dark, and on white the tag ink falls under
+    // 4.5:1 by 10%, so the light wash is the most the ink allows and no more.
     for (const [theme, p] of [["light", L], ["dark", D]]) {
       const pal = paletteIn(`:root[data-theme="${theme}"] .tv-root{`);
       check(`${theme}: body ink clears 7:1 on a flagged row`,
             ratio(pal.fg, p.wash) >= 7, true);
       check(`${theme}: the tag ink still clears 4.5:1 on it`,
             ratio(pal.muted, p.wash) >= 4.5, true);
-      check(`${theme}: and the wash stays nearer the page than the solid amber`,
-            ratio(p.ground, p.wash) < ratio(p.wash, p.amber), true);
+      check(`${theme}: and the wash stays nearer the page than the solid flag`,
+            ratio(p.ground, p.wash) < ratio(p.wash, p.flag), true);
     }
+    // The two strengths are bound by different things, and only one of them is
+    // bound by the ink: on white a red this dark drags --tv-muted under 4.5:1
+    // by 10%, so the light wash is the most the ink allows. On black there is
+    // room to spare, and the strength is set by what reads rather than by a
+    // floor -- which is why the two numbers are far apart.
+    check("light is the strength the ink caps; two points more would break it",
+          ratio(paletteIn(':root[data-theme="light"] .tv-root{').muted,
+                mixed(L.ground, L.flag, L.pct + 0.02)) >= 4.5, false);
+    check("dark has headroom the light side does not",
+          ratio(paletteIn(':root[data-theme="dark"] .tv-root{').muted,
+                mixed(D.ground, D.flag, D.pct + 0.06)) >= 4.5, true);
+    // The mark and the flag land at the same lightness on white, so they are
+    // told apart by hue rather than by weight — worth pinning, since a future
+    // strength change could make them the same wash.
+    check("the mark and the flag are different hues, which is what separates them",
+          Math.abs(hue(L.wash) - hue(washIn("light").flag)) < 45, true);
   }
 
   // --- markAll: the filtered SET, which is not the page on show

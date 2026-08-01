@@ -657,10 +657,10 @@
     // The applied-filter identity, spelled once. Swapping it is one edit here;
     // the palettes below carry only how much of it each theme wants.
     const FROST = "#D0E1F9";
-    // The pending-action identity, spelled once, the way FROST is. Amber
-    // because it is the one warm signal in danneskjold's range that neither
-    // the applied filter nor the cursor already speaks for.
-    const AMBER = "#FFCC00";
+    // The pending-action identity, spelled once, the way FROST is. Red is the
+    // one signal that reads as "about to happen to this row" without being
+    // borrowed from the applied filter or the cursor.
+    const FLAG = "#E74C3C";
     const css = `
 /* Both palettes are danneskjold-theme's, mapped role for role from
    /home/akatovda/sync/stuff/danneskjold-theme/danneskjold-theme.el — its
@@ -681,18 +681,18 @@
 .tv-root{--tv-fg:#000000;--tv-muted:#667071;--tv-bg:#FFFFFF;--tv-alt:#F8F8FF;
   --tv-border:#E3E6EA;--tv-accent:#31769F;--tv-sel:#F0FFF0;--tv-hover:#FAFAFA;
   --tv-frost:${FROST};--tv-chip-wash:45%;--tv-chip-edge:95%;--tv-mark-wash:8%;
-  --tv-amber:${AMBER};--tv-flag-wash:22%;
+  --tv-flag:${FLAG};--tv-flag-wash:8%;
   color:var(--tv-fg);background:var(--tv-bg);font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
   border:1px solid var(--tv-border);border-radius:8px;overflow:hidden;display:flex;flex-direction:column;max-height:100%}
 @media (prefers-color-scheme:dark){.tv-root{--tv-fg:#FFFFFF;--tv-muted:#A4C2EB;--tv-bg:#000000;
   --tv-alt:#21252B;--tv-border:#2a2d3d;--tv-accent:#4CB5F5;--tv-sel:#373D4F;
-  --tv-hover:#1F1F1F;--tv-chip-wash:18%;--tv-chip-edge:34%;--tv-mark-wash:30%;--tv-flag-wash:26%;}}
+  --tv-hover:#1F1F1F;--tv-chip-wash:18%;--tv-chip-edge:34%;--tv-mark-wash:30%;--tv-flag-wash:30%;}}
 :root[data-theme="dark"] .tv-root{--tv-fg:#FFFFFF;--tv-muted:#A4C2EB;--tv-bg:#000000;
   --tv-alt:#21252B;--tv-border:#2a2d3d;--tv-accent:#4CB5F5;--tv-sel:#373D4F;
-  --tv-hover:#1F1F1F;--tv-chip-wash:18%;--tv-chip-edge:34%;--tv-mark-wash:30%;--tv-flag-wash:26%;}
+  --tv-hover:#1F1F1F;--tv-chip-wash:18%;--tv-chip-edge:34%;--tv-mark-wash:30%;--tv-flag-wash:30%;}
 :root[data-theme="light"] .tv-root{--tv-fg:#000000;--tv-muted:#667071;--tv-bg:#FFFFFF;--tv-alt:#F8F8FF;
   --tv-border:#E3E6EA;--tv-accent:#31769F;--tv-sel:#F0FFF0;--tv-hover:#FAFAFA;
-  --tv-chip-wash:45%;--tv-chip-edge:95%;--tv-mark-wash:8%;--tv-flag-wash:22%}
+  --tv-chip-wash:45%;--tv-chip-edge:95%;--tv-mark-wash:8%;--tv-flag-wash:8%}
 .tv-bar{display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:1px solid var(--tv-border);flex-wrap:wrap}
 .tv-title{font-weight:600;font-size:14px;margin-right:auto}
 .tv-filter{font:inherit;padding:4px 8px;border:1px solid var(--tv-border);border-radius:6px;
@@ -772,20 +772,22 @@
    dark 6.3). */
 .tv-table tbody tr.tv-marked{
   background:color-mix(in srgb,var(--tv-muted) var(--tv-mark-wash),transparent)}
-/* A flagged row: amber washed over the page's ground, the same one-slot rule
-   the mark follows. It sits between them in source order, which IS the
+/* A flagged row: the flag red washed over the page's ground, the same one-slot
+   rule the mark follows. It sits between them in source order, which IS the
    precedence — cursor over flag over mark over zebra — because all four write
    the one background slot at the one specificity. Washed as far as the ink
-   allows and no further: --tv-muted is the tag ink and stays above 4.5:1 on
-   it either way (light 4.6, dark 6.5). */
+   allows and no further, which for a colour this dark is not far on white:
+   --tv-muted is the tag ink and the light strength is what keeps it above
+   4.5:1 (4.6 at 8%, and under the floor by 10%). Dark has the room to take
+   30%. The two numbers are measured, not chosen. */
 .tv-table tbody tr.tv-flagged{
-  background:color-mix(in srgb,var(--tv-amber) var(--tv-flag-wash),transparent)}
+  background:color-mix(in srgb,var(--tv-flag) var(--tv-flag-wash),transparent)}
 .tv-table tbody tr.tv-sel{background:var(--tv-sel)}
 /* The background is one slot and the cursor wins it, so a flagged row under
    the cursor would otherwise stop saying it is flagged. The edge is a second
    channel that no other state writes: it survives every combination, which is
    what keeps the state readable rather than merely painted. */
-.tv-table tbody tr.tv-flagged td.tv-box{box-shadow:inset 3px 0 0 var(--tv-amber)}
+.tv-table tbody tr.tv-flagged td.tv-box{box-shadow:inset 3px 0 0 var(--tv-flag)}
 /* The mark column is chrome, the way the pager is: a fixed leading box that no
    producer sent and no width measurement sees. Blank header, org's own checkbox
    for a cell, and the box brightens on the rows it is checked on. The glyph is

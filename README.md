@@ -427,7 +427,7 @@ they are separate id-keyed sets. A row can carry both; `clearMarks()` leaves
 flags alone and `clearFlags()` leaves marks alone, so a consumer wanting both
 gone asks for both. They survive what marks survive (a filter, a page, a sort,
 `setRows`, an upsert) and die where marks die (the row going away, or the view).
-A flagged row takes an amber wash and, on the box cell, an amber left edge —
+A flagged row takes a red wash and, on the box cell, a red left edge —
 a second channel, because the background is one slot and the cursor wins it, so
 without the edge a flagged row under the cursor would stop saying it is
 flagged. Precedence on that one slot is cursor, then flag, then mark, then
