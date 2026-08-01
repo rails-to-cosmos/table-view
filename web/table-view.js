@@ -30,6 +30,10 @@
  *
  *   tv.toggleMark(id);    // mark or unmark a row -> the state it landed in
  *   tv.markAll();         // mark the whole filtered set -> how many are marked
+ *   tv.flagRow(id);       // flag or unflag a row -> the state it landed in
+ *   tv.unflagRow(id);     // take the flag off, whether or not it had one
+ *   tv.getFlagged();      // the flagged ids, ordered like getMarked
+ *   tv.clearFlags(); tv.flaggedCount();
  *   tv.getMarked();       // the marked ids: those on show first, then the rest
  *   tv.clearMarks(); tv.markedCount();
  *
@@ -121,6 +125,14 @@
  *   prints its own keymap and would otherwise print a second, disagreeing one.
  *   Presentation only: the actions still dispatch, and the default is to show
  *   them, so a consumer that says nothing sees the line it always saw.
+ * - Flags ride `marks: true' — one chrome opt-in covers both state sets, since
+ *   the leading box column is where either of them is read. A flag is a
+ *   PENDING action (a consumer's two-press `d', say) where a mark is a
+ *   standing selection, so they are separate id-keyed sets: a row can carry
+ *   both, `clearMarks' leaves flags alone and `clearFlags' leaves marks alone,
+ *   and a consumer that wants both gone asks for both. They survive and die
+ *   together otherwise — a filter, a page, a sort or a `setRows' keeps them;
+ *   the row going away, or the view, takes them.
  * - `marks: true' adds dired's row marking, and a fourth row ground with it.
  *   The chrome is a leading checkbox column — presentation like the pager, so
  *   the cells and columns a producer sends are untouched and SCHEMA.md keeps
@@ -308,6 +320,11 @@
  *                               from: number, to: number, total: number },
  *             toggleMark: (id: string) => boolean,
  *             markAll: () => number,
+ *             flagRow: (id: string) => boolean,
+ *             unflagRow: (id: string) => void,
+ *             getFlagged: () => string[],
+ *             clearFlags: () => void,
+ *             flaggedCount: () => number,
  *             getMarked: () => string[],
  *             clearMarks: () => void,
  *             markedCount: () => number }} Handle
@@ -671,6 +688,10 @@
     // The applied-filter identity, spelled once. Swapping it is one edit here;
     // the palettes below carry only how much of it each theme wants.
     const FROST = "#D0E1F9";
+    // The pending-action identity, spelled once, the way FROST is. Amber
+    // because it is the one warm signal in danneskjold's range that neither
+    // the applied filter nor the cursor already speaks for.
+    const AMBER = "#FFCC00";
     const css = `
 /* Both palettes are danneskjold-theme's, mapped role for role from
    /home/akatovda/sync/stuff/danneskjold-theme/danneskjold-theme.el — its
@@ -691,17 +712,18 @@
 .tv-root{--tv-fg:#000000;--tv-muted:#667071;--tv-bg:#FFFFFF;--tv-alt:#F8F8FF;
   --tv-border:#E3E6EA;--tv-accent:#31769F;--tv-sel:#F0FFF0;--tv-hover:#FAFAFA;
   --tv-frost:${FROST};--tv-chip-wash:45%;--tv-chip-edge:95%;--tv-mark-wash:8%;
+  --tv-amber:${AMBER};--tv-flag-wash:22%;
   color:var(--tv-fg);background:var(--tv-bg);font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
   border:1px solid var(--tv-border);border-radius:8px;overflow:hidden;display:flex;flex-direction:column;max-height:100%}
 @media (prefers-color-scheme:dark){.tv-root{--tv-fg:#FFFFFF;--tv-muted:#A4C2EB;--tv-bg:#000000;
   --tv-alt:#21252B;--tv-border:#2a2d3d;--tv-accent:#4CB5F5;--tv-sel:#373D4F;
-  --tv-hover:#1F1F1F;--tv-chip-wash:18%;--tv-chip-edge:34%;--tv-mark-wash:30%;}}
+  --tv-hover:#1F1F1F;--tv-chip-wash:18%;--tv-chip-edge:34%;--tv-mark-wash:30%;--tv-flag-wash:26%;}}
 :root[data-theme="dark"] .tv-root{--tv-fg:#FFFFFF;--tv-muted:#A4C2EB;--tv-bg:#000000;
   --tv-alt:#21252B;--tv-border:#2a2d3d;--tv-accent:#4CB5F5;--tv-sel:#373D4F;
-  --tv-hover:#1F1F1F;--tv-chip-wash:18%;--tv-chip-edge:34%;--tv-mark-wash:30%;}
+  --tv-hover:#1F1F1F;--tv-chip-wash:18%;--tv-chip-edge:34%;--tv-mark-wash:30%;--tv-flag-wash:26%;}
 :root[data-theme="light"] .tv-root{--tv-fg:#000000;--tv-muted:#667071;--tv-bg:#FFFFFF;--tv-alt:#F8F8FF;
   --tv-border:#E3E6EA;--tv-accent:#31769F;--tv-sel:#F0FFF0;--tv-hover:#FAFAFA;
-  --tv-chip-wash:45%;--tv-chip-edge:95%;--tv-mark-wash:8%}
+  --tv-chip-wash:45%;--tv-chip-edge:95%;--tv-mark-wash:8%;--tv-flag-wash:22%}
 .tv-bar{display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:1px solid var(--tv-border);flex-wrap:wrap}
 .tv-title{font-weight:600;font-size:14px;margin-right:auto}
 .tv-filter{font:inherit;padding:4px 8px;border:1px solid var(--tv-border);border-radius:6px;
@@ -781,7 +803,20 @@
    dark 6.3). */
 .tv-table tbody tr.tv-marked{
   background:color-mix(in srgb,var(--tv-muted) var(--tv-mark-wash),transparent)}
+/* A flagged row: amber washed over the page's ground, the same one-slot rule
+   the mark follows. It sits between them in source order, which IS the
+   precedence — cursor over flag over mark over zebra — because all four write
+   the one background slot at the one specificity. Washed as far as the ink
+   allows and no further: --tv-muted is the tag ink and stays above 4.5:1 on
+   it either way (light 4.6, dark 6.5). */
+.tv-table tbody tr.tv-flagged{
+  background:color-mix(in srgb,var(--tv-amber) var(--tv-flag-wash),transparent)}
 .tv-table tbody tr.tv-sel{background:var(--tv-sel)}
+/* The background is one slot and the cursor wins it, so a flagged row under
+   the cursor would otherwise stop saying it is flagged. The edge is a second
+   channel that no other state writes: it survives every combination, which is
+   what keeps the state readable rather than merely painted. */
+.tv-table tbody tr.tv-flagged td.tv-box{box-shadow:inset 3px 0 0 var(--tv-amber)}
 /* The mark column is chrome, the way the pager is: a fixed leading box that no
    producer sent and no width measurement sees. Blank header, org's own checkbox
    for a cell, and the box brightens on the rows it is checked on. The glyph is
@@ -870,6 +905,13 @@
     const chrome = marks ? 1 : 0;
     /** The marked ids. @type {Set<string>} */
     const marked = new Set();
+    /**
+     * The flagged ids — a pending action a consumer is about to confirm, which
+     * is a different question from a mark and so a different set. A row can
+     * carry both, and neither clears the other.
+     * @type {Set<string>}
+     */
+    const flagged = new Set();
     /** Rows per page, or 0 for the whole set at once — which is every consumer
      *  that has not asked otherwise. */
     const pageSize = Math.max(0, Math.trunc(Number(o.pageSize) || 0));
@@ -1656,6 +1698,7 @@
              + `${cellHTML(cols[c], cs[cols[c].key], dark, c === multi)}</td>`;
       }
       const cls = (i % 2 ? " tv-alt" : "") + (isMarked(r.id) ? " tv-marked" : "")
+                + (isFlagged(r.id) ? " tv-flagged" : "")
                 + (on ? " tv-sel" : "");
       return `<tr class="${cls}" data-id="${esc(r.id)}">${tds}</tr>`;
     }
@@ -1801,7 +1844,10 @@
       // count is of every mark, the ones a filter or a page is hiding included,
       // which is the number a bulk action would run over. Nothing marked and the
       // line is the line it has always been.
-      return marks && marked.size ? `${esc(grouped(marked.size))} marked · ${out}` : out;
+      if (!marks) return out;
+      if (marked.size) out = `${esc(grouped(marked.size))} marked · ${out}`;
+      if (flagged.size) out = `${esc(grouped(flagged.size))} flagged · ${out}`;
+      return out;
     }
 
     /**
@@ -1875,6 +1921,7 @@
         const on = id !== null && rowId === id;
         tr.classList.toggle("tv-sel", on);
         tr.classList.toggle("tv-marked", isMarked(rowId));
+        tr.classList.toggle("tv-flagged", isFlagged(rowId));
         // The chrome cell is nobody's column, so the column a cell selection
         // names is counted past it.
         for (let c = chrome; c < tr.children.length; c++)
@@ -1896,6 +1943,42 @@
      * @param {string} id
      */
     function isMarked(id) { return marks && marked.has(id); }
+
+    /** Whether ID is flagged, the chrome being opt-in the same way. */
+    function isFlagged(id) { return marks && flagged.has(id); }
+
+    /** Flag ID, or unflag it. @param {string} id  @returns {boolean} its new state */
+    function flagRow(id) {
+      const on = !flagged.has(id);
+      if (on) flagged.add(id); else flagged.delete(id);
+      paintMarks();
+      return on;
+    }
+
+    /** Take the flag off ID, whether or not it had one. @param {string} id */
+    function unflagRow(id) {
+      if (flagged.delete(id)) paintMarks();
+    }
+
+    /** Take every flag off. Marks are a different question and are left alone. */
+    function clearFlags() {
+      if (!flagged.size) return;
+      flagged.clear();
+      paintMarks();
+    }
+
+    /**
+     * The flagged ids, read the way `getMarked' reads its own: the ones on
+     * show in display order, then the ones a filter or another page is hiding,
+     * in the order they were flagged.
+     * @returns {string[]}
+     */
+    function getFlagged() {
+      const out = paged().filter((r) => flagged.has(r.id)).map((r) => r.id);
+      const shown = new Set(out);
+      for (const id of flagged) if (!shown.has(id)) out.push(id);
+      return out;
+    }
 
     /** Mark ID, or unmark it. @param {string} id  @returns {boolean} its new state */
     function toggleMark(id) {
@@ -3013,6 +3096,7 @@
         state.selCol = null;
         state.filter = "";
         marked.clear();          // a different view; these were about the last one
+        flagged.clear();
         chips = [];
         input.value = "";
         renderChips();
@@ -3057,6 +3141,7 @@
       deleteRow(id) {
         state.rows = state.rows.filter((r) => r.id !== id);
         marked.delete(id);       // the row is gone; a mark on it would outlive it
+        flagged.delete(id);
         texts.delete(id);
         dropDomains();
         if (sorted) unplace(sorted, id);
@@ -3088,6 +3173,7 @@
             if (at !== -1) {
               texts.delete(gone.id);
               marked.delete(gone.id);      // as `deleteRow': the row is gone
+              flagged.delete(gone.id);
               state.rows.splice(at, 1);
             }
           }
@@ -3128,6 +3214,12 @@
       pageInfo,
       toggleMark,
       markAll,
+      flagRow,
+      unflagRow,
+      getFlagged,
+      clearFlags,
+      /** How many rows are flagged, the hidden ones counted. @returns {number} */
+      flaggedCount() { return flagged.size; },
       getMarked,
       clearMarks,
       /** How many rows are marked, the hidden ones counted. @returns {number} */

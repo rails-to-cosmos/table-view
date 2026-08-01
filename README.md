@@ -338,6 +338,11 @@ hands the query to the producer, and whatever `setRows` delivers is what shows.
 | `stripLastToken()` | drop the typed text, else the last chip, and reapply; false if nothing was left |
 | `toggleMark(id)`   | mark that row, or unmark it; returns the state it landed in   |
 | `markAll()`        | mark the whole filtered set, every page of it; returns the marked count |
+| `flagRow(id)`      | flag that row, or unflag it; returns the state it landed in    |
+| `unflagRow(id)`    | take the flag off, whether or not it had one                   |
+| `getFlagged()`     | the flagged ids, ordered like `getMarked()`                    |
+| `clearFlags()`     | take every flag off; marks are left alone                      |
+| `flaggedCount()`   | how many rows are flagged, the hidden ones counted             |
 | `getMarked()`      | the marked ids: those on show in display order, then the rest |
 | `clearMarks()`     | take every mark off                                            |
 | `markedCount()`    | how many rows are marked, the hidden ones counted             |
@@ -414,6 +419,20 @@ ink stays above 4.5:1 on it.
 those to `toggleMark`/`markAll`/`clearMarks` and the two renderers rhyme.
 `markAll()` takes the **filtered set**, every page of it — a filter is what the
 reader narrowed to, where a page is only how much of it fits at once.
+
+**Flags** ride the same `marks: true` opt-in, the leading box column being where
+either state is read. A flag is a *pending* action — the two-press `d` a
+consumer drives before confirming — where a mark is a *standing* selection, so
+they are separate id-keyed sets. A row can carry both; `clearMarks()` leaves
+flags alone and `clearFlags()` leaves marks alone, so a consumer wanting both
+gone asks for both. They survive what marks survive (a filter, a page, a sort,
+`setRows`, an upsert) and die where marks die (the row going away, or the view).
+A flagged row takes an amber wash and, on the box cell, an amber left edge —
+a second channel, because the background is one slot and the cursor wins it, so
+without the edge a flagged row under the cursor would stop saying it is
+flagged. Precedence on that one slot is cursor, then flag, then mark, then
+zebra. When either count is nonzero it leads the hint line, the pending one
+first: `2 flagged · 3 marked · 40 rows · sort …`.
 
 ### Outline guides (experimental)
 

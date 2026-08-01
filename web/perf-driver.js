@@ -157,6 +157,21 @@ function chipIn(theme) {
            edge: mixed(ground, frost, edgePct) };
 }
 
+/**
+ * The flagged-row wash THEME paints: the amber it washes (which cascades from
+ * the base rule) composited onto that theme's own ground at its own strength.
+ * The `chipIn' of the row grounds — read from the sheet, never re-spelled.
+ * @param {"light"|"dark"} theme
+ */
+function washIn(theme) {
+  const p = paletteIn(`:root[data-theme="${theme}"] .tv-root{`);
+  const base = paletteIn(".tv-root{");
+  const amber = p.amber || base.amber;
+  const ground = p.bg || base.bg;
+  const pct = Number(String(p["flag-wash"]).replace("%", "")) / 100;
+  return { amber, ground, pct, wash: mixed(ground, amber, pct) };
+}
+
 /** A hex colour's channels on 0..1 with their extrema — what hue and sat share. */
 const chroma = (h) => {
   const [r, g, b] = rgb(h).map((v) => v / 255);
@@ -752,6 +767,10 @@ async function rowMarks() {
           off.box.querySelector("tbody tr[data-id]").children.length, columns.length);
     off.handle.toggleMark(off.handle.getVisible()[0].id);
     check("markAll is a no-op without the option, and says so", off.handle.markAll(), 0);
+    off.handle.flagRow(off.handle.getVisible()[1].id);
+    check("a flag without the chrome paints nothing either",
+          [off.box.querySelectorAll("tr.tv-flagged").length,
+           off.handle.getFlagged().length], [0, 1]);
     await painted();
     check("marking without the option washes no row",
           off.box.querySelectorAll("tr.tv-marked").length, 0);
@@ -876,6 +895,128 @@ async function rowMarks() {
     const T2 = driver(10, { actionHints: true });
     check("and asking for it explicitly is the same line",
           T2.box.querySelector(".tv-hint").textContent, "10 rows · sort scheduled asc" + ACT);
+  }
+
+  // --- flags: the pending-action state, beside the standing one
+  {
+    const F = driver(MARK_VIEW, { marks: true, pageSize: 4 });
+    const h = F.handle;
+    check("flagRow answers the state it landed in",
+          [h.flagRow("a"), h.flagRow("a")], [true, false]);
+    h.flagRow("a");
+    h.flagRow("e");                    // page two
+    check("getFlagged reads the shown rows first, then the hidden",
+          h.getFlagged(), ["a", "e"]);
+    check("and counts every flag, the hidden ones included", h.flaggedCount(), 2);
+    h.unflagRow("e");
+    check("unflagRow takes one off", h.getFlagged(), ["a"]);
+    h.unflagRow("e");
+    check("and says nothing when there was none to take", h.getFlagged(), ["a"]);
+
+    // --- the two sets are two questions
+    h.toggleMark("a");
+    check("a row can be marked and flagged at once",
+          [h.getMarked(), h.getFlagged()], [["a"], ["a"]]);
+    h.clearMarks();
+    check("clearMarks leaves the flags standing",
+          [h.markedCount(), h.getFlagged()], [0, ["a"]]);
+    h.toggleMark("b");
+    h.clearFlags();
+    check("and clearFlags leaves the marks standing",
+          [h.flaggedCount(), h.getMarked()], [0, ["b"]]);
+    h.clearMarks();
+
+    // --- the survival matrix, the same one marks answer
+    h.flagRow("b");
+    h.flagRow("e");
+    h.upsertRow({ id: "b", cells: { state: "WAIT", title: "bravo again" } });
+    check("an upsert of a flagged id keeps its flag", h.getFlagged(), ["b", "e"]);
+    h.setRows(MARK_VIEW.rows.slice());
+    check("setRows keeps the flags whose ids came back", h.getFlagged(), ["b", "e"]);
+    F.shown("charlie");
+    check("a filter hiding them leaves them flagged", h.flaggedCount(), 2);
+    F.reset();
+    check("a page flip keeps them", [h.nextPage(), h.flaggedCount()], [true, 2]);
+    F.box.querySelector("th[data-key=state]").click();
+    await painted();
+    check("a re-sort keeps them", h.getFlagged().sort(), ["b", "e"]);
+    h.deleteRow("b");
+    check("deleteRow takes its flag with it", [h.flaggedCount(), h.getFlagged()], [1, ["e"]]);
+
+    const DF = driver(MARK_VIEW, { marks: true });
+    DF.handle.flagRow("c");
+    DF.handle.applyDelta([{ op: "delete", index: 2 }]);
+    check("a delta's delete drops the flag with the row", DF.handle.flaggedCount(), 0);
+    const NF = driver(MARK_VIEW, { marks: true });
+    NF.handle.flagRow("a");
+    NF.handle.setView(MARK_VIEW);
+    check("setView drops them with the view they were about", NF.handle.flaggedCount(), 0);
+  }
+
+  // --- the precedence stack: one background slot, four things wanting it
+  {
+    const css = document.head.children.map((e) => e.text).join("");
+    // Source order IS the precedence, every rule being one class on `tr'.
+    const at = (sel) => css.indexOf(sel);
+    check("zebra, then mark, then flag, then cursor",
+          [at(".tv-table tbody tr.tv-alt{") < at(".tv-table tbody tr.tv-marked{"),
+           at(".tv-table tbody tr.tv-marked{") < at(".tv-table tbody tr.tv-flagged{"),
+           at(".tv-table tbody tr.tv-flagged{") < at(".tv-table tbody tr.tv-sel{")],
+          [true, true, true]);
+
+    const P = driver(MARK_VIEW, { marks: true });
+    const h = P.handle;
+    const rowOfId = (id) => P.box.querySelectorAll("tbody tr[data-id]")
+      .find((tr) => tr.dataset.id === id);
+    h.toggleMark("a"); h.flagRow("a");
+    h.flagRow("b");
+    h.select("a");
+    await painted();
+    check("a row that is all three carries all three classes",
+          ["tv-marked", "tv-flagged", "tv-sel"].map((c) => rowOfId("a").classes.has(c)),
+          [true, true, true]);
+    check("and a flagged row keeps its class with no cursor on it",
+          [rowOfId("b").classes.has("tv-flagged"), rowOfId("b").classes.has("tv-sel")],
+          [true, false]);
+    // The cursor takes the one background slot, so the flag needs a second
+    // channel or it stops saying anything under the cursor. That is the edge.
+    check("the flag's edge is on the box cell, where no other state writes",
+          /tr\.tv-flagged td\.tv-box\{box-shadow:inset 3px 0 0 var\(--tv-amber\)\}/
+            .test(css), true);
+    check("and the checkbox glyph is drawn from the mark, independent of any ground",
+          /tr\.tv-marked td\.tv-box::before\{content:"\[X\]"\}/.test(css), true);
+
+    // --- the hint segment
+    check("both counts lead the line, the pending one first",
+          P.box.querySelector(".tv-hint").textContent, "2 flagged · 1 marked · 6 rows · unsorted");
+    h.clearFlags();
+    await painted();
+    check("and the flag segment goes when the last flag does",
+          P.box.querySelector(".tv-hint").textContent.indexOf("flagged"), -1);
+    h.clearMarks();
+    await painted();
+    check("leaving the line it always was",
+          P.box.querySelector(".tv-hint").textContent, "6 rows · unsorted");
+  }
+
+  // --- the amber wash, read out of the sheet like the frost
+  {
+    const L = washIn("light"), D = washIn("dark");
+    check("both themes wash the one amber var", [L.amber === D.amber, !!L.amber],
+          [true, true]);
+    check("and each asks for a modest amount of it",
+          [L.pct > 0 && L.pct <= 0.3, D.pct > 0 && D.pct <= 0.3], [true, true]);
+    check("amber is a warm hue, which neither the frost nor the cursor is",
+          hue(L.amber) >= 30 && hue(L.amber) <= 60, true);
+    for (const [theme, p] of [["light", L], ["dark", D]]) {
+      const pal = paletteIn(`:root[data-theme="${theme}"] .tv-root{`);
+      check(`${theme}: body ink clears 7:1 on a flagged row`,
+            ratio(pal.fg, p.wash) >= 7, true);
+      check(`${theme}: the tag ink still clears 4.5:1 on it`,
+            ratio(pal.muted, p.wash) >= 4.5, true);
+      check(`${theme}: and the wash stays nearer the page than the solid amber`,
+            ratio(p.ground, p.wash) < ratio(p.wash, p.amber), true);
+    }
   }
 
   // --- markAll: the filtered SET, which is not the page on show

@@ -317,6 +317,22 @@ the rails-to-cosmos ELPA archive publishes date-stamped snapshots.
   entries above; this is the shape they refine.)
 
 ### Added
+- Browser renderer: **row flags** — `flagRow(id)` (toggles, returning the
+  state it landed in), `unflagRow(id)`, `getFlagged()`, `clearFlags()`
+  and `flaggedCount()`. A flag is a *pending* action, the two-press `d` a
+  consumer drives before confirming, where a mark is a *standing*
+  selection; they are separate id-keyed sets, so a row can carry both and
+  neither clear touches the other. Flags ride the existing `marks: true`
+  opt-in — one chrome opt-in for both, the leading box column being where
+  either is read — and share its whole survival matrix: a filter, a page,
+  a sort, `setRows` and an upsert keep them; `deleteRow`, a delta delete
+  and `setView` take them. A flagged row wears an amber wash (one
+  `AMBER` constant, per-theme strengths of 22% light and 26% dark, tuned
+  so `--tv-muted` stays above 4.5:1 on it either way) plus an amber left
+  edge on the box cell — a second channel, since the background is one
+  slot and the cursor wins it. Precedence there is cursor, flag, mark,
+  zebra, which is the rules' source order. Either count nonzero leads the
+  hint line, the pending one first: `2 flagged · 3 marked · …`.
 - Browser renderer handle: **`markAll()`** marks every row of the current
   filtered set — all of it, not the page on show, since a filter is what
   the reader narrowed to and a page is only how much of it fits at once;
