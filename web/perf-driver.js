@@ -751,6 +751,7 @@ async function rowMarks() {
     check("and a row is one cell per declared column",
           off.box.querySelector("tbody tr[data-id]").children.length, columns.length);
     off.handle.toggleMark(off.handle.getVisible()[0].id);
+    check("markAll is a no-op without the option, and says so", off.handle.markAll(), 0);
     await painted();
     check("marking without the option washes no row",
           off.box.querySelectorAll("tr.tv-marked").length, 0);
@@ -844,6 +845,69 @@ async function rowMarks() {
     check("deleteRow takes its mark with it", [h.markedCount(), h.getMarked()], [1, ["e"]]);
     h.clearMarks();
     check("clearMarks takes the rest", h.markedCount(), 0);
+  }
+
+  // --- actionHints: false drops the legend and nothing else
+  {
+    const seen = [];
+    const H = driver(10, { actionHints: false, onAction: (c, id) => seen.push(c + " " + id) });
+    const line = H.box.querySelector(".tv-hint").textContent;
+    check("the action pairs are gone from the line",
+          [line.indexOf("materialize"), line.indexOf("Cycle TODO")], [-1, -1]);
+    check("and no key is marked up for them",
+          H.box.querySelectorAll(".tv-hint .tv-key").length, 0);
+    check("while the counts and the sort stand where they were",
+          line, "10 rows · sort scheduled asc");
+
+    // Presentation only: the actions are still there and still dispatch.
+    H.box.querySelectorAll(".tv-table tbody tr[data-id]")[0]
+      .dispatchEvent(new Ev("dblclick"));
+    check("the default action still runs", seen.pop(), "materialize " + ids[0]);
+
+    // The pager keeps its place in the line too, the legend being what left.
+    const P2 = driver(250, { actionHints: false, pageSize: 100 }, 600);
+    check("a paged line keeps its range AND its prev/next, dropping only the pairs",
+          P2.box.querySelector(".tv-hint").textContent,
+          "1–100 of 250 · ‹ prev · next › · sort scheduled asc");
+
+    const D2 = driver(10);
+    check("saying nothing leaves the legend exactly as it was",
+          D2.box.querySelector(".tv-hint").textContent, "10 rows · sort scheduled asc" + ACT);
+    const T2 = driver(10, { actionHints: true });
+    check("and asking for it explicitly is the same line",
+          T2.box.querySelector(".tv-hint").textContent, "10 rows · sort scheduled asc" + ACT);
+  }
+
+  // --- markAll: the filtered SET, which is not the page on show
+  {
+    const A = driver(MARK_VIEW, { marks: true, pageSize: 2 });
+    const h = A.handle;
+    check("the page holds two of the six", h.getVisible().length, 2);
+    check("markAll answers with how many carry a mark", h.markAll(), 6);
+    check("and it reached the rows no page was showing",
+          h.getMarked().sort(), ["a", "b", "c", "d", "e", "f"]);
+    check("it is idempotent — twice is once", h.markAll(), 6);
+
+    h.clearMarks();
+    // A filter is what the reader narrowed to; the page is only how much of it
+    // fits at a time. So the filter bounds it and the page does not.
+    A.shown("TODO");
+    check("the filter leaves three, still two to a page",
+          [h.getVisible().length, A.handle.pageInfo().total], [2, 3]);
+    check("markAll takes the filtered set whole", h.markAll(), 3);
+    check("which is the matching rows and no others",
+          h.getMarked().sort(), ["a", "c", "e"]);
+    await painted();
+    check("and the line counts them",
+          A.box.querySelector(".tv-hint").textContent.indexOf("3 marked · "), 0);
+
+    // Already-marked rows keep their marks when the set widens under them.
+    A.reset();
+    check("widening the filter and marking again adds the rest", h.markAll(), 6);
+    check("without disturbing the ones already carried",
+          h.getMarked().sort(), ["a", "b", "c", "d", "e", "f"]);
+    h.clearMarks();
+    check("and clearMarks still takes the lot", h.markedCount(), 0);
   }
 
   // --- the two other ways a row or a view goes away
@@ -3741,7 +3805,8 @@ async function smoke() {
   for (const name of ["setView", "setRows", "upsertRow", "deleteRow", "applyDelta",
                       "getRows", "getVisible", "select", "getSelection", "getQuery",
                       "stripLastToken", "openFilter", "closeFilter", "selectStep",
-                      "nextPage", "previousPage", "pageInfo"])
+                      "nextPage", "previousPage", "pageInfo",
+                      "toggleMark", "markAll", "getMarked", "clearMarks", "markedCount"])
     check(`handle exposes ${name}`, typeof t[name], "function");
   check("handle exposes el", !!t.el && typeof t.el === "object", true);
   for (const name of ["mount", "parseQuery", "displayText", "comparator"])

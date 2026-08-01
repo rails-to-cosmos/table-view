@@ -316,6 +316,21 @@ the rails-to-cosmos ELPA archive publishes date-stamped snapshots.
   half-typed `key:` and the palette's one-step-further ladder are the
   entries above; this is the shape they refine.)
 
+### Added
+- Browser renderer handle: **`markAll()`** marks every row of the current
+  filtered set — all of it, not the page on show, since a filter is what
+  the reader narrowed to and a page is only how much of it fits at once;
+  unfiltered, that is every row. Idempotent (already-marked rows stay
+  marked), returns how many carry a mark afterwards, updates the hint
+  line's count, and answers 0 without doing anything when `marks` is off.
+  Mirrors the mark-all gap left open when row marking landed.
+- Browser renderer: **`actionHints: false`** mount option drops the
+  `KEY label` pairs from the hint line, leaving the counts, the sort and
+  the pager where they were. For a consumer that prints its own keymap
+  and would otherwise print a second, disagreeing one. Presentation only
+  — the actions still dispatch — and the default is to show them, so a
+  consumer that says nothing sees the line it always saw.
+
 ### Changed
 - **Browser renderer: applied-filter chips are a frost wash, not a solid
   golden slab.** The role's colour moves from the theme's selection

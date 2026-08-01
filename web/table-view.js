@@ -29,6 +29,7 @@
  *   tv.pageInfo();        // { page, pages, from, to, total } over the filtered set
  *
  *   tv.toggleMark(id);    // mark or unmark a row -> the state it landed in
+ *   tv.markAll();         // mark the whole filtered set -> how many are marked
  *   tv.getMarked();       // the marked ids: those on show first, then the rest
  *   tv.clearMarks(); tv.markedCount();
  *
@@ -115,6 +116,11 @@
  *   uses, and the dropdown wears a tag the same way wherever it names one. It
  *   is presentation only: what is searched, sorted and measured is still the
  *   text the producer sent.
+ * - `actionHints: false' drops the `KEY label' pairs from the hint line and
+ *   leaves the counts, the sort and the pager standing. For a consumer that
+ *   prints its own keymap and would otherwise print a second, disagreeing one.
+ *   Presentation only: the actions still dispatch, and the default is to show
+ *   them, so a consumer that says nothing sees the line it always saw.
  * - `marks: true' adds dired's row marking, and a fourth row ground with it.
  *   The chrome is a leading checkbox column — presentation like the pager, so
  *   the cells and columns a producer sends are untouched and SCHEMA.md keeps
@@ -277,6 +283,7 @@
  *             omnibox?: boolean,
  *             palette?: boolean,
  *             marks?: boolean,
+ *             actionHints?: boolean,
  *             tree?: boolean,
  *             pageSize?: number,
  *             initialQuery?: string }} MountOptions
@@ -300,6 +307,7 @@
  *             pageInfo: () => { page: number, pages: number,
  *                               from: number, to: number, total: number },
  *             toggleMark: (id: string) => boolean,
+ *             markAll: () => number,
  *             getMarked: () => string[],
  *             clearMarks: () => void,
  *             markedCount: () => number }} Handle
@@ -855,6 +863,7 @@
     const omnibox = o.omnibox === true;
     const palette = o.palette === true;
     const marks = o.marks === true;
+    const actionHints = o.actionHints !== false;   // absent means the legend shows
     /** Draw SCHEMA's experimental `depth' as outline guides. */
     const tree = o.tree === true;
     /** How many chrome cells lead a row; what a column index has to skip. */
@@ -1779,10 +1788,15 @@
       // than beside it.
       let out = pageCount() > 1 ? pagerHTML() : `${esc(count)}`;
       out += ` · ${esc(sort)}`;
-      for (const a of actions()) {
-        if (!a.key) continue;
-        out += ` · <b class="tv-key">${esc(a.key)}</b> ${esc(a.label || a.command)}`;
-      }
+      // The legend is the renderer's way of saying which keys a consumer bound;
+      // a page that prints its own keymap has said it already, and two legends
+      // disagreeing is worse than one. Presentation alone — the actions still
+      // dispatch, and nothing about the view changes.
+      if (actionHints)
+        for (const a of actions()) {
+          if (!a.key) continue;
+          out += ` · <b class="tv-key">${esc(a.key)}</b> ${esc(a.label || a.command)}`;
+        }
       // A standing choice leads the line, ahead of what is merely on show: the
       // count is of every mark, the ones a filter or a page is hiding included,
       // which is the number a bulk action would run over. Nothing marked and the
@@ -1889,6 +1903,21 @@
       if (on) marked.add(id); else marked.delete(id);
       paintMarks();
       return on;
+    }
+
+    /**
+     * Mark every row of the CURRENT FILTERED SET — all of it, not the page on
+     * show, since a filter is what a reader narrowed to and the page is only
+     * how much of it fits. With no filter that is every row. Idempotent: a row
+     * already marked stays marked, so running it twice is running it once.
+     * @returns {number} how many rows carry a mark afterwards
+     */
+    function markAll() {
+      if (!marks) return 0;                     // no mark column, nothing to mark
+      const before = marked.size;
+      for (const r of ordered()) marked.add(r.id);
+      if (marked.size !== before) paintMarks();
+      return marked.size;
     }
 
     /** Take every mark off. */
@@ -3098,6 +3127,7 @@
        */
       pageInfo,
       toggleMark,
+      markAll,
       getMarked,
       clearMarks,
       /** How many rows are marked, the hidden ones counted. @returns {number} */

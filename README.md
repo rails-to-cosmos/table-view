@@ -337,6 +337,7 @@ hands the query to the producer, and whatever `setRows` delivers is what shows.
 | `closeFilter()`    | dismiss it and give the keyboard back to the table            |
 | `stripLastToken()` | drop the typed text, else the last chip, and reapply; false if nothing was left |
 | `toggleMark(id)`   | mark that row, or unmark it; returns the state it landed in   |
+| `markAll()`        | mark the whole filtered set, every page of it; returns the marked count |
 | `getMarked()`      | the marked ids: those on show in display order, then the rest |
 | `clearMarks()`     | take every mark off                                            |
 | `markedCount()`    | how many rows are marked, the hidden ones counted             |
@@ -368,6 +369,12 @@ list might be the start of a scroll; only the touchend that completes a press is
 swallowed, so no click or context menu follows the action.
 
 ### Row marking
+
+Pass **`actionHints: false`** to drop the `KEY label` pairs from the hint line
+while the counts, the sort and the pager stay. For a consumer that prints its
+own keymap and would otherwise print a second one that disagrees with it.
+Presentation only — the actions still dispatch — and the default shows them, so
+a consumer that says nothing sees the line it always saw.
 
 Pass **`marks: true`** for dired's row marking. Every row gets a leading
 checkbox — chrome, the way the pager is, so `columns` and `cells` mean exactly
@@ -404,7 +411,9 @@ ink stays above 4.5:1 on it.
 
 **The keys stay yours** — nothing here binds them. `table-view.el` spells them
 `m` (toggle and advance), `u` (unmark and advance) and `U` (unmark all); bind
-those to `toggleMark`/`clearMarks` and the two renderers rhyme.
+those to `toggleMark`/`markAll`/`clearMarks` and the two renderers rhyme.
+`markAll()` takes the **filtered set**, every page of it — a filter is what the
+reader narrowed to, where a page is only how much of it fits at once.
 
 ### Outline guides (experimental)
 
