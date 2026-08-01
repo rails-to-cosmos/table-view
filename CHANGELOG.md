@@ -295,6 +295,30 @@ the rails-to-cosmos ELPA archive publishes date-stamped snapshots.
   entries above; this is the shape they refine.)
 
 ### Added
+- Browser renderer: **two presentations under `pageSize`**, so that
+  selection-driven page crossing is smooth while explicit paging stays
+  crisp. *Paged* is the existing slice, with the window running inside one
+  page; *continuous* lets the window run over the whole filtered set — the
+  machinery paging was layered on top of. `selectStep` crossing a page
+  boundary switches to continuous at that moment: instead of turning the
+  page and snapping the scroller, the cursor steps onto the row that was
+  always next and the band eases as within a page, so a held movement key
+  crosses the seam with nothing to see and the window briefly holds rows
+  of both pages. Every explicit turn — `nextPage`, `previousPage`, a pager
+  click — snaps back to paged at the page requested, landing first or last
+  as before; a new query, a sort toggle and `setRows` return to paged. In
+  continuous the pager reads as **orientation**: `pageInfo()` derives the
+  page from the cursor, so the range moves as the cursor crosses. "On
+  show" means the cursor's page throughout — `getVisible`, `getMarked` and
+  `getFlagged` agree with the pager either way. Marks, flags, the
+  selection and its column carry across untouched, being id-keyed.
+- Browser renderer: **`flagHelp`** mount option — a string such as
+  `"d/D archive · u unflag"` that replaces the flagged-count segment with
+  a reminder while the cursor sits on a flagged row, the token before each
+  label marked up as a key. The whole string is the consumer's, since the
+  keys are theirs to bind and to name; the renderer contributes the count
+  and the styling and hardcodes no key of its own. Off a flagged row, or
+  with the option absent, the segment is the plain count.
 - Browser renderer: **row flags** — `flagRow(id)` (toggles, returning the
   state it landed in), `unflagRow(id)`, `getFlagged()`, `clearFlags()`
   and `flaggedCount()`. A flag is a *pending* action, the two-press `d` a

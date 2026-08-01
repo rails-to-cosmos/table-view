@@ -1039,6 +1039,152 @@ async function rowMarks() {
           Math.abs(hue(L.wash) - hue(washIn("light").flag)) < 45, true);
   }
 
+  // --- the two presentations: a stepped seam flows, an explicit turn snaps
+  {
+    const P = driver(250, { pageSize: 100 }, 300);
+    const h = P.handle;
+    // Display order, not store order: the view carries a sort, so an index
+    // into `getRows' would be indexing the wrong sequence. An unpaged mount of
+    // the same view IS the ordered set.
+    const ids = driver(250).handle.getVisible().map((r) => r.id);
+    const at = (id) => ids.indexOf(id);
+
+    check("it boots paged, on page one", [h.pageInfo().page, h.getVisible().length],
+          [1, 100]);
+    h.select(h.getVisible()[50].id);
+    await painted();
+    check("a step inside the page changes no presentation",
+          [h.selectStep(1), h.pageInfo().page, h.getVisible().length], [true, 1, 100]);
+
+    // --- crossing forward: one row, and the pager follows the cursor
+    h.select(h.getVisible()[99].id);
+    await painted();
+    check("parked on the last row of page one", at(h.getSelection().id), 99);
+    check("the step across succeeds", h.selectStep(1), true);
+    await painted();
+    check("and moved the cursor exactly one row", at(h.getSelection().id), 100);
+    check("the pager now reads the cursor's page", h.pageInfo().page, 2);
+    check("and its range is that page's, from the cursor's side of the seam",
+          [h.pageInfo().from, h.pageInfo().to], [101, 200]);
+    check("getVisible is the cursor's page, so buffer-end keys stay meaningful",
+          [h.getVisible().length, at(h.getVisible()[0].id),
+           at(h.getVisible()[99].id)], [100, 100, 199]);
+
+    // --- a held burst, across a second seam
+    let steps = 0;
+    for (let i = 0; i < 101 && h.selectStep(1); i++) steps++;
+    await painted();
+    check("a burst crosses the next seam without stopping at it",
+          [steps, at(h.getSelection().id)], [101, 201]);
+    check("and the pager has followed it onto page three", h.pageInfo().page, 3);
+
+    // --- an explicit turn snaps back to the crisp presentation
+    check("previousPage steps back a page from the cursor's", h.previousPage(), true);
+    await painted();
+    check("landing on that page's LAST row, the paged slice exact",
+          [h.pageInfo().page, at(h.getSelection().id), h.getVisible().length,
+           at(h.getVisible()[0].id)], [2, 199, 100, 100]);
+    check("nextPage lands on the first row of the one after",
+          [h.nextPage(), at(h.getSelection().id)], [true, 200]);
+    check("with the pager and the slice agreeing again",
+          [h.pageInfo().page, at(h.getVisible()[0].id)], [3, 200]);
+
+    // --- the resets put it back to paged page one
+    h.select(h.getVisible()[49].id);
+    h.selectStep(1);
+    P.box.querySelector("th[data-key=state]").click();
+    await painted();
+    check("a sort toggle resets to paged page one",
+          [h.pageInfo().page, h.getVisible().length], [1, 100]);
+
+    const Q = driver(250, { pageSize: 100 }, 300);
+    Q.handle.select(Q.handle.getVisible()[99].id);
+    Q.handle.selectStep(1);
+    check("a filter resets it too", (Q.shown("review"), Q.handle.pageInfo().page), 1);
+
+    const R = driver(250, { pageSize: 100 }, 300);
+    R.handle.select(R.handle.getVisible()[99].id);
+    R.handle.selectStep(1);
+    check("and so does setRows", (R.handle.setRows(view(250).rows),
+                                  R.handle.pageInfo().page), 1);
+
+    // --- marks and flags are id-keyed, so a presentation switch is nothing
+    const M = driver(250, { pageSize: 100, marks: true }, 300);
+    const mh = M.handle;
+    const mids = ids;
+    mh.toggleMark(mids[5]);
+    mh.flagRow(mids[150]);              // a page the cursor has not reached
+    mh.select(mh.getVisible()[99].id);
+    await painted();
+    mh.selectStep(1);                   // into continuous
+    await painted();
+    check("a mark and a flag both survive the switch to continuous",
+          [mh.getMarked(), mh.getFlagged(), mh.pageInfo().page],
+          [[mids[5]], [mids[150]], 2]);
+    mh.nextPage();                      // and the snap back
+    check("and both survive the snap back to paged",
+          [mh.getMarked(), mh.getFlagged()], [[mids[5]], [mids[150]]]);
+    check("with the column carried through all of it",
+          mh.getSelection().col, null);
+    // "On show" means one thing across the handle: getMarked, getFlagged and
+    // getVisible all read the cursor's page, so a mark on another page sorts
+    // after the shown ones in continuous exactly as it does in paged.
+    mh.toggleMark(mids[210]);          // page three, the cursor being on two
+    check("getMarked reads the cursor's page first, then the rest",
+          mh.getMarked(), [mids[5], mids[210]].filter((id) =>
+            mh.getVisible().some((r) => r.id === id)).concat(
+            [mids[5], mids[210]].filter((id) =>
+              !mh.getVisible().some((r) => r.id === id))));
+  }
+
+  // --- no pageSize at all: none of this exists
+  {
+    const N = driver(40);
+    N.handle.select(N.handle.getVisible()[0].id);
+    let n = 0;
+    while (N.handle.selectStep(1)) n++;
+    check("with no page size a step walks the whole set and stops at the end",
+          [n, N.handle.getVisible().length, N.handle.pageInfo()],
+          [39, 40, { page: 1, pages: 1, from: 1, to: 40, total: 40 }]);
+  }
+
+  // --- flagHelp: the segment becomes a reminder, on the flagged row alone
+  {
+    const HELP = "d/D archive · u unflag";
+    const F = driver(MARK_VIEW, { marks: true, flagHelp: HELP });
+    const line = () => F.box.querySelector(".tv-hint").textContent;
+    F.handle.flagRow("b");
+    F.handle.select("a");
+    await painted();
+    check("the cursor off the flagged row leaves the plain count",
+          line(), "1 flagged · 6 rows · unsorted");
+    F.handle.select("b");
+    await painted();
+    check("and on it the segment carries the consumer's own words",
+          line(), "1 flagged · d/D archive · u unflag · 6 rows · unsorted");
+    check("with the keys marked up the way the action legend marks its own",
+          F.box.querySelectorAll(".tv-hint .tv-key").map((e) => e.text), ["d/D", "u"]);
+    F.handle.flagRow("c");
+    await painted();
+    check("the count is of every flag, the helper of the row at point",
+          line(), "2 flagged · d/D archive · u unflag · 6 rows · unsorted");
+    F.handle.unflagRow("b");
+    await painted();
+    check("unflagging the row under the cursor puts the helper away",
+          line(), "1 flagged · 6 rows · unsorted");
+    F.handle.clearFlags();
+    await painted();
+    check("and with no flags at all the segment goes", line(), "6 rows · unsorted");
+
+    // Without the option the line is exactly what it was.
+    const P = driver(MARK_VIEW, { marks: true });
+    P.handle.flagRow("a");
+    P.handle.select("a");
+    await painted();
+    check("no flagHelp, no helper — the count segment as it always was",
+          P.box.querySelector(".tv-hint").textContent, "1 flagged · 6 rows · unsorted");
+  }
+
   // --- markAll: the filtered SET, which is not the page on show
   {
     const A = driver(MARK_VIEW, { marks: true, pageSize: 2 });
@@ -3182,23 +3328,41 @@ async function virtualKeys() {
     check("selected on the last row of page one, in a column",
           [pt.getSelection().col, pt.pageInfo().page], [2, 1]);
     const wasLast = pt.getSelection().id;
-    check("stepping past it turns the page", pt.selectStep(1), true);
+    const before = sc.scrollTop;
+    check("stepping past it crosses the seam", pt.selectStep(1), true);
     await sleep(400);
     check("landing on the first row of the next, column carried",
           [pt.pageInfo().page, pt.getSelection().id, pt.getSelection().col],
           [2, pt.getVisible()[0].id, 2]);
-    check("with the viewport at the top of it, the band asking nothing more",
-          sc.scrollTop, 0);
-    check("and the mark on it",
-          pg.querySelector(".tv-table tbody tr.tv-sel").dataset.id, pt.getVisible()[0].id);
+    // The seam is where the old presentation turned a page and jumped the
+    // scroller to 0. It now steps one row and the band eases, which is one
+    // row of travel rather than a hundred -- what makes a held key flow.
+    // The old presentation turned the page and snapped the scroller to 0 --
+    // a 2,724px jump from where this sits. It now travels the width of the
+    // scrolloff band re-establishing itself (the paged scroller was clamped at
+    // its own page's end, so the band had no room below the cursor until the
+    // whole set was under it), which is a fraction of a viewport and eases.
+    check("the viewport eases by a fraction of a screen rather than snapping",
+          [sc.scrollTop !== 0, Math.abs(sc.scrollTop - before) < 300], [true, true]);
+    // The seam itself: the window now holds rows from BOTH pages at once,
+    // which is the thing a page turn can never do and the reason there is no
+    // blink to see.
+    const spans = pg.querySelectorAll(".tv-table tbody tr[data-id]").map((tr) => tr.dataset.id);
+    const all = pt.getRows();
+    const pageOf = (id) => Math.floor(all.findIndex((r) => r.id === id) / 100);
+    check("and the window spans the seam, holding rows of both pages",
+          [spans.some((id) => pageOf(id) === 0), spans.some((id) => pageOf(id) === 1)],
+          [true, true]);
+    check("and the mark is on the row it stepped to",
+          pg.querySelector(".tv-table tbody tr.tv-sel").dataset.id, pt.getSelection().id);
 
-    check("stepping back turns it again", pt.selectStep(-1), true);
+    check("stepping back crosses it the other way", pt.selectStep(-1), true);
     await sleep(400);
     check("landing on the last row of the one before, and the same column",
           [pt.pageInfo().page, pt.getSelection().id, pt.getSelection().col],
           [1, wasLast, 2]);
-    check("with the viewport at the end it arrived at",
-          sc.scrollTop > 0 && sc.scrollTop <= HEAD_PX + 100 * ROW_PX - 300, true);
+    check("and the viewport eases back rather than snapping to the page end",
+          Math.abs(sc.scrollTop - before) < 300, true);
 
     check("and at the very ends it stays put",
           [(pt.select(pt.getVisible()[0].id), pt.selectStep(-1)), pt.pageInfo().page],

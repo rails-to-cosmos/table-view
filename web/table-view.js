@@ -26,7 +26,7 @@
  *   tv.openFilter(); tv.closeFilter();   // summon and dismiss the filter
  *   tv.selectStep(+1);    // move a row, turning the page at either end -> bool
  *   tv.nextPage(); tv.previousPage();    // turn a page -> bool
- *   tv.pageInfo();        // { page, pages, from, to, total } over the filtered set
+ *   tv.pageInfo();        // { page, pages, from, to, total } — the CURSOR's page
  *
  *   tv.toggleMark(id);    // mark or unmark a row -> the state it landed in
  *   tv.markAll();         // mark the whole filtered set -> how many are marked
@@ -120,6 +120,28 @@
  *   uses, and the dropdown wears a tag the same way wherever it names one. It
  *   is presentation only: what is searched, sorted and measured is still the
  *   text the producer sent.
+ * - Under `pageSize' the rows are drawn in one of TWO presentations. PAGED is
+ *   the slice: the window runs inside one page, which is what an explicit turn
+ *   wants — a different set of rows, arrived at crisply. CONTINUOUS lets the
+ *   window run over the whole ordered set. Stepping the selection off the end
+ *   of a page switches to it at that moment: the cursor moves onto the next
+ *   row and the band eases as it does anywhere else, so a held key crosses the
+ *   seam with nothing to see, where a page turn would blink. The pager then
+ *   reads as ORIENTATION — `pageInfo' derives the page from where the CURSOR
+ *   is, so the range moves as it crosses — and any explicit turn
+ *   (`nextPage', `previousPage', a pager click) snaps back to PAGED at the
+ *   page it asked for, landing first or last as it always did. A new query, a
+ *   sort toggle and `setRows' all return to PAGED. "On show" means the
+ *   cursor's page throughout: `getVisible', `getMarked' and `getFlagged' agree
+ *   with the pager whichever presentation drew the rows. Marks, flags, the
+ *   selection and its column are id-keyed and carry across untouched — the
+ *   presentation changes what renders, not what is true.
+ * - `flagHelp: "d/D archive · u unflag"' turns the flagged-count segment into
+ *   a reminder while the CURSOR sits on a flagged row. The text is the
+ *   consumer's whole string, since the keys are the consumer's to bind and to
+ *   name; the renderer prepends the count and marks the token before each
+ *   label up as a key. Off the flagged row, or without the option, the segment
+ *   is the plain count.
  * - `actionHints: false' drops the `KEY label' pairs from the hint line and
  *   leaves the counts, the sort and the pager standing. For a consumer that
  *   prints its own keymap and would otherwise print a second, disagreeing one.
@@ -278,6 +300,7 @@
  *             palette?: boolean,
  *             marks?: boolean,
  *             actionHints?: boolean,
+ *             flagHelp?: string,
  *             pageSize?: number,
  *             initialQuery?: string }} MountOptions
  * @typedef {{ el: HTMLElement,
@@ -863,6 +886,25 @@
     const palette = o.palette === true;
     const marks = o.marks === true;
     const actionHints = o.actionHints !== false;   // absent means the legend shows
+    /**
+     * What to offer about a flagged row, in the consumer's own words — e.g.
+     * `"d/D archive · u unflag"'. Shown only while the cursor sits on a
+     * flagged row; absent, the segment is the plain count it always was.
+     */
+    const flagHelp = typeof o.flagHelp === "string" && o.flagHelp.trim()
+      ? o.flagHelp.trim() : "";
+    /**
+     * FLAGHELP marked up like the action legend: the token before each label
+     * is a key, the rest is words. Split once at mount rather than per render,
+     * since a hint line is rewritten on every selection move.
+     */
+    const flagHelpHTML = flagHelp.split("·").map((part) => {
+      const t = part.trim();
+      if (!t) return "";
+      const at = t.indexOf(" ");
+      return at === -1 ? `<b class="tv-key">${esc(t)}</b>`
+        : `<b class="tv-key">${esc(t.slice(0, at))}</b> ${esc(t.slice(at + 1).trim())}`;
+    }).filter(Boolean).join(" · ");
     /** How many chrome cells lead a row; what a column index has to skip. */
     const chrome = marks ? 1 : 0;
     /** The marked ids. @type {Set<string>} */
@@ -879,6 +921,22 @@
     const pageSize = Math.max(0, Math.trunc(Number(o.pageSize) || 0));
     /** The page on show, counted from zero. */
     let page = 0;
+    /**
+     * Which of the two presentations a paged view is in.
+     *
+     * PAGED (false) is the slice: `paged' hands back one page and the
+     * virtualizer runs inside it, which is what an explicit page turn wants —
+     * a different set of rows, arrived at crisply.
+     *
+     * CONTINUOUS (true) lets the window run over the whole ordered set, which
+     * is the machinery paging was layered on top of. Stepping the selection
+     * off the end of a page switches to it AT THAT MOMENT: the cursor simply
+     * moves onto the next row and the scroll band eases as it does within a
+     * page, so a held key crosses the seam without the blink a page turn
+     * would cost. The pager then reads as orientation rather than as state —
+     * it says which page the CURSOR is in — and any explicit turn snaps back.
+     */
+    let continuous = false;
 
     /** Is the table being drawn dark? The page's choice outranks the system's. */
     function darkNow() {
@@ -1424,10 +1482,57 @@
      */
     function paged() {
       const rows = ordered();
-      if (!pageSize) return rows;
+      if (!pageSize || continuous) return rows;
       if (page >= pageCount()) page = pageCount() - 1;   // the set shrank under it
       const at = page * pageSize;
       return rows.slice(at, at + pageSize);
+    }
+
+    /**
+     * The page the cursor sits in, from zero — the page a reader would say
+     * they were on. In PAGED presentation that is `page' by construction; in
+     * CONTINUOUS it is derived from where the selection landed, which is what
+     * makes the pager move as the cursor crosses a boundary. With nothing
+     * selected it falls back to `page', so an unselected continuous view
+     * still says something rather than nothing.
+     */
+    function cursorPage() {
+      if (!pageSize) return 0;
+      if (!continuous) return Math.min(page, pageCount() - 1);
+      const i = state.selected === null
+        ? -1 : ordered().findIndex((r) => r.id === state.selected);
+      return i === -1 ? Math.min(page, pageCount() - 1) : Math.floor(i / pageSize);
+    }
+
+    /**
+     * Go continuous, keeping the viewport exactly where it is. The rows the
+     * window indexes stop being the page and become the whole set, so a row
+     * that was at index i is now at `page * pageSize + i' — the scroller is
+     * moved by that difference in the same breath, which is what makes the
+     * switch invisible. The selection's own index is re-read from the new
+     * rows for the same reason.
+     */
+    /**
+     * The rows a reader would call "on show": one page of the filtered set, or
+     * all of it with no page size. In CONTINUOUS presentation the window is
+     * over the whole set, but this stays the CURSOR's page — the same answer
+     * the pager gives and `getVisible' returns, so "shown" means one thing
+     * across the handle whichever way the rows were drawn.
+     * @returns {Row[]}
+     */
+    function shownRows() {
+      const rows = ordered();
+      if (!pageSize || !continuous) return paged();
+      const at = cursorPage() * pageSize;
+      return rows.slice(at, at + pageSize);
+    }
+
+    function goContinuous() {
+      if (!pageSize || continuous) return;
+      const skipped = page * pageSize;
+      continuous = true;
+      scroll.scrollTop += skipped * geom.row;
+      if (selAt >= 0) selAt += skipped;
     }
 
     /** Whether ROW passes the current filter. @param {Row} r */
@@ -1620,7 +1725,7 @@
     function pageInfo() {
       const total = ordered().length;
       const pages = pageCount();
-      const at = Math.min(page, pages - 1);
+      const at = cursorPage();
       return pageSize
         ? { page: at + 1, pages, from: total ? at * pageSize + 1 : 0,
             to: Math.min(total, (at + 1) * pageSize), total }
@@ -1681,7 +1786,17 @@
       // line is the line it has always been.
       if (!marks) return out;
       if (marked.size) out = `${esc(grouped(marked.size))} marked · ${out}`;
-      if (flagged.size) out = `${esc(grouped(flagged.size))} flagged · ${out}`;
+      if (flagged.size) {
+        // With the cursor ON a flagged row the segment turns into a reminder
+        // of what can be done about it. The text is the CONSUMER's whole
+        // string — the keys are theirs to bind and theirs to name, and a
+        // renderer inventing `d' or `u' here would be asserting a keymap it
+        // does not own. Rendered in the legend's own shape: key tokens small
+        // and the words between them plain.
+        const help = flagHelp && state.selected !== null && flagged.has(state.selected)
+          ? ` · ${flagHelpHTML}` : "";
+        out = `${esc(grouped(flagged.size))} flagged${help} · ${out}`;
+      }
       return out;
     }
 
@@ -1809,7 +1924,7 @@
      * @returns {string[]}
      */
     function getFlagged() {
-      const out = paged().filter((r) => flagged.has(r.id)).map((r) => r.id);
+      const out = shownRows().filter((r) => flagged.has(r.id)).map((r) => r.id);
       const shown = new Set(out);
       for (const id of flagged) if (!shown.has(id)) out.push(id);
       return out;
@@ -1853,7 +1968,7 @@
      * @returns {string[]}
      */
     function getMarked() {
-      const out = paged().filter((r) => marked.has(r.id)).map((r) => r.id);
+      const out = shownRows().filter((r) => marked.has(r.id)).map((r) => r.id);
       const shown = new Set(out);
       for (const id of marked) if (!shown.has(id)) out.push(id);
       return out;
@@ -1910,6 +2025,12 @@
      */
     function paintSelection(was) {
       wantSelection = true;
+      // Nothing on the hint line depends on WHICH row is selected — unless a
+      // flag helper does, and then moving the cursor on or off a flagged row
+      // changes it. Asked for only when there is one, so the common case still
+      // never rewrites the status line to move a cursor; and it is one rewrite
+      // per frame either way, since this is the coalescing path.
+      if (flagHelp) wantHint = true;
       if (selAt >= 0) easeToRow(selAt, was === undefined ? selAt : was);
       schedule();
     }
@@ -2028,8 +2149,13 @@
     function turnTo(to, land) {
       const pages = pageCount();
       const at = Math.max(0, Math.min(pages - 1, to));
-      if (at === page) return false;
+      // An explicit turn is the crisp presentation by definition, so it snaps
+      // back out of continuous — including to the page the cursor is already
+      // showing, which in continuous is a real move (the slice) rather than
+      // the no-op it is when the two agree.
+      if (at === page && !continuous) return false;
       const col = state.selCol;
+      continuous = false;
       page = at;
       const rows = paged();
       if (!rows.length) { renderRows(true); return true; }
@@ -2055,7 +2181,7 @@
      * @param {number} step  @returns {boolean}
      */
     function selectStep(step) {
-      const rows = paged();
+      let rows = paged();
       if (!rows.length) return false;
       const dir = step < 0 ? -1 : 1;
       const col = state.selCol;
@@ -2064,7 +2190,18 @@
       if (at === -1) return selectRow(rows[dir > 0 ? 0 : rows.length - 1].id, col ?? undefined);
       const next = at + dir;
       if (next >= 0 && next < rows.length) return selectRow(rows[next].id, col ?? undefined);
-      return turnTo(page + dir, dir > 0 ? "first" : "last");
+      // Off the end of the page. Rather than turning it — a new set of rows and
+      // a jumped scroller, which is a blink under a held key — the presentation
+      // becomes continuous and the cursor steps onto the row that was always
+      // there. The viewport is not touched beyond the offset `goContinuous'
+      // applies, so the band eases across the seam as it does anywhere else.
+      if (!pageSize || continuous) return false;         // the true end of the set
+      goContinuous();
+      rows = paged();
+      const here = rows.findIndex((r) => r.id === state.selected);
+      const across = here + dir;
+      if (across < 0 || across >= rows.length) return false;
+      return selectRow(rows[across].id, col ?? undefined);
     }
 
     /**
@@ -2087,6 +2224,7 @@
         ? [{ column: key, ascending: !primary.ascending, nullsFirst: false }]
         : [{ column: key, ascending: true, nullsFirst: false }];
       page = 0;                          // a different order, read from the top
+      continuous = false;
       dropSorted();
       scroll.scrollTop = 0;
       renderArrows();
@@ -2306,6 +2444,7 @@
       if (q === lastQuery) return;
       lastQuery = q;
       page = 0;                          // a different question, read from the top
+      continuous = false;
       if (o.onFilter) o.onFilter(q);
       else if (onFrame) frame(applyFilter);
       else applyFilter();
@@ -2830,7 +2969,8 @@
       const t = hit(e);
       const step = t && /** @type {HTMLElement|null} */ (t.closest(".tv-pg"));
       if (!step || step.classList.contains("tv-pg-off")) return;
-      turnTo(page + Number(step.dataset.pg), Number(step.dataset.pg) > 0 ? "first" : "last");
+      turnTo(cursorPage() + Number(step.dataset.pg),
+             Number(step.dataset.pg) > 0 ? "first" : "last");
     });
 
     /** Take chip AT off and re-run what is left. */
@@ -2956,6 +3096,10 @@
         state.rows = (rows || []).slice();
         clearTexts();
         dropSorted();
+        // The presentation resets — a new set is not the set the seam was
+        // crossed in — but `page' is left to CLAMP rather than reset, which is
+        // what keeps a reader near where they were when rows go away.
+        continuous = false;
         renderRows(true);
       },
       /** @param {Row} row */
@@ -3018,7 +3162,15 @@
         renderRows(true);
       },
       getRows() { return state.rows.slice(); },
-      getVisible() { return paged().slice(); },
+      /**
+       * The rows on show as a reader would name them: one page of the
+       * filtered, sorted set, or all of it where no page size was asked for.
+       * In CONTINUOUS presentation the window is over the whole set, but this
+       * still answers the CURSOR's page — a consumer's buffer-end keys mean
+       * the ends of the page it is looking at, and the pager says the same
+       * page, so the two agree whichever way the rows were drawn.
+       */
+      getVisible() { return shownRows().slice(); },
       select: selectRow,
       /**
        * Where the selection is: the row's id and the column index within it,
@@ -3038,9 +3190,9 @@
       closeFilter,
       selectStep,
       /** Turn forward a page, landing on its first row. @returns {boolean} */
-      nextPage() { return turnTo(page + 1, "first"); },
+      nextPage() { return turnTo(cursorPage() + 1, "first"); },
       /** Turn back a page, landing on its last. @returns {boolean} */
-      previousPage() { return turnTo(page - 1, "last"); },
+      previousPage() { return turnTo(cursorPage() - 1, "last"); },
       /**
        * Where the reading is: the page and how many there are, and the span of
        * the filtered set on show. Counted from one, the way it reads.

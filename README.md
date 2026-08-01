@@ -375,6 +375,15 @@ swallowed, so no click or context menu follows the action.
 
 ### Row marking
 
+Pass **`flagHelp`** a string — `"d/D archive · u unflag"` — to turn the flagged
+count into a reminder while the cursor sits on a flagged row: `2 flagged · d/D
+archive · u unflag · 40 rows · …`, with the token before each label marked up
+as a key. The whole string is the consumer's, because the keys are the
+consumer's to bind and to name; the renderer supplies only the count and the
+styling, and hardcoding a `d` or a `u` here would be asserting a keymap it does
+not own. Off a flagged row, or without the option, the segment is the plain
+count it always was.
+
 Pass **`actionHints: false`** to drop the `KEY label` pairs from the hint line
 while the counts, the sort and the pager stay. For a consumer that prints its
 own keymap and would otherwise print a second one that disagrees with it.
@@ -446,6 +455,25 @@ The pager lives in the status line rather than in a control of its own —
 page, leaving the line exactly as it is without `pageSize`. A query or sort
 change reads from the top again; a shorter set clamps rather than stranding the
 reader past the end.
+
+**Two presentations.** Under `pageSize` the rows are drawn either *paged* — the
+window running inside one page's slice — or *continuous*, the window running
+over the whole filtered set. It boots paged, and an explicit turn is always
+paged: `nextPage()`, `previousPage()` and the pager's own controls each snap to
+that presentation at the page they asked for. What switches to continuous is
+`selectStep` crossing a page boundary, at that moment: rather than turning the
+page and jumping the scroller, the cursor steps onto the row that was always
+next and the scroll band eases as it does within a page, so a held movement key
+flows across the seam with nothing to see. A new query, a sort toggle and
+`setRows` all return to paged.
+
+In continuous the pager becomes **orientation**: `pageInfo()` derives the page
+from where the *cursor* is, so `101–200 of 250` appears the moment the cursor
+crosses into that range. "On show" means the cursor's page throughout —
+`getVisible()`, `getMarked()` and `getFlagged()` all agree with the pager, so
+buffer-end keys still mean the ends of the page being read. Marks, flags, the
+selection and its column are id-keyed and carry across untouched; the
+presentation decides what renders, not what is true.
 
 Movement is continuous across the boundary. `selectStep(+1)` off the last row of
 a page turns to the next and lands on its first; `selectStep(-1)` off the first
