@@ -2157,6 +2157,12 @@
       const col = state.selCol;
       continuous = false;
       page = at;
+      // Reachable only from continuous mode: paged mode cannot get here empty
+      // (pages === 1, at === 0 === page, the guard returns first), but in
+      // continuous that same equality is a real move — so a producer that
+      // emptied the set while the reader glided leaves this turn a rows-less
+      // snap-back.  The mutation pass dated the empty branch dead; continuous
+      // mode revived it.
       const rows = paged();
       if (!rows.length) { renderRows(true); return true; }
       const first = land === "first";
