@@ -42,6 +42,40 @@ the rails-to-cosmos ELPA archive publishes date-stamped snapshots.
   and a chain of one being the single sort it always was.
 
 ### Fixed
+- **A page's last row no longer parks under the hint bar (browser
+  renderer).** The hint is the scroller's next sibling, so its top IS
+  the fold, and the viewport's clamp modelled the content it had to stop
+  at as `header + rows × geom.row`. `geom.row` is ONE row's
+  `getBoundingClientRect().height`, and a browser snaps every rect it
+  hands back over a row box that is fractional (`13px/1.5`, padding, a
+  hairline) — so the sample is a rounding of the height rather than the
+  height, and the error compounds a fraction of a pixel per row. Over a
+  hundred-row page it came to 20px in Firefox: `>`, `G` and a held `n`
+  all stopped twenty pixels short of the end with the last row two
+  thirds under the bar, whatever the window size or the row count — the
+  constant that made it read as a layout bug. `maxScroll` now reads the
+  scroller's own `scrollHeight`, which is that sum without the rounding
+  and is the number the browser itself clamps `scrollTop` against. It
+  answers for the rows in the TBODY, so where their count differs from
+  the page on show — a page turn, the continuous seam — the modelled sum
+  still stands in until the render lands.
+- **An ease against a clamp ends rather than running for ever (browser
+  renderer).** `scrollTop` snaps to a device pixel and `scrollHeight` is
+  rounded over content that is not, so a target can sit a pixel past
+  anything a scroller will hold. Ending the ease only on ARRIVAL left a
+  `requestAnimationFrame` loop turning at 60fps for as long as the page
+  was open, which Firefox did at BOTH ends of the travel and did before
+  ever a target came off `scrollHeight` — 60 refused writes a second,
+  now none. A refused step is an arrival.
+- **The driver's DOM shim reports a spacer's own height, and a row's
+  snapped (`web/perf-driver.js`).** Two gaps that between them hid the
+  bug above: the shim parsed `style` as an opaque attribute, so a spacer
+  row standing in for sixty measured one row tall; and every row rect
+  came back exactly `ROW_PX`, so no arithmetic that multiplied one rect
+  by a page could ever be wrong. Rects are now snapped against where the
+  row falls, `scrollHeight` is the unsnapped sum, and a fractional
+  `ROW_PX` is what the new checks set. At a whole `ROW_PX` every number
+  is what it was.
 - **A `values` list holding starred metas alone no longer orders a
   column (`table-view.el`).** SCHEMA.md has said since the metas landed
   that a meta is filter vocabulary rather than a cell value and takes no

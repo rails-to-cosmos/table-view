@@ -2187,11 +2187,28 @@
     }
 
     /**
-     * The furthest this scroller can travel with PORT pixels on show: the
-     * header plus every row of the page, less the viewport.
+     * The furthest this scroller can travel with PORT pixels on show.
+     *
+     * The scroller's OWN content is the answer wherever it is an answer about
+     * the rows on show, because a row's box is fractional and every rect is
+     * snapped: `geom.row' is a ROUNDING of the row height rather than the
+     * height, so `geom.head + rows * geom.row' runs a fraction of a pixel short
+     * PER ROW — over a page of a hundred, twenty, which is the tail parking
+     * under the hint bar with its last row two thirds covered. `scrollHeight'
+     * is that sum without the rounding, and it is the number the browser itself
+     * clamps `scrollTop' against.
+     *
+     * It answers for the rows in the TBODY, which at a page turn and at the
+     * continuous seam are not yet the rows on show — the set changes and the
+     * scroller is still holding the one before it. Every row being one row tall,
+     * the count is what tells the two apart, and where they differ the modelled
+     * sum is all there is until the render lands.
      */
     function maxScroll(port) {
-      return Math.max(0, geom.head + paged().length * geom.row - port);
+      const rows = paged();
+      const content = win.rows.length === rows.length
+        ? scroll.scrollHeight : geom.head + rows.length * geom.row;
+      return Math.max(0, content - port);
     }
 
     /**
@@ -2564,7 +2581,18 @@
         if (port) easeAt = aimed(port);
         const step = easeAt - scroll.scrollTop;
         if (Math.abs(step) < SNAP_PX) { scroll.scrollTop = easeAt; easing = false; }
-        else scroll.scrollTop = scroll.scrollTop + step * EASE;
+        else {
+          const was = scroll.scrollTop;
+          scroll.scrollTop = was + step * EASE;
+          // A scroller that took NOTHING is at its own end, or rounding the
+          // step away: `scrollHeight' is an integer over fractional content and
+          // `scrollTop' snaps to a device pixel, so a target can sit a pixel
+          // past anything this scroller will hold. Ending only on ARRIVAL then
+          // runs a frame loop against that clamp for as long as the page is
+          // open — which it did at both ends, before ever a target came off
+          // `scrollHeight'. A refused step is an arrival.
+          if (scroll.scrollTop === was) easing = false;
+        }
         wantWindow = true;
       }
       // Forced only when the rows themselves changed; a selection that has not

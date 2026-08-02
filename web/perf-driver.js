@@ -323,13 +323,63 @@ global.requestAnimationFrame = (fn) => realTimeout(timed(fn), 0);
 
 // ---- DOM shim --------------------------------------------------------------
 
-/** The shim's line height; the driver moves it to stand in for a zoom. */
+/**
+ * The shim's line height, and the TRUE one: the driver moves it to stand in
+ * for a zoom, and gives it a FRACTION to stand in for the height a real row
+ * has. `13px/1.5' plus padding and a hairline does not land on a whole pixel,
+ * and no browser reports a fractional box back whole — see `SNAP_PX' below and
+ * `getBoundingClientRect'.
+ */
 let ROW_PX = 30;
 /** The header's, which is deliberately NOT the row's: the renderer keeps the
  *  two apart and every sum over them has to as well. A shim reporting one
  *  number for both lets an arithmetic that confuses them pass. The driver moves
  *  it to stand in for a header that measures taller once it is drawn. */
 let HEAD_PX = 24;
+/**
+ * The grid a rect is reported on. A browser lays a box out in fractions and
+ * SNAPS every rect it hands back, so `getBoundingClientRect().height' is a
+ * ROUNDING of the height rather than the height — Firefox at 13px/1.5 reports
+ * a 30.5px row as 30 or 30.5 depending where it fell. Modelled here at that
+ * same half-pixel, because the whole class of bug this catches is an
+ * arithmetic that multiplies one sampled rect by a page of rows.
+ */
+const SNAP_PX = 0.5;
+const snapped = (v) => Math.round(v / SNAP_PX) * SNAP_PX;
+
+/**
+ * What a laid-out box really measures, unsnapped: what it was TOLD to be (a
+ * spacer carries its height in the markup), else what its kind measures, else
+ * the sum of what it holds. This is the number a scroller reports as its
+ * `scrollHeight' and the number a rect is a rounding of.
+ */
+function trueHeight(el) {
+  if (!el || !el.tagName) return 0;
+  if (el.style && el.style.display === "none") return 0;
+  const h = el.style && el.style.height;
+  if (h && /px$/.test(String(h))) return parseFloat(String(h));
+  if (el.tagName === "THEAD") return HEAD_PX;
+  if (el.tagName === "TR") return ROW_PX;
+  return el.children.reduce((a, c) => a + trueHeight(c), 0);
+}
+
+/**
+ * Where EL's top edge falls in the scroller above it, unsnapped: everything
+ * ahead of it in its parent, and so on up to the scroll container. A row's rect
+ * is snapped against this, so a run of rows reports the alternation a
+ * fractional height really produces instead of one number repeated.
+ */
+function contentTop(el) {
+  let top = 0;
+  for (let n = el; n && n.parentNode; n = n.parentNode) {
+    for (const sib of n.parentNode.children) {
+      if (sib === n) break;
+      top += trueHeight(sib);
+    }
+    if (n.parentNode.classes && n.parentNode.classes.has("tv-scroll")) break;
+  }
+  return top;
+}
 const VOID = new Set(["input", "br", "img", "col", "hr", "meta", "link"]);
 const ENTITY = { amp: "&", lt: "<", gt: ">", quot: '"', "#39": "'" };
 const decode = (s) =>
@@ -489,9 +539,22 @@ class El {
     const h = this.style.height;
     if (h && /px$/.test(String(h))) return { height: parseFloat(String(h)), width: 0 };
     if (this.tagName === "THEAD") return { height: HEAD_PX, width: 0 };
-    if (this.tagName === "TR") return { height: ROW_PX, width: 0 };
+    // A ROW is reported the way a browser reports one: snapped, against where
+    // the row actually falls. With a whole ROW_PX that is ROW_PX for every row
+    // and this is the shim it always was; with a fractional one the rects
+    // alternate around it, which is what makes `one rect times a page of rows'
+    // a different number from the page.
+    if (this.tagName === "TR") {
+      const top = contentTop(this);
+      return { height: snapped(top + ROW_PX) - snapped(top), width: 0 };
+    }
     return { height: 0, width: 0 };
   }
+  /**
+   * What this box's content measures, as a scroller reports it: a browser
+   * rounds `scrollHeight' to a whole pixel over content that is not whole.
+   */
+  get scrollHeight() { return Math.round(trueHeight(this)); }
   closest(sel) {
     const steps = parseSel(sel);
     for (let n = this; n; n = n.parentNode) if (fitsAll(n, steps)) return n;
@@ -512,6 +575,16 @@ const TAG = /<(\/?)([a-zA-Z][\w-]*)((?:\s+[^\s"'>\/=]+(?:\s*=\s*(?:"[^"]*"|'[^']
 const ATTR = /([^\s"'>\/=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+)))?/g;
 
 /** Parse HTML into PARENT (enough of a parser for what this renderer writes). */
+/** A `style' attribute's declarations onto EL, the way the DOM does. */
+function applyStyle(el, decls) {
+  for (const decl of String(decls).split(";")) {
+    const at = decl.indexOf(":");
+    if (at > 0)
+      el.style[decl.slice(0, at).trim().replace(/-([a-z])/g, (_, c) => c.toUpperCase())]
+        = decl.slice(at + 1).trim();
+  }
+}
+
 function parseInto(html, parent) {
   const stack = [parent];
   let last = 0, m;
@@ -529,6 +602,11 @@ function parseInto(html, parent) {
       const name = a[1], val = decode(a[2] ?? a[3] ?? a[4] ?? "");
       if (name === "class") el.className = val;
       else el.attrs.set(name, val);
+      // A `style' attribute is a declaration list and the shim's geometry reads
+      // it: a SPACER row carries its height there and nowhere else, so leaving
+      // it as an opaque string had every spacer report one row's height however
+      // many rows it stood in for.
+      if (name === "style") applyStyle(el, val);
       if (name === "value") el.value = val;
     }
     stack[stack.length - 1].appendChild(el);
@@ -5400,6 +5478,95 @@ async function smoke() {
           [hidden(hs, 300, 150), !!held.querySelector("tbody tr.tv-sel")], [0, true]);
     HEAD_PX = 24;
     global.requestAnimationFrame = realFrame;
+  }
+
+  // --- the tail is never under the hint bar
+  // The hint is the scroller's next sibling, so ITS TOP IS THE FOLD and "the
+  // last row is covered" is exactly "the content runs past the viewport at the
+  // end of the travel". A row's box is fractional -- 13px/1.5, padding and a
+  // hairline -- and a browser hands back a SNAPPED rect, so a viewport clamped
+  // to `head + rows * one sampled rect' stops a fraction of a pixel per row
+  // short: over a page of a hundred, twenty, which is the last row two thirds
+  // under the bar. Run at a fractional row height, because at a whole one the
+  // sample IS the height and there is nothing here to catch.
+  {
+    ROW_PX = 30.4;
+    const port = 300;
+    const tail = new El("div");
+    const tt = TableView.mount(tail, view(250), { pageSize: 100, palette: true });
+    const ts = tail.querySelector(".tv-scroll");
+    ts.clientHeight = port;
+    // The worst case for the strip, which is what glance shows: crumbs from a
+    // drill-down, a live filter chip, and a sort chain, all in the row at once.
+    tt.pushCrumb({ label: "inbox", query: "q1" });
+    tt.pushCrumb({ label: "2026", query: "q2" });
+    tt.setSort([{ column: "state" }, { column: "scheduled", ascending: false }]);
+    probe(tail, tt).commit("2026");           // every row carries it: 250 still
+    await sleep(50);
+    check("the strip is populated — crumbs, a live chip and the sort chain",
+          [tail.querySelectorAll(".tv-chip-muted").length,
+           tail.querySelectorAll(".tv-chip[data-i]").length,
+           tail.querySelectorAll(".tv-sort-chip").length], [2, 1, 2]);
+
+    /**
+     * How much of the page's last row falls past the fold, in whole pixels:
+     * the scroller's own content less the travel and the port. Positive is the
+     * row hanging under the hint bar, negative is the viewport run on past the
+     * rows; zero is its foot ON the fold, which is what the clamp is for. Read
+     * off the CONTENT rather than off `head + rows * ROW_PX', because the
+     * spacers are sized in `geom.row' and the drawn rows are not — which is the
+     * very gap this is about.
+     */
+    const pastFold = () => Math.round(trueHeight(ts) - (ts.scrollTop + port));
+
+    /** Walk to the end of what is on show and answer where the tail landed. */
+    const toTail = async () => {
+      const on = tt.getVisible();
+      tt.select(on[on.length - 1].id);
+      await sleep(400);
+      return pastFold();
+    };
+
+    check("page one's last row ends on the fold, not under the hint",
+          await toTail(), 0);
+    tt.nextPage();
+    check("and page two's", await toTail(), 0);
+    tt.nextPage();
+    check("and the last page's, which is a partial one", await toTail(), 0);
+
+    // Continuous: the seam turns the window over the WHOLE set, so the travel
+    // is 250 rows rather than 100 and the same clamp has to hold over it.
+    tt.previousPage(); tt.previousPage();
+    tt.select(tt.getVisible()[99].id);
+    await sleep(400);
+    tt.selectStep(1);                         // across the seam, into continuous
+    await sleep(400);
+    while (tt.selectStep(1)) ;                // to the last row of the set
+    await sleep(600);
+    check("and in continuous the end of the whole set does the same",
+          [pastFold(), !!tail.querySelector("tbody tr.tv-sel")], [0, true]);
+
+    // A viewport that will not take the step it is given: a browser at its own
+    // end, where `scrollHeight' is rounded over content that is not. The ease
+    // has to read that as an arrival, or it runs a frame loop for as long as
+    // the page is open.
+    const stuck = new El("div");
+    const st = TableView.mount(stuck, view(250), { pageSize: 100 });
+    const ss = stuck.querySelector(".tv-scroll");
+    ss.clientHeight = port;
+    let at = 0, refused = 0;
+    Object.defineProperty(ss, "scrollTop", {
+      configurable: true,
+      get() { return at; },
+      set(v) { if (v > 40) refused++; else at = v; },   // clamped forty in
+    });
+    st.select(st.getVisible()[99].id);
+    await sleep(500);
+    const settled = refused;
+    await sleep(300);
+    check("an ease against a clamp ends rather than running for ever",
+          [refused > 0, refused - settled], [true, 0]);
+    ROW_PX = 30;
   }
 }
 
