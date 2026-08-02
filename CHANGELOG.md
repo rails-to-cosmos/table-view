@@ -6,31 +6,59 @@ the rails-to-cosmos ELPA archive publishes date-stamped snapshots.
 ## Unreleased
 
 ### Added
-- **Sort chains are composed by PROMOTION, and shown as chips (browser
-  renderer).** Both renderers already ran a declared chain; only Emacs
-  could build one, and it built it with a prefix argument — `C-u ^`
-  appends a tie-breaker at the bottom. A page has no prefix arguments,
-  so the browser gets the other spelling of the same idea:
-  `sortPromote(col)` puts a column at the HEAD of the chain ascending,
-  shifts the rest down, and drops that column from wherever it sat
-  below; promoting the column already leading flips that key alone. A
-  chain is therefore built by pressing over columns in reverse priority
-  order — promote deadline, then state, then title, and the chain is
-  title > state > deadline. One key, no prefix, no mode.
-  What makes ordered presses usable where a prefix argument was is that
-  the chain is now VISIBLE as it grows: it is drawn as a chip per key
-  (column header and `▲`/`▼`, precedence order) at the tail of the strip
-  the crumbs and filter chips already share. The chips are chrome —
-  inert, derived from the live chain at each redraw, so one cannot
-  describe an order the rows are not in — and deliberately not
-  `.tv-chip`, since a consumer counting chips and this renderer's own
-  click delegation mean the filter's tokens by that name. They take the
-  crumb's inert ink, ground and cursor; the arrow alone keeps the
-  foreground.
+- **Sort chains are composed by PROMOTION (browser renderer).** Both
+  renderers already ran a declared chain; only Emacs could build one, and
+  it built it with a prefix argument — `C-u ^` appends a tie-breaker at
+  the bottom. A page has no prefix arguments, so the browser gets the
+  other spelling of the same idea: `sortPromote(col)` puts a column at
+  the HEAD of the chain ascending, shifts the rest down, and drops that
+  column from wherever it sat below; promoting the column already leading
+  flips that key alone. A chain is therefore built by pressing over
+  columns in reverse priority order — promote deadline, then state, then
+  title, and the chain is title > state > deadline. One key, no prefix,
+  no mode.
   `getSort()` and `setSort(chain)` join the handle as the read and write
   of the whole chain (`setSort([])` is the clear), and `normalizeSort`
   now reads a boolean `nullsFirst` where `direction` is absent, which is
   what makes a chain read out and handed back the chain that was read.
+- **The ORDER is a query token, and the headers wear it (SCHEMA.md, both
+  halves of the wire).** `sort:COL` and `sort:COL:desc` join the filter
+  grammar as the one token that is no predicate: it narrows NOTHING and
+  states the order instead, written order being precedence, so
+  `sort:state sort:deadline` is a chain and a query naming any sort key
+  replaces the view's declared `sort`. A query naming none leaves the
+  declaration standing, which keeps a default order invisible until a
+  reader diverges from it.
+  A sort token names one column in one direction. A negation, an
+  alternation, a column the view does not carry and a direction that is
+  neither `asc` nor `desc` are each an error a producer refuses by name;
+  a renderer has nobody to refuse to, so it drops the key and the token
+  goes on narrowing nothing — a refused ordering never empties a table.
+  `sortPromote` now WRITES that query rather than a chain beside it, so
+  the order is one of the query's own terms: it shows as chips,
+  `stripLastToken()` takes a key off it, a URL carrying the query carries
+  the order, and a producer filtering server-side is told what to answer
+  in. What a promotion composes onto is the chain in force, declared keys
+  and all, so only the promoted key ever moves.
+  The chain in force is drawn where it is about: every sorted column's
+  own HEADER carries its direction and, past one key, its place in the
+  chain (`Headline ▲¹`), the leading key in full ink and the tie-breakers
+  muted. The sort chips are gone with the second store behind them — the
+  query says it, the headers show it — and the column widths pay for the
+  marks a header wears.
+  New parity vectors (`fixtures/parity/sort-tokens.json`, a `query-sort`
+  capability the browser harness runs: a query in, the row ids in the
+  order it leaves them) cover ordering, direction, precedence, stability,
+  nulls, mixing with predicates and free text, and every refusal.
+- **A token spelled twice collapses (browser renderer).** Every token is
+  idempotent under the one combination rule — a repeated predicate
+  narrows to what it narrowed, a repeated sort key is the position it
+  already holds — so `tag:game tag:game tag:game` was three chips'
+  worth of noise in the strip, the URL and what the producer was asked.
+  A chip the strip already carries as spelled is no longer added: the
+  FIRST occurrence keeps its place, so precedence survives the collapse,
+  and a near twin (`tag:game` beside `tag:games`) is two tokens and stays
+  two.
 - **`sort` chains, spelled out (SCHEMA.md).** The array form was one
   line; it now says what a chain means — every key run in order, the
   first that separates two rows deciding, ties keeping arrival order

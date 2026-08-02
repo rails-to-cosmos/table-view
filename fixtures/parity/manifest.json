@@ -11,10 +11,11 @@
   "capabilities": {
     "sort": "mount the view and read the row ids in display order",
     "render": "mount the view and read a cell's displayed text and badge ink",
-    "query": "apply a filter query and read the row ids it leaves"
+    "query": "apply a filter query and read the row ids it leaves",
+    "query-sort": "apply a filter query and read the row ids in the order it leaves them"
   },
   "harnesses": {
-    "web/perf-driver.js": ["sort", "render", "query"],
+    "web/perf-driver.js": ["sort", "render", "query", "query-sort"],
     "table-view-test.el": ["sort", "render"]
   },
   "vectors": [
@@ -22,6 +23,7 @@
     { "file": "sort-nulls.json", "capability": "sort" },
     { "file": "sort-chain.json", "capability": "sort" },
     { "file": "render-cells.json", "capability": "render" },
-    { "file": "filter-query.json", "capability": "query" }
+    { "file": "filter-query.json", "capability": "query" },
+    { "file": "sort-tokens.json", "capability": "query-sort" }
   ]
 }

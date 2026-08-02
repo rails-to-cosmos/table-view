@@ -133,6 +133,11 @@ contract — `table-view.el` appends a tie-breaker with `C-u ^`, the browser
 renderer promotes the column at point to the head of the chain. A producer
 declares what a view *opens* as; what a reader builds on top of it is theirs.
 
+A chain a reader builds may travel back as the filter query's `sort:` tokens
+(below), which is how a renderer tells a producer what order to answer in. The
+declared `sort` is then what a query naming no sort key leaves standing: it
+opens the view and stays invisible until a reader diverges from it.
+
 ## Row object
 
 | field    | type              | meaning                                      |
@@ -210,7 +215,8 @@ A shared micro-syntax for the filter box, so producers filtering server-side
 whitespace (`&` accepted as an alias); each token is:
 
 - `key:value` — a field predicate, **only when `key` is a column `key`** of
-  the view (`=` accepted as an alias for `:`) **or `planned`** (below).
+  the view (`=` accepted as an alias for `:`) **or `planned`** (below). `sort`
+  is reserved too, and is no predicate at all: it states the ORDER (below).
   Otherwise the token is free text — org cell text like `:work:` or `=code=`
   never turns into a predicate by accident, and neither does an org TAG:
   `tag:course` is the one spelling of a tag facet, and the facet-then-search
@@ -277,6 +283,29 @@ Two uniform rules across types: a predicate with no alternative left narrows
 nothing (`key:`, and `key:|` with it); a predicate value may be quoted
 (`tag:"two words"`) — only a token that *opens* with a quote is free text.
 
+**`sort`** is the other reserved key that is not a column, and the one token in
+the grammar that is no predicate: `sort:COL` orders the rows by that column
+ascending, `sort:COL:desc` descending (`:asc` spells the default), and it
+**narrows nothing** — the set a query answers is the set its predicates leave.
+Written order is precedence, so repeats compose a chain: `sort:state
+sort:deadline` is state, with deadline settling its ties, and the whole of the
+Sort object's rules above apply to the chain it names. A query naming any sort
+key **replaces** the view's declared `sort`; one naming none leaves it standing.
+
+A sort token names ONE column in ONE direction. A negation (`-sort:x`), an
+alternation (`sort:a|b`), a column the view does not carry and a direction that
+is neither word are each an **error**: a producer refuses the query and says
+which token was wrong, and a renderer, having nobody to refuse to, drops the key
+— the token still narrows nothing, in either polarity, so a refused ordering
+never empties a table. `sort:` with nothing after it is the `key:` rule: it
+orders nothing and narrows nothing, and `sort:COL:` is the direction half typed,
+which ascends like an unspelled one. Repeating a column is the chain rule's
+producer error, and the FIRST spelling is what stands.
+
+Which columns a reader may sort by is `sortable`'s, and it gates the reader's
+gesture alone: a query naming a column that opts out opens as written, the way a
+declared `sort` does.
+
 **Starred metas.** A value written between asterisks is a **meta**: a value with
 semantics of its own, never literal cell text. A bare word is never one, so
 every word a cell can hold stays reachable as itself — `state:none` is a cell
@@ -330,13 +359,14 @@ interactive column reorder/add/remove, help toggles, and **computed columns**
 (cells derived by a renderer-side function). Producers emit data; renderers
 decide interaction.
 
-The **sort chips** belong to that list. The browser renderer draws the chain in
-force as a chip per key — column header and `▲`/`▼`, precedence order — at the
-tail of the same strip the crumbs and the filter chips are in. They are inert
-and derived: nothing is stored, so a chip cannot describe an order the rows are
-not in, and a producer neither sends them nor sees them. `table-view.el` prints
-the same chain as words on its hint line. What a producer declares is `sort`;
-how a renderer shows it having been applied is the renderer's.
+**How the chain in force is shown** belongs to that list. The browser renderer
+marks every sorted column's own header with its direction and, past one key, the
+place it holds in the chain (`Headline ▲¹`), the leading key in full ink and the
+tie-breakers muted; `table-view.el` prints the same chain as words on its hint
+line. Both are derived at each redraw from the chain itself, so neither can
+describe an order the rows are not in. What a producer declares is `sort`, and
+what a reader states is the query's `sort:` tokens; how a renderer shows either
+having been applied is the renderer's.
 
 The **drill-down crumb strip** and **chip labels** belong to that list too. A
 crumb trail is a consumer's path through the data, held on a renderer's handle

@@ -341,7 +341,7 @@ hands the query to the producer, and whatever `setRows` delivers is what shows.
 | `closeFilter()`    | dismiss it and give the keyboard back to the table            |
 | `stripLastToken()` | drop the typed text, else the last chip, and reapply; false if nothing was left |
 | `sortBy(col, asc?)` | sort on that column key, ascending unless `asc` is `false`, replacing the chain; false if no column carries the key |
-| `sortPromote(col)` | `^`: put that column at the **head** of the sort chain ascending, flipping it where it already leads; false if it is not `sortable` |
+| `sortPromote(col)` | `^`: put that column at the **head** of the sort chain ascending, flipping it where it already leads, and write the chain into the query as `sort:` tokens; false if it is not `sortable` |
 | `getSort()` / `setSort(chain)` | read the chain in force, highest priority first; replace it (an empty one clears the sort) |
 | `pushCrumb(c)`     | leave a `{label, query}` crumb behind; returns how deep the trail is now |
 | `popCrumb()`       | take the last crumb off and hand it back — `{label, query}`, or `null` on an empty trail. It applies nothing |
@@ -380,16 +380,27 @@ So a chain is built by pressing over columns in **reverse priority order**:
 ```
 
 One key, no prefix, no modes, and nothing to remember: the chain is visible as
-it grows. That visibility is the other half of the trade — the chain in force is
-drawn as a **chip per key** (column header and `▲`/`▼`, precedence order) at the
-tail of the same strip the crumbs and filter chips are in, and the hint line
-spells it in words. The chips are inert; `^` and a header click are the only
-ways to change a chain, and `setSort([])` is the clear a consumer binds when a
-reader wants the composition undone.
+it grows, on the **headers** of the columns it orders — each carries its
+direction and, past one key, its place in the chain (`Headline ▲¹`), the leading
+key in full ink and the tie-breakers muted — and the hint line spells it in
+words.
+
+**Promotion writes the query.** The new chain goes into the applied filter query
+as `sort:` tokens (`sort:state`, `sort:deadline:desc` — SCHEMA.md, Filter
+query), which is delivered like any other query change. So the order is one of
+the query's own terms: it shows as chips, `stripLastToken()` takes a key off it,
+a consumer that writes the query into a URL has written the order too, and a
+producer filtering server-side is told what order to answer in. Nothing keeps a
+second copy of it.
+
+What a promotion composes onto is the chain **in force**, declared keys and all,
+so only the promoted key ever moves — the first press is where a declared chain
+becomes tokens, spelled in full because that is what the rows are in.
 
 `sortBy` is the producer's door and is unchanged: it *states* an order,
-replacing the chain, and ignores `sortable`. `sortPromote` is the reader's and
-is gated by `sortable`, exactly as a header click is.
+replacing the chain, ignoring `sortable` and touching no query — it restates
+what a query naming no sort key falls back to. `sortPromote` is the reader's and
+is gated by `sortable`, exactly as a header click is. `setSort([])` is the clear.
 
 ### Theme and layering
 

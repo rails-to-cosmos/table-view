@@ -37,6 +37,15 @@ const sleep = (ms) => new Promise((done) => realTimeout(done, ms));
 const painted = () => sleep(20);
 
 /**
+ * The sort chain as ROOT's headers wear it, in COLUMN order: a marked header is
+ * its label with the direction and, past one key, the place it holds. The one
+ * reader, since five checks over four mounts ask the same question.
+ * @param {*} root  @returns {string[]}
+ */
+const sortMarks = (root) => root.querySelectorAll(".tv-table thead th")
+  .map((th) => th.text).filter((t) => /[▲▼]/.test(t));
+
+/**
  * A mounted table and the gestures a check performs on it. Every section built
  * the same five closures over its own mount; one factory means a change to what
  * "start clean" or "commit this query" means lands everywhere at once, instead
@@ -100,9 +109,9 @@ function probe(box, handle) {
   // same shape beside them.
   const chipsOf = () => box.querySelectorAll(".tv-chip[data-i]").map((c) => c.text.replace("×", ""));
   const crumbsOf = () => box.querySelectorAll(".tv-chip-muted").map((c) => c.text);
-  // The sort chain shares the strip and is deliberately not a `.tv-chip', so
-  // neither of the two above sees one.
-  const sortsOf = () => box.querySelectorAll(".tv-sort-chip").map((c) => c.text);
+  // The chain is written over the columns it orders, so it is read off the
+  // HEADERS rather than out of the strip: neither chip reader above sees it.
+  const sortsOf = () => sortMarks(box);
   /** Commit a query without clearing what is already applied. */
   const commit = (q) => { b().value = q; press("Enter"); };
   return { box, handle, b, reset, press, commit, type, shown, items, counts,
@@ -839,9 +848,10 @@ async function sortOrder() {
 
   // --- n: PROMOTION, which is how a chain is composed in a browser. `^' and a
   // header click put a column at the HEAD and shift the rest down; pressing
-  // over columns in reverse priority order builds the chain, and the chip strip
-  // shows it as it grows. table-view.el spells the same thing with `C-u ^',
-  // which a page has no prefix argument for.
+  // over columns in reverse priority order builds the chain, and the QUERY
+  // carries it as it grows — promotion writes `sort:' tokens, so the order is
+  // one of the query's own terms. table-view.el spells the same thing with
+  // `C-u ^', which a page has no prefix argument for.
   {
     const cols2 = [
       { key: "dept",  header: "Dept",  sortable: true },
@@ -858,9 +868,12 @@ async function sortOrder() {
     const el = new El("div");
     const p = TableView.mount(el, { title: "roster", columns: cols2, rows: team });
     const chain = () => p.getSort().map((k) => k.column + (k.ascending ? "+" : "-"));
-    const strip = () => el.querySelectorAll(".tv-sort-chip").map((c) => c.text);
+    // The chain over the headers, and the chain as the query spells it: the two
+    // descriptions the reader has, and neither of them a store of its own.
+    const heads = () => sortMarks(el);
+    const asked = () => p.getQuery();
 
-    check("an undeclared sort is no chain and no strip", [chain(), strip()], [[], []]);
+    check("an undeclared sort is no chain and no mark", [chain(), heads()], [[], []]);
     check("the first promotion is a one-key sort", (p.sortPromote("score"), chain()),
           ["score+"]);
     check("the second puts its column in front and keeps the first",
@@ -879,23 +892,30 @@ async function sortOrder() {
     check("and a key nothing carries is refused too", p.sortPromote("nope"), false);
     check("neither moved the chain", chain(), ["score-"]);
 
-    // The chips: the chain, in precedence order, headers and a direction each.
-    check("the strip draws the chain in precedence order",
+    // The headers: every key of the chain marks its own column, in precedence
+    // order, and a chain of one has nothing to number.
+    check("the headers draw the chain in precedence order",
           (p.setSort([{ column: "dept", ascending: true },
-                      { column: "score", ascending: false }]), strip()),
-          ["Dept▲", "Score▼"]);
-    check("a promotion redraws it at once",
-          (p.sortPromote("score"), strip()), ["Score▲", "Dept▲"]);
-    check("a sort chip is not a filter chip, so nothing counting those sees one",
-          el.querySelectorAll(".tv-chip").length, 0);
-    check("and clearing the chain empties the strip",
-          (p.setSort([]), [chain(), strip()]), [[], []]);
+                      { column: "score", ascending: false }]), heads()),
+          ["Dept▲¹", "Score▼²"]);
+    check("the leading key is the one in full ink",
+          el.querySelectorAll(".tv-arrow").filter((a) => a.classes.has("tv-lead")).length, 1);
+    // Read in COLUMN order, so it is the ordinals that carry the precedence:
+    // promoting `score' leaves the marks where the columns are and renumbers.
+    check("a promotion renumbers them at once",
+          (p.sortPromote("score"), heads()), ["Dept▲²", "Score▲¹"]);
+    check("and writes the chain into the query, precedence order and all",
+          asked(), "sort:score sort:dept");
+    check("a one-key chain wears the direction and no ordinal",
+          (p.setSort([{ column: "score", ascending: true }]), heads()), ["Score▲"]);
+    check("and clearing the chain takes the marks off",
+          (p.setSort([]), [chain(), heads()]), [[], []]);
 
     // A key naming no column describes nothing, so nothing describes it: the
-    // strip, the hint and the comparator drop it alike.
+    // headers, the hint and the comparator drop it alike.
     check("a chain key for a column that is gone is dropped everywhere",
           (p.setSort([{ column: "ghost" }, { column: "score", ascending: true }]),
-           [strip(), p.getVisible().map((r) => r.id)]),
+           [heads(), p.getVisible().map((r) => r.id)]),
           [["Score▲"], ["dot", "gil", "hugh", "bell", "ada"]]);
 
     // getSort/setSort round-trip, nulls included — the property a consumer
@@ -945,12 +965,20 @@ async function parityVectors() {
       }
     },
 
-    query: (c, view, name) => {
-      const p = driver(view, undefined, 300);
-      p.commit(c.q);
-      check(name, p.handle.getVisible().map((r) => r.id), c.expect.ids);
-    },
+    // One gesture, read two ways: `query' declares WHICH rows a query leaves
+    // and `query-sort' declares what ORDER it leaves them in. Same commit, same
+    // `getVisible', so a vector file says which question it is asking by the
+    // field it writes the answer in.
+    query: (c, view, name) => shown(c, view, name, c.expect.ids),
+    "query-sort": (c, view, name) => shown(c, view, name, c.expect.order),
   };
+
+  /** Commit C's query over VIEW and check the ids it leaves against WANT. */
+  function shown(c, view, name, want) {
+    const p = driver(view, undefined, 300);
+    p.commit(c.q);
+    check(name, p.handle.getVisible().map((r) => r.id), want);
+  }
 
   for (const cap of mine)
     check(`the ${cap} capability the manifest gives this harness has a runner`,
@@ -1929,6 +1957,127 @@ async function linkedRows() {
 }
 
 /**
+ * The ORDER as one of the query's own tokens: `sort:COL', `sort:COL:desc'.
+ * SCHEMA's one key that is no predicate — it narrows nothing and states the
+ * order instead, written order being precedence — so everything below is about
+ * what a token does to the ROW ORDER while the row SET stands still.
+ *
+ * The refusals are the other half: a sort token names one column in one
+ * direction, and a negation, an alternation, a column no view carries and a
+ * direction that is neither word are each a query a producer answers as an
+ * error. A renderer has nobody to refuse to, so it drops the key and the token
+ * narrows nothing, which is what every check below asserts about them.
+ */
+async function sortTokens() {
+  console.log("\n== sort tokens");
+  const cols = [
+    { key: "dept",  header: "Dept",  sortable: true },
+    { key: "score", header: "Score", type: "number", sortable: true },
+    { key: "name",  header: "Name" },        // deliberately not sortable
+  ];
+  const rows = [
+    { id: "ada",  cells: { dept: "Eng",   score: 92, name: "Ada" } },
+    { id: "bell", cells: { dept: "Eng",   score: 88, name: "Bell" } },
+    { id: "dot",  cells: { dept: "Sales", score: 70, name: "Dot" } },
+    { id: "gil",  cells: { dept: "Ops",   score: 77, name: "Gil" } },
+  ];
+  // The view opens on `name', which no reader may promote: a DECLARED sort
+  // opens as written whether or not its column opts in, and this is the order
+  // every case below falls back to.
+  const P = driver({ title: "roster", columns: cols, rows,
+                     sort: { column: "name", ascending: true } });
+  /** Commit Q from a clean box and read the ids in display order. */
+  const ids = (q) => (P.shown(q), P.handle.getVisible().map((r) => r.id));
+  const DECLARED = ["ada", "bell", "dot", "gil"];
+
+  // The GRAMMAR — ordering, direction, precedence, and every refusal — is the
+  // parity vectors' (`fixtures/parity/sort-tokens.json`), run over this same
+  // commit path. What is left here is what a vector cannot express: the STRIP
+  // and the headers, promotion writing the query, and the fallback order.
+  check("the declared sort opens the view and names no token",
+        [ids(""), P.chipsOf()], [DECLARED, []]);
+  check("and narrows nothing — the set is the set", P.shown("sort:score"), 4);
+  check("taking the tokens off comes home to the declared order", ids(""), DECLARED);
+
+  // --- a predicate and an ordering are different jobs, and compose
+  check("a predicate narrows what the token orders",
+        ids("dept:Eng sort:score:desc"), ["ada", "bell"]);
+  check("and the order is on the headers while the token is in the strip",
+        [P.sortsOf(), P.chipsOf()], [["Score▼"], ["dept:Eng", "sort:score:desc"]]);
+
+  // A refused token is still a token: it stays in the query as written, so a
+  // producer sees exactly what the reader typed and can say what is wrong with
+  // it. Dropping it here would answer a different query than the one asked.
+  check("a refused token is left in the query as written",
+        (P.shown("-sort:score"), P.handle.getQuery()), "-sort:score");
+  check("and orders nothing, having been dropped from the chain",
+        P.handle.getVisible().map((r) => r.id), DECLARED);
+
+  // --- promotion is query editing: `^' and a header click both land here
+  P.shown("dept:Eng");
+  // The first press is where the declared chain becomes tokens, and it becomes
+  // ALL of them: promotion moves the key it names and nothing else, so what the
+  // reader was reading by is still what the rows are in.
+  check("promotion writes the chain into the query, keeping the predicate",
+        (P.handle.sortPromote("score"), P.handle.getQuery()),
+        "dept:Eng sort:score sort:name");
+  check("a second promotion recomposes the tokens rather than adding to them",
+        (P.handle.sortPromote("dept"), P.handle.getQuery()),
+        "dept:Eng sort:dept sort:score sort:name");
+  check("the leading key flips where it already leads",
+        (P.handle.sortPromote("dept"), P.handle.getQuery()),
+        "dept:Eng sort:dept:desc sort:score sort:name");
+  check("and the rows are in that order without waiting for anyone",
+        P.handle.getVisible().map((r) => r.id), ["bell", "ada"]);
+  check("`sortable' still gates it, and a refusal writes no token",
+        [P.handle.sortPromote("name"), P.handle.getQuery()],
+        [false, "dept:Eng sort:dept:desc sort:score sort:name"]);
+  check("DEL takes a sort token off like any other token",
+        (P.handle.stripLastToken(), P.handle.getQuery()),
+        "dept:Eng sort:dept:desc sort:score");
+  check("and the order follows it down",
+        P.handle.getVisible().map((r) => r.id), ["bell", "ada"]);
+  check("until the last one goes and the declared order is back",
+        (P.handle.stripLastToken(), P.handle.stripLastToken(),
+         [P.handle.getQuery(), P.sortsOf()]),
+        ["dept:Eng", ["Name▲"]]);
+
+  // --- a stated order is the fallback, and a query naming one outranks it
+  check("a producer's sortBy restates what the query falls back to",
+        (P.handle.sortBy("score", false), P.shown(""),
+         P.handle.getVisible().map((r) => r.id)),
+        ["ada", "bell", "gil", "dot"]);
+  check("and a token outranks it while it is applied", ids("sort:dept"),
+        ["ada", "bell", "gil", "dot"]);
+
+  // --- the strip carries one of each token, however often it is spelled
+  check("an exact twin collapses, the first keeping its place",
+        (P.shown("dept:Eng dept:Eng dept:Eng"), [P.chipsOf(), P.handle.getQuery()]),
+        [["dept:Eng"], "dept:Eng"]);
+  check("a near twin is another token and stays",
+        (P.shown("dept:Eng dept:Engineering"), P.chipsOf()),
+        ["dept:Eng", "dept:Engineering"]);
+  check("position is the FIRST occurrence's, so precedence survives the collapse",
+        (P.shown("sort:score sort:dept sort:score"), P.chipsOf()),
+        ["sort:score", "sort:dept"]);
+  check("and a sort token collapses like every other one",
+        (P.shown("sort:score sort:score"), [P.chipsOf(), P.handle.getQuery()]),
+        [["sort:score"], "sort:score"]);
+
+  // --- the headers pay for what they wear
+  {
+    const el = P.box.querySelectorAll(".tv-table thead th");
+    const colEls = P.box.querySelectorAll(".tv-table colgroup col");
+    P.shown("sort:dept sort:score");
+    const width = (i) => Number(String(colEls[i].style.width).replace(/[^0-9.]/g, ""));
+    check("a chained header is paid for in the column's width — arrow and ordinal",
+          [width(0) >= el[0].text.length, width(1) >= el[1].text.length], [true, true]);
+    check("and the marks are what makes it wider than the bare word",
+          [el[0].text, el[1].text], ["Dept▲¹", "Score▲²"]);
+  }
+}
+
+/**
  * The crumb trail and the chip alias: two things a consumer drives that the
  * renderer only draws. Neither touches the grammar — a crumb's query is never
  * read here and an aliased chip is still its token — so everything below is
@@ -2122,9 +2271,9 @@ async function crumbTrail() {
   //     applied, and still be readable — the floor every wash here answers to.
   {
     const css = cssText();
-    // The inert identity is ONE rule over the two things in the strip that
-    // cannot be clicked off: a crumb and a sort key.
-    const inert = ".tv-chips .tv-chip-muted,.tv-chips .tv-sort-chip{";
+    // The inert identity: a crumb is the one thing in the strip that cannot be
+    // clicked off, the order having moved to the headers.
+    const inert = ".tv-chips .tv-chip-muted{";
     check("the crumb rule exists, spelled with the row so it outranks the palette's",
           css.indexOf(inert) !== -1, true);
     check("and sits after the frost rule it has to beat at equal specificity",
@@ -2351,10 +2500,10 @@ async function filterQuery() {
   // The suggestion list.
   check("a bare word suggests the column keys it opens, under the literal",
         type("sta"), [`"sta"`, "state:"]);
-  // A bare word offers the keys it opens, which are the view's columns and
-  // `planned' — never a tag, which is a VALUE of the tags column.
+  // A bare word offers the keys it opens, which are the view's columns and the
+  // two reserved ones — never a tag, which is a VALUE of the tags column.
   check("the prefix narrows them",
-        type("s").filter((x) => x.endsWith(":")), ["state:", "scheduled:"]);
+        type("s").filter((x) => x.endsWith(":")), ["state:", "scheduled:", "sort:"]);
   check("a word matching no key still offers the literal", type("zzz"), [`"zzz"`]);
   check("an empty box offers nothing", type(""), []);
   check("a quoted token offers nothing", type('"sta'), []);
@@ -3657,14 +3806,14 @@ async function queryKeys() {
     check("the applied parts get a row of their own, under it",
           hero.querySelector(".tv-root").children.map((e) => e.className),
           ["tv-bar", "tv-chips", "tv-scroll", "tv-hint"]);
-    // The fixture declares a sort, so the strip carries that one key and no
-    // filter token: the row is up because the table IS ordered, and nothing
-    // about the filter is being claimed.
-    check("which carries the declared sort and no filter token",
+    // Nothing is applied, so the row collapses: the declared sort is written
+    // over the column it orders rather than into a chip, and a strip with
+    // nothing in it claims nothing about the filter.
+    check("which is collapsed until something is applied",
           [hero.querySelector(".tv-chips").style.display,
-           hero.querySelectorAll(".tv-sort-chip").map((c) => c.text),
+           sortMarks(hero),
            hero.querySelectorAll(".tv-chip[data-i]").length],
-          ["", ["Scheduled▲"], 0]);
+          ["none", ["Scheduled▲"], 0]);
     check("while the classic bar keeps its inline chips",
           plain.querySelector(".tv-bar").children.map((e) => e.className),
           ["tv-title", "tv-chips", "tv-filter-wrap"]);
@@ -3925,7 +4074,7 @@ async function queryKeys() {
     check("no bar at all", pal.querySelectorAll(".tv-bar").length, 0);
     check("an unfiltered page has no filter chrome whatever",
           [chipsOf(), shown()], [[], false]);
-    check("the strip it does keep is the declared sort", sortsOf(), ["Scheduled▲"]);
+    check("the declared sort is on the header it orders", sortsOf(), ["Scheduled▲"]);
     check("the control exists, put away", [!!pb, shown()], [true, false]);
     check("and it lives in the panel, not the page",
           pb.parentNode.parentNode.className, "tv-panel");
@@ -4819,9 +4968,9 @@ async function queryKeys() {
       // narrower than a fingertip whatever the padding does for the height.
       ["and the mark box widens to a real target", ".tv-table td.tv-box{min-width:44px}"],
       ["suggestions too", ".tv-ac-item{padding:12px 12px}"],
-      // Every chip in the strip, the sort keys included: the row is one row and
-      // a finger meets all of it at once.
-      ["and chips", ".tv-chip,.tv-sort-chip{padding:13px 8px 13px 12px}"],
+      // Every chip in the strip, crumbs included: the row is one row and a
+      // finger meets all of it at once.
+      ["and chips", ".tv-chip{padding:13px 8px 13px 12px}"],
       ["the remove mark stops waiting for a hover", ".tv-chip-x{opacity:1"],
       ["and the box clears iOS's zoom threshold", ".tv-panel .tv-filter{font-size:16px}"]])
       check(what, coarse.indexOf(rule) !== -1, true);
@@ -5376,6 +5525,7 @@ async function smoke() {
   await cellsChipsPills();
   await queryKeys();
   await sortOrder();
+  await sortTokens();
   await metaValues();
   await starredMetas();
   await rowMarks();
@@ -5497,16 +5647,16 @@ async function smoke() {
     const ts = tail.querySelector(".tv-scroll");
     ts.clientHeight = port;
     // The worst case for the strip, which is what glance shows: crumbs from a
-    // drill-down, a live filter chip, and a sort chain, all in the row at once.
+    // drill-down and live filter chips, the order among them as its own tokens.
     tt.pushCrumb({ label: "inbox", query: "q1" });
     tt.pushCrumb({ label: "2026", query: "q2" });
-    tt.setSort([{ column: "state" }, { column: "scheduled", ascending: false }]);
-    probe(tail, tt).commit("2026");           // every row carries it: 250 still
+    probe(tail, tt).commit("2026 sort:state sort:scheduled:desc");
     await sleep(50);
-    check("the strip is populated — crumbs, a live chip and the sort chain",
+    check("the strip is populated — crumbs, and the applied tokens with them",
           [tail.querySelectorAll(".tv-chip-muted").length,
            tail.querySelectorAll(".tv-chip[data-i]").length,
-           tail.querySelectorAll(".tv-sort-chip").length], [2, 1, 2]);
+           sortMarks(tail)],
+          [2, 3, ["State▲¹", "Scheduled▼²"]]);
 
     /**
      * How much of the page's last row falls past the fold, in whole pixels:
