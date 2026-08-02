@@ -359,6 +359,7 @@
  *             previousPage: () => boolean,
  *             pageInfo: () => { page: number, pages: number,
  *                               from: number, to: number, total: number },
+ *             sortBy: (column: string, ascending: boolean) => void,
  *             toggleMark: (id: string) => boolean,
  *             markAll: () => number,
  *             flagRow: (id: string) => boolean,
@@ -815,32 +816,31 @@
 .tv-pal .tv-chip{color:var(--tv-fg);
   background:color-mix(in srgb,var(--tv-frost) var(--tv-chip-wash),transparent);
   border-color:color-mix(in srgb,var(--tv-frost) var(--tv-chip-edge),transparent)}
-.tv-pal .tv-chip:hover{border-color:var(--tv-accent);color:var(--tv-accent)}
+.tv-pal .tv-chip:not(.tv-chip-muted):hover{border-color:var(--tv-accent);color:var(--tv-accent)}
 .tv-chips{display:flex;flex-wrap:wrap;gap:5px;align-items:center}
 .tv-chip{display:inline-flex;align-items:center;gap:5px;padding:1px 4px 1px 8px;
   border-radius:999px;font-size:12px;cursor:pointer;color:var(--tv-fg);
   border:1px solid var(--tv-border);background:var(--tv-alt)}
-.tv-chip:hover{border-color:var(--tv-accent);color:var(--tv-accent)}
-/* A crumb: where the reader came FROM. It keeps the chip's shape, so the strip
-   reads as one row, and gives up everything that makes a chip actionable — the
-   muted ink instead of the foreground, the page's own ground instead of the
-   chip panel's, a dashed hairline, no remove mark and no hover. The dash is a
-   second channel, the way the flagged row's left edge is: two washes alone
-   would leave a colour to carry the whole difference. The right padding goes
-   back to the left's — the remove mark is what a live chip is lopsided for.
-   The edge is respelled as the plain hairline because the palette's chip rule
-   tints one with frost, which is the APPLIED filter's identity and no part of
-   what a crumb says.
+.tv-chip:not(.tv-chip-muted):hover{border-color:var(--tv-accent);color:var(--tv-accent)}
+/* A crumb: where the reader came FROM. Same silhouette and same edge as the
+   live chip beside it, so the strip reads as one row: the rule respells no
+   border at all, which leaves a crumb wearing whatever chip rule reaches it —
+   frost-tinted inside the palette, the plain hairline outside it. The right
+   padding goes back to the left's wherever the chip's padding is spelled, the
+   remove mark being what a live chip is lopsided for. Inertness is carried by
+   the cursor and by the hover rules declining to select a crumb, so hovering
+   one moves nothing.
 
-   The ink is the floor that binds, as everywhere else here. --tv-muted is the
-   tag ink and the ground is --tv-bg, which is what a transparent chip is drawn
-   on in every mode, so it clears 4.5:1 in both themes (light 5.1, dark 11.5)
-   while sitting quieter than a live chip's ink does on its own ground (19.9
-   and 15.4). Spelled with the row it lives in so it outranks the palette's own
-   chip rule, the one other place a chip's ground is set. */
+   Ink and ground are the whole difference: --tv-muted instead of the
+   foreground, the page's own ground instead of the chip panel's. The ink is
+   the floor that binds, as everywhere else here. --tv-muted is the tag ink and
+   the ground is --tv-bg, which is what a transparent chip is drawn on in every
+   mode, so it clears 4.5:1 in both themes (light 5.1, dark 11.5) while sitting
+   quieter than a live chip's ink does on its own ground (19.9 and 15.4).
+   Spelled with the row it lives in so it outranks the palette's own chip rule,
+   the one other place a chip's ground is set. */
 .tv-chips .tv-chip-muted{color:var(--tv-muted);background:transparent;
-  border-color:var(--tv-border);border-style:dashed;cursor:default;padding-right:8px}
-.tv-chips .tv-chip-muted:hover{border-color:var(--tv-border);color:var(--tv-muted)}
+  cursor:default;padding-right:8px}
 .tv-chip-x{font-style:normal;opacity:.55;padding:0 3px}
 .tv-chip:hover .tv-chip-x{opacity:1}
 /* The suggestion list hangs under the box, over the table. .tv-root clips with
@@ -969,6 +969,7 @@
   .tv-table td.tv-box{min-width:44px}
   .tv-ac-item{padding:12px 12px}
   .tv-chip{padding:13px 8px 13px 12px}
+  .tv-chips .tv-chip-muted{padding-right:12px}
   .tv-chip-x{opacity:1;padding:0 8px}
   .tv-filter,.tv-omni .tv-filter,.tv-panel .tv-filter{font-size:16px}
 }

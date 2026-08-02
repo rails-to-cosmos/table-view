@@ -189,11 +189,14 @@ the rails-to-cosmos ELPA archive publishes date-stamped snapshots.
   change, and `setView` drops it with the world it described. A crumb is
   inert — no remove mark, no `data-i` — which is also the guard on the
   chip click, where a crumb wearing the chip's shape would otherwise
-  read as index `NaN` and take the FIRST live chip off. Its look gives up
-  everything that makes a chip actionable: `--tv-muted` ink instead of
-  the foreground, the page's own ground instead of the chip panel's, and
-  a dashed hairline as the second channel, so a colour is not carrying
-  the whole difference. The ink is the floor that binds, as with every
+  read as index `NaN` and take the FIRST live chip off. It wears that
+  shape down to the border — same weight, radius and colour as the live
+  chip beside it, the palette's frost-tinted edge included, with the
+  padding equalized on the side a remove mark shortens so the two
+  silhouettes match. Ink and ground carry the muting alone: `--tv-muted`
+  instead of the foreground, the page's own ground instead of the chip
+  panel's. Hovering a crumb moves nothing, the hover rules declining to
+  select one. The ink is the floor that binds, as with every
   wash here — `--tv-muted` clears 4.5:1 on `--tv-bg` in both themes (5.1
   light, 11.5 dark) while reading quieter than a live chip's ink on its
   own ground (19.9 and 15.4). No grammar moved: SCHEMA.md gains a line

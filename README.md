@@ -756,15 +756,15 @@ world they described. They are **inert** — a crumb carries no remove mark and 
 `data-i`, so the click that takes a live chip off passes it by, which suits a
 keyboard-first consumer binding a key to `popCrumb` (v1 has no click).
 
-A crumb wears the chip's shape and gives up everything that makes a chip
-actionable: `--tv-muted` ink instead of the foreground, the page's own ground
-instead of the chip panel's, and a dashed hairline — a second channel, so a
-colour is not carrying the whole difference. The edge is the plain
-`--tv-border`, respelled because the palette tints a chip's with frost, and
-frost is the *applied filter's* identity. The ink is the floor that binds, as
-with every wash here: `--tv-muted` clears 4.5:1 on `--tv-bg` in both themes
-(5.1 light, 11.5 dark) while reading quieter than a live chip's ink does on its
-own ground.
+A crumb wears the live chip's silhouette exactly — same border weight, radius
+and colour, and the same padding once the side a remove mark shortens is
+equalized — so a crumb inside the palette carries the frost-tinted edge a chip
+there carries. Ink and ground are the whole difference: `--tv-muted` instead of
+the foreground, the page's own ground instead of the chip panel's. The ink is
+the floor that binds, as with every wash here: `--tv-muted` clears 4.5:1 on
+`--tv-bg` in both themes (5.1 light, 11.5 dark) while reading quieter than a
+live chip's ink does on its own ground. Hovering one moves nothing — the hover
+rules decline to select a crumb.
 
 ## Development
 

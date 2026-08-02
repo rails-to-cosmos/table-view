@@ -147,6 +147,45 @@ function paletteIn(rule) {
 }
 
 /**
+ * The box longhands an element settles at, cascaded over the RULES it matches.
+ * There is no CSSOM in the shim, so the `border'/`padding' shorthands this
+ * sheet writes are expanded here and the rules are merged in the order given —
+ * which is the order the cascade takes them, these rules only ever tying on
+ * source position. Asserting spellings instead lets a restyle move what is
+ * painted without moving the check.
+ * @param {string[]} rules  selector texts, in cascade order
+ * @param {string} [css]  the sheet to read, defaulting to the whole of it
+ */
+function boxOf(rules, css) {
+  const sheet = css === undefined ? cssText() : css;
+  const out = {};
+  for (const sel of rules) {
+    const esc = sel.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    // Anchored at a rule boundary, so `.tv-chip{' cannot land inside the
+    // `.tv-pal .tv-chip{' rule that is spelled above it.
+    const m = new RegExp("(?:^|[}\\n])\\s*" + esc + "\\{").exec(sheet);
+    if (!m) continue;
+    const open = sheet.indexOf("{", m.index);
+    for (const d of sheet.slice(open + 1, sheet.indexOf("}", open)).split(";")) {
+      const i = d.indexOf(":");
+      if (i === -1) continue;
+      const prop = d.slice(0, i).trim(), val = d.slice(i + 1).trim();
+      if (prop === "border") {
+        const [w, s, ...c] = val.split(/\s+/);
+        Object.assign(out, { "border-width": w, "border-style": s,
+                             "border-color": c.join(" ") });
+      } else if (prop === "padding") {
+        const p = val.split(/\s+/);
+        Object.assign(out, { "padding-top": p[0], "padding-right": p[1] ?? p[0],
+                             "padding-bottom": p[2] ?? p[0],
+                             "padding-left": p[3] ?? p[1] ?? p[0] });
+      } else out[prop] = val;
+    }
+  }
+  return out;
+}
+
+/**
  * The chip colours THEME actually paints, resolved: the frost it washes (which
  * cascades from the base rule) composited onto that theme's own ground at the
  * strength the theme asks for. What `color-mix' with `transparent' does, done
@@ -1605,17 +1644,37 @@ async function crumbTrail() {
     check("it gives up the chip's ground and takes the muted ink",
           [/background:transparent/.test(decl), /color:var\(--tv-muted\)/.test(decl)],
           [true, true]);
-    // A colour alone would carry the whole difference; the dash is the second
-    // channel, the way the flagged row's left edge is.
-    check("with a second channel that is not a colour at all",
-          /border-style:dashed/.test(decl), true);
-    // The palette's chip rule tints an edge with frost, and frost is the
-    // APPLIED filter's identity — a crumb takes the plain hairline back.
-    check("and a plain hairline, never the applied filter's frost",
-          [/border-color:var\(--tv-border\)/.test(decl), /frost/.test(decl)],
-          [true, false]);
-    check("and no hover, a crumb being nothing to act on",
-          /\.tv-chips \.tv-chip-muted:hover\{border-color:var\(--tv-border\)/.test(css), true);
+    // Ink and ground carry the whole muting, and the shape carries none of it:
+    // a rule that names no border property cannot move the edge.
+    check("and respells no border, so a crumb's edge is whatever the chip's is",
+          /border/.test(decl), false);
+    // Both grounds a chip is drawn on: the palette tints an edge with frost,
+    // the bar leaves it the plain hairline, and a crumb takes the SAME one
+    // either way.
+    for (const [where, live] of [["palette", [".tv-chip", ".tv-pal .tv-chip"]],
+                                 ["bar", [".tv-chip"]]]) {
+      const chip = boxOf(live), crumb = boxOf([...live, ".tv-chips .tv-chip-muted"]);
+      check(where + ": the crumb's border is the live chip's, frost and all",
+            [crumb["border-width"], crumb["border-style"], crumb["border-color"],
+             crumb["border-radius"]],
+            [chip["border-width"], chip["border-style"], chip["border-color"],
+             chip["border-radius"]]);
+      // The × is what a live chip's right side is short for, so equalizing it
+      // is what makes the silhouettes match rather than a departure from them.
+      check(where + ": and its padding is the chip's rhythm with the × side equalized",
+            [crumb["padding-top"], crumb["padding-bottom"], crumb["padding-left"],
+             crumb["padding-right"]],
+            [chip["padding-top"], chip["padding-bottom"], chip["padding-left"],
+             chip["padding-left"]]);
+    }
+    const coarse = css.slice(css.indexOf("@media (pointer:coarse)"));
+    check("a coarse pointer grows the tap target and equalizes the crumb there too",
+          [boxOf([".tv-chip", ".tv-chips .tv-chip-muted"], coarse)["padding-right"]],
+          [boxOf([".tv-chip"], coarse)["padding-left"]]);
+    check("and no hover, a crumb being nothing to act on — the rules decline it",
+          [/\.tv-chip:not\(\.tv-chip-muted\):hover\{/.test(css),
+           /\.tv-pal \.tv-chip:not\(\.tv-chip-muted\):hover\{/.test(css),
+           /\.tv-chip-muted:hover/.test(css)], [true, true, false]);
     for (const theme of ["light", "dark"]) {
       const p = paletteIn(`:root[data-theme="${theme}"] .tv-root{`);
       // Transparent, so what a crumb is drawn on is the page itself.
