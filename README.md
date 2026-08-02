@@ -139,6 +139,10 @@ asc/desc direction.  `C-u ^` adds the column at point as a lower-priority
 tie-breaker, so you can sort within groups — e.g. by name, then by year.  A
 spec `sort` may itself be a list for a multi-column default.
 
+The hint line prints the chain as `dept asc -> score desc`, so what the rows
+are in is always on screen.  The browser renderer composes the same chains
+without a prefix argument — see [Sorting in the browser](#sorting-in-the-browser).
+
 Refresh is `table-view-revert` (clears a filter/narrow in client buffers,
 re-fetches the current page in paged ones) without imposing a sort it wasn't
 already in.  It is not bound in table-view's own map; it runs through the
@@ -336,7 +340,9 @@ hands the query to the producer, and whatever `setRows` delivers is what shows.
 | `openFilter()`     | summon the filter — raises the palette, or focuses the resident box |
 | `closeFilter()`    | dismiss it and give the keyboard back to the table            |
 | `stripLastToken()` | drop the typed text, else the last chip, and reapply; false if nothing was left |
-| `sortBy(col, asc?)` | sort on that column key, ascending unless `asc` is `false`; false if no column carries the key |
+| `sortBy(col, asc?)` | sort on that column key, ascending unless `asc` is `false`, replacing the chain; false if no column carries the key |
+| `sortPromote(col)` | `^`: put that column at the **head** of the sort chain ascending, flipping it where it already leads; false if it is not `sortable` |
+| `getSort()` / `setSort(chain)` | read the chain in force, highest priority first; replace it (an empty one clears the sort) |
 | `pushCrumb(c)`     | leave a `{label, query}` crumb behind; returns how deep the trail is now |
 | `popCrumb()`       | take the last crumb off and hand it back — `{label, query}`, or `null` on an empty trail. It applies nothing |
 | `setCrumbs(list)` / `getCrumbs()` | replace the trail; read it back as copies |
@@ -351,6 +357,39 @@ hands the query to the producer, and whatever `setRows` delivers is what shows.
 | `clearMarks()`     | take every mark off                                            |
 | `markedCount()`    | how many rows are marked, the hidden ones counted             |
 | `el`               | the root element, which also emits the two CustomEvents        |
+
+### Sorting in the browser
+
+A view's `sort` may be one key or a **chain** of them (SCHEMA.md, Sort object),
+and both renderers run every key: the first that separates two rows decides,
+and rows equal on all of them keep the order they arrived in.
+
+Emacs composes a chain with a prefix argument — `C-u ^` appends a tie-breaker at
+the bottom. **A page has no prefix arguments, so the browser composes by
+promotion instead.** `sortPromote(col)` — what a consumer binds `^` to, and what
+a header click does — puts a column at the **head** of the chain ascending,
+shifts the rest down behind it, and drops that column from wherever it sat
+below. Pressing it again on the column already leading flips that key alone.
+
+So a chain is built by pressing over columns in **reverse priority order**:
+
+```
+^ on Deadline    →  deadline ▲
+^ on State       →  state ▲ · deadline ▲
+^ on Title       →  title ▲ · state ▲ · deadline ▲
+```
+
+One key, no prefix, no modes, and nothing to remember: the chain is visible as
+it grows. That visibility is the other half of the trade — the chain in force is
+drawn as a **chip per key** (column header and `▲`/`▼`, precedence order) at the
+tail of the same strip the crumbs and filter chips are in, and the hint line
+spells it in words. The chips are inert; `^` and a header click are the only
+ways to change a chain, and `setSort([])` is the clear a consumer binds when a
+reader wants the composition undone.
+
+`sortBy` is the producer's door and is unchanged: it *states* an order,
+replacing the chain, and ignores `sortable`. `sortPromote` is the reader's and
+is gated by `sortable`, exactly as a header click is.
 
 ### Theme and layering
 

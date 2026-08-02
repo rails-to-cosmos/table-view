@@ -100,10 +100,13 @@ function probe(box, handle) {
   // same shape beside them.
   const chipsOf = () => box.querySelectorAll(".tv-chip[data-i]").map((c) => c.text.replace("×", ""));
   const crumbsOf = () => box.querySelectorAll(".tv-chip-muted").map((c) => c.text);
+  // The sort chain shares the strip and is deliberately not a `.tv-chip', so
+  // neither of the two above sees one.
+  const sortsOf = () => box.querySelectorAll(".tv-sort-chip").map((c) => c.text);
   /** Commit a query without clearing what is already applied. */
   const commit = (q) => { b().value = q; press("Enter"); };
   return { box, handle, b, reset, press, commit, type, shown, items, counts,
-           offers, countOf, asideOf, chipsOf, crumbsOf };
+           offers, countOf, asideOf, chipsOf, crumbsOf, sortsOf };
 }
 
 /**
@@ -755,6 +758,75 @@ async function sortOrder() {
   check("a column nothing carries is refused, and says so", q.sortBy("nope"), false);
   check("and the order it was in is left alone",
         q.getVisible().map((r) => r.cells.name), ["pear", "fig", "apple", ""]);
+
+  // --- n: PROMOTION, which is how a chain is composed in a browser. `^' and a
+  // header click put a column at the HEAD and shift the rest down; pressing
+  // over columns in reverse priority order builds the chain, and the chip strip
+  // shows it as it grows. table-view.el spells the same thing with `C-u ^',
+  // which a page has no prefix argument for.
+  {
+    const cols2 = [
+      { key: "dept",  header: "Dept",  sortable: true },
+      { key: "score", header: "Score", type: "number", sortable: true },
+      { key: "name",  header: "Name" },        // deliberately not sortable
+    ];
+    const team = [
+      { id: "ada",  cells: { dept: "Eng",   score: 92, name: "Ada" } },
+      { id: "bell", cells: { dept: "Eng",   score: 88, name: "Bell" } },
+      { id: "dot",  cells: { dept: "Sales", score: 70, name: "Dot" } },
+      { id: "gil",  cells: { dept: "Ops",   score: 77, name: "Gil" } },
+      { id: "hugh", cells: { dept: "Ops",   score: 77, name: "Hugh" } },
+    ];
+    const el = new El("div");
+    const p = TableView.mount(el, { title: "roster", columns: cols2, rows: team });
+    const chain = () => p.getSort().map((k) => k.column + (k.ascending ? "+" : "-"));
+    const strip = () => el.querySelectorAll(".tv-sort-chip").map((c) => c.text);
+
+    check("an undeclared sort is no chain and no strip", [chain(), strip()], [[], []]);
+    check("the first promotion is a one-key sort", (p.sortPromote("score"), chain()),
+          ["score+"]);
+    check("the second puts its column in front and keeps the first",
+          (p.sortPromote("dept"), chain()), ["dept+", "score+"]);
+    check("so pressing in reverse priority order composes the chain",
+          p.getVisible().map((r) => r.id), ["bell", "ada", "gil", "hugh", "dot"]);
+    check("promoting the column already leading flips it and moves nothing else",
+          (p.sortPromote("dept"), chain()), ["dept-", "score+"]);
+    check("and a column promoted from below is not left behind it",
+          (p.sortPromote("score"), chain()), ["score+", "dept-"]);
+    check("a chain of one behaves as a single sort always did",
+          (p.setSort([{ column: "score", ascending: false }]),
+           [chain(), p.getVisible().map((r) => r.id)]),
+          [["score-"], ["ada", "bell", "gil", "hugh", "dot"]]);
+    check("`sortable' gates promotion, the reader's gesture", p.sortPromote("name"), false);
+    check("and a key nothing carries is refused too", p.sortPromote("nope"), false);
+    check("neither moved the chain", chain(), ["score-"]);
+
+    // The chips: the chain, in precedence order, headers and a direction each.
+    check("the strip draws the chain in precedence order",
+          (p.setSort([{ column: "dept", ascending: true },
+                      { column: "score", ascending: false }]), strip()),
+          ["Dept▲", "Score▼"]);
+    check("a promotion redraws it at once",
+          (p.sortPromote("score"), strip()), ["Score▲", "Dept▲"]);
+    check("a sort chip is not a filter chip, so nothing counting those sees one",
+          el.querySelectorAll(".tv-chip").length, 0);
+    check("and clearing the chain empties the strip",
+          (p.setSort([]), [chain(), strip()]), [[], []]);
+
+    // A key naming no column describes nothing, so nothing describes it: the
+    // strip, the hint and the comparator drop it alike.
+    check("a chain key for a column that is gone is dropped everywhere",
+          (p.setSort([{ column: "ghost" }, { column: "score", ascending: true }]),
+           [strip(), p.getVisible().map((r) => r.id)]),
+          [["Score▲"], ["dot", "gil", "hugh", "bell", "ada"]]);
+
+    // getSort/setSort round-trip, nulls included — the property a consumer
+    // persisting a chain in a URL rests on.
+    check("a chain read out and handed back is the chain that was read",
+          (p.setSort([{ column: "dept", direction: "desc-nulls-first" }]),
+           p.setSort(p.getSort()), p.getSort()),
+          [{ column: "dept", ascending: false, nullsFirst: true }]);
+  }
 }
 
 
@@ -1972,11 +2044,14 @@ async function crumbTrail() {
   //     applied, and still be readable — the floor every wash here answers to.
   {
     const css = cssText();
+    // The inert identity is ONE rule over the two things in the strip that
+    // cannot be clicked off: a crumb and a sort key.
+    const inert = ".tv-chips .tv-chip-muted,.tv-chips .tv-sort-chip{";
     check("the crumb rule exists, spelled with the row so it outranks the palette's",
-          css.indexOf(".tv-chips .tv-chip-muted{") !== -1, true);
+          css.indexOf(inert) !== -1, true);
     check("and sits after the frost rule it has to beat at equal specificity",
-          css.indexOf(".tv-chips .tv-chip-muted{") > css.indexOf(".tv-pal .tv-chip{"), true);
-    const rule = css.slice(css.indexOf(".tv-chips .tv-chip-muted{"));
+          css.indexOf(inert) > css.indexOf(".tv-pal .tv-chip{"), true);
+    const rule = css.slice(css.indexOf(inert));
     const decl = rule.slice(rule.indexOf("{") + 1, rule.indexOf("}"));
     check("it gives up the chip's ground and takes the muted ink",
           [/background:transparent/.test(decl), /color:var\(--tv-muted\)/.test(decl)],
@@ -3504,8 +3579,14 @@ async function queryKeys() {
     check("the applied parts get a row of their own, under it",
           hero.querySelector(".tv-root").children.map((e) => e.className),
           ["tv-bar", "tv-chips", "tv-scroll", "tv-hint"]);
-    check("which collapses to nothing while nothing is applied",
-          hero.querySelector(".tv-chips").style.display, "none");
+    // The fixture declares a sort, so the strip carries that one key and no
+    // filter token: the row is up because the table IS ordered, and nothing
+    // about the filter is being claimed.
+    check("which carries the declared sort and no filter token",
+          [hero.querySelector(".tv-chips").style.display,
+           hero.querySelectorAll(".tv-sort-chip").map((c) => c.text),
+           hero.querySelectorAll(".tv-chip[data-i]").length],
+          ["", ["Scheduled▲"], 0]);
     check("while the classic bar keeps its inline chips",
           plain.querySelector(".tv-bar").children.map((e) => e.className),
           ["tv-title", "tv-chips", "tv-filter-wrap"]);
@@ -3755,6 +3836,7 @@ async function queryKeys() {
     const css = document.head.children.map((e) => e.text).join("");
     const P = driver(40, { palette: true });
     const pal = P.box, pt = P.handle, pb = P.b(), chipsOf = P.chipsOf;
+    const sortsOf = P.sortsOf;
     const veil = () => pal.querySelector(".tv-veil");
     /** Whether the overlay is up -- the palette's own sense of "shown". */
     const shown = () => veil().style.display !== "none";
@@ -3764,7 +3846,8 @@ async function queryKeys() {
           ["tv-chips", "tv-scroll", "tv-hint", "tv-veil"]);
     check("no bar at all", pal.querySelectorAll(".tv-bar").length, 0);
     check("an unfiltered page has no filter chrome whatever",
-          [pal.querySelector(".tv-chips").style.display, shown()], ["none", false]);
+          [chipsOf(), shown()], [[], false]);
+    check("the strip it does keep is the declared sort", sortsOf(), ["Scheduled▲"]);
     check("the control exists, put away", [!!pb, shown()], [true, false]);
     check("and it lives in the panel, not the page",
           pb.parentNode.parentNode.className, "tv-panel");
@@ -4658,7 +4741,9 @@ async function queryKeys() {
       // narrower than a fingertip whatever the padding does for the height.
       ["and the mark box widens to a real target", ".tv-table td.tv-box{min-width:44px}"],
       ["suggestions too", ".tv-ac-item{padding:12px 12px}"],
-      ["and chips", ".tv-chip{padding:13px 8px 13px 12px}"],
+      // Every chip in the strip, the sort keys included: the row is one row and
+      // a finger meets all of it at once.
+      ["and chips", ".tv-chip,.tv-sort-chip{padding:13px 8px 13px 12px}"],
       ["the remove mark stops waiting for a hover", ".tv-chip-x{opacity:1"],
       ["and the box clears iOS's zoom threshold", ".tv-panel .tv-filter{font-size:16px}"]])
       check(what, coarse.indexOf(rule) !== -1, true);
@@ -4991,13 +5076,21 @@ async function smoke() {
     check("and any other scheme is left to the consumer", opened, null);
   }
 
+  // The view declared `scheduled asc'; a click PROMOTES state above it rather
+  // than throwing it away, and the hint spells the whole chain.
   box.querySelector("th[data-key=state]").click();
-  check("a header click sorts", hint(), "40 rows · sort state asc" + ACT);
+  check("a header click promotes the column it lands on",
+        hint(), "40 rows · sort state asc → scheduled asc" + ACT);
   box.querySelector("th[data-key=state]").click();
-  check("and toggles direction", hint(), "40 rows · sort state desc" + ACT);
+  check("and clicking the leading column flips just that key",
+        hint(), "40 rows · sort state desc → scheduled asc" + ACT);
+  check("the chain is two keys deep, in precedence order",
+        t.getSort().map((k) => k.column + (k.ascending ? "+" : "-")),
+        ["state-", "scheduled+"]);
 
   t.upsertRow({ id: "h-0", cells: { state: "DONE", priority: "A", title: "changed" } });
-  check("upsert of a known id keeps the count", hint(), "40 rows · sort state desc" + ACT);
+  check("upsert of a known id keeps the count",
+        hint(), "40 rows · sort state desc → scheduled asc" + ACT);
   t.upsertRow({ id: "fresh", cells: { state: "TODO", priority: "A", title: "brand new" } });
   check("upsert appends an unknown id", t.getRows().length, 41);
   t.deleteRow("fresh");

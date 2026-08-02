@@ -20,6 +20,7 @@
   "vectors": [
     { "file": "sort-resolution.json", "capability": "sort" },
     { "file": "sort-nulls.json", "capability": "sort" },
+    { "file": "sort-chain.json", "capability": "sort" },
     { "file": "render-cells.json", "capability": "render" },
     { "file": "filter-query.json", "capability": "query" }
   ]

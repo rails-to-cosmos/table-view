@@ -442,14 +442,28 @@ predicate function directly.  Consumers extend this with `push'.")
         ((stringp val) (string-to-number val))
         (t 0)))
 
+(defun table-view--meta-value-p (value)
+  "Non-nil when VALUE is one of SCHEMA.md's starred metas, e.g. `*active*'.
+A meta is filter vocabulary rather than cell text, so it names no sort
+position."
+  (let ((str (table-view--str value)))
+    (and (> (length str) 2)
+         (string-prefix-p "*" str)
+         (string-suffix-p "*" str))))
+
 (defun table-view--value-order (col)
   "Ordered list of column COL's declared values, or nil.
 Taken from `values' when present, else the badge palette order (so
 badge columns keep sorting by palette order).  `values' is a plain
-ordered list of expected values; colours stay in `badges'."
-  (or (alist-get 'values col)
-      (and (equal (alist-get 'type col) "badge")
-           (mapcar (lambda (b) (alist-get 'value b)) (alist-get 'badges col)))))
+ordered list of expected values; colours stay in `badges'.
+
+Starred metas are dropped first (SCHEMA.md, Column object): they are values
+a filter offers rather than values a cell holds, so a `values' list holding
+metas alone orders nothing and the badge palette below it still rules."
+  (let ((declared (cl-remove-if #'table-view--meta-value-p (alist-get 'values col))))
+    (or declared
+        (and (equal (alist-get 'type col) "badge")
+             (mapcar (lambda (b) (alist-get 'value b)) (alist-get 'badges col))))))
 
 (defun table-view--sort-key-spec (col)
   "Return (KEYFN . KLESS) for COL -- the single source of sort resolution.

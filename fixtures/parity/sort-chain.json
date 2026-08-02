@@ -1,0 +1,140 @@
+{
+  "capability": "sort",
+  "doc": "A declared sort CHAIN: `sort' as an array, first key primary, each next one a tie-breaker. Both renderers read the array and run every key (SCHEMA.md, Sort object). The browser composes a chain by promoting a column to the head; table-view.el appends one with `C-u ^'. Neither gesture is a wire fact, so these vectors declare the chain and assert the ORDER it puts the rows in.",
+  "cases": [
+    {
+      "name": "the second key breaks the first key's ties",
+      "doc": "Three departments, ties inside two of them. Ordering by dept alone leaves the members in load order; the score key settles them.",
+      "view": {
+        "title": "dept then score",
+        "columns": [
+          { "key": "dept", "header": "Dept", "sortable": true },
+          { "key": "score", "header": "Score", "type": "number", "sortable": true }
+        ],
+        "sort": [
+          { "column": "dept", "ascending": true },
+          { "column": "score", "ascending": true }
+        ],
+        "rows": [
+          { "id": "ada",  "cells": { "dept": "Eng",   "score": 92 } },
+          { "id": "dot",  "cells": { "dept": "Sales", "score": 70 } },
+          { "id": "carr", "cells": { "dept": "Eng",   "score": 95 } },
+          { "id": "finn", "cells": { "dept": "Ops",   "score": 60 } },
+          { "id": "bell", "cells": { "dept": "Eng",   "score": 88 } },
+          { "id": "eve",  "cells": { "dept": "Sales", "score": 82 } }
+        ]
+      },
+      "expect": { "order": ["bell", "ada", "carr", "finn", "dot", "eve"] }
+    },
+    {
+      "name": "a key carries its own direction",
+      "doc": "The same chain with the tie-breaker descending. Only the members within a department move; the departments keep their ascending order, so direction is per key rather than per chain.",
+      "view": {
+        "title": "dept asc, score desc",
+        "columns": [
+          { "key": "dept", "header": "Dept", "sortable": true },
+          { "key": "score", "header": "Score", "type": "number", "sortable": true }
+        ],
+        "sort": [
+          { "column": "dept", "ascending": true },
+          { "column": "score", "ascending": false }
+        ],
+        "rows": [
+          { "id": "ada",  "cells": { "dept": "Eng",   "score": 92 } },
+          { "id": "dot",  "cells": { "dept": "Sales", "score": 70 } },
+          { "id": "carr", "cells": { "dept": "Eng",   "score": 95 } },
+          { "id": "finn", "cells": { "dept": "Ops",   "score": 60 } },
+          { "id": "bell", "cells": { "dept": "Eng",   "score": 88 } },
+          { "id": "eve",  "cells": { "dept": "Sales", "score": 82 } }
+        ]
+      },
+      "expect": { "order": ["carr", "ada", "bell", "finn", "eve", "dot"] }
+    },
+    {
+      "name": "rows equal on every key keep the order they arrived in",
+      "doc": "Both keys tie for the two Ops rows, and neither renderer invents an order for them: the sort is stable, so `hugh' stays ahead of `gil' because it was loaded first.",
+      "view": {
+        "title": "stable under a full tie",
+        "columns": [
+          { "key": "dept", "header": "Dept", "sortable": true },
+          { "key": "score", "header": "Score", "type": "number", "sortable": true }
+        ],
+        "sort": [
+          { "column": "dept", "ascending": true },
+          { "column": "score", "ascending": true }
+        ],
+        "rows": [
+          { "id": "hugh", "cells": { "dept": "Ops", "score": 77 } },
+          { "id": "ada",  "cells": { "dept": "Eng", "score": 92 } },
+          { "id": "gil",  "cells": { "dept": "Ops", "score": 77 } }
+        ]
+      },
+      "expect": { "order": ["ada", "hugh", "gil"] }
+    },
+    {
+      "name": "an empty cell sorts last on the key that is empty, not on the row",
+      "doc": "Nulls are settled per key and outside its direction. `b' has no dept and goes to the back of the first key whatever the second one says; within the named departments the empty score goes last too.",
+      "view": {
+        "title": "nulls inside a chain",
+        "columns": [
+          { "key": "dept", "header": "Dept", "sortable": true },
+          { "key": "score", "header": "Score", "type": "number", "sortable": true }
+        ],
+        "sort": [
+          { "column": "dept", "ascending": true },
+          { "column": "score", "ascending": true }
+        ],
+        "rows": [
+          { "id": "a", "cells": { "dept": "Eng", "score": 92 } },
+          { "id": "b", "cells": { "dept": "",    "score": 10 } },
+          { "id": "c", "cells": { "dept": "Eng", "score": "" } },
+          { "id": "d", "cells": { "dept": "Eng", "score": 40 } }
+        ]
+      },
+      "expect": { "order": ["d", "a", "c", "b"] }
+    },
+    {
+      "name": "a badge key orders by its palette and the next key reads the ties",
+      "doc": "The chain a task view declares: state by palette order (active before done), then the title. `values' holding starred metas alone orders nothing, so the badge palette below it still rules -- which is what a producer shipping filter metas beside a badge column depends on.",
+      "view": {
+        "title": "state then title",
+        "columns": [
+          { "key": "state", "header": "State", "type": "badge", "sortable": true,
+            "values": ["*active*", "*inactive*"],
+            "badges": [
+              { "value": "TODO", "color": "#e0af68" },
+              { "value": "NEXT", "color": "#ff9e64" },
+              { "value": "DONE", "color": "#9ece6a" }
+            ] },
+          { "key": "title", "header": "Headline", "sortable": true }
+        ],
+        "sort": [
+          { "column": "state", "ascending": true },
+          { "column": "title", "ascending": true }
+        ],
+        "rows": [
+          { "id": "r1", "cells": { "state": "DONE", "title": "amend" } },
+          { "id": "r2", "cells": { "state": "TODO", "title": "review" } },
+          { "id": "r3", "cells": { "state": "NEXT", "title": "build" } },
+          { "id": "r4", "cells": { "state": "TODO", "title": "draft" } }
+        ]
+      },
+      "expect": { "order": ["r4", "r2", "r3", "r1"] }
+    },
+    {
+      "name": "a chain of one is the single-key sort it always was",
+      "doc": "An array holding one key is the plain object holding it: no chain machinery changes what a one-column sort does.",
+      "view": {
+        "title": "chain of one",
+        "columns": [{ "key": "name", "header": "Name", "sortable": true }],
+        "sort": [{ "column": "name", "ascending": false }],
+        "rows": [
+          { "id": "a", "cells": { "name": "apple" } },
+          { "id": "p", "cells": { "name": "pear" } },
+          { "id": "f", "cells": { "name": "fig" } }
+        ]
+      },
+      "expect": { "order": ["p", "f", "a"] }
+    }
+  ]
+}

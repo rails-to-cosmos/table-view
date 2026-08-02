@@ -28,7 +28,7 @@ The whole view. All fields optional except `columns`.
 | `title`   | string            | `"Table"`      | heading                                  |
 | `columns` | array<Column>     | —              | column order and definitions             |
 | `actions` | array<Action>     | `[]`           | commands the view can dispatch           |
-| `sort`    | Sort \| array<Sort> | unsorted     | initial sort                             |
+| `sort`    | Sort \| array<Sort> | unsorted     | initial sort, one key or a chain         |
 | `rows`    | array<Row>        | `[]`           | initial rows (may arrive later, streamed)|
 
 ## Column object
@@ -96,18 +96,42 @@ the conventional default row action.
 ## Sort object
 
 `{ "column": "state", "ascending": true }` — sort by one column.
-`sort` may also be an **array** of these for multi-key sort (first is primary).
 
-`ascending` is a boolean (`true` asc, `false` desc). A `direction` string extends
-this with null placement: `"asc-nulls-first"`, `"desc-nulls-first"` (bare
-asc/desc place nulls last).
+`sort` may also be an **array** of these: a sort **chain**, highest priority
+first. Every key is run, in order, and the first one that separates two rows
+decides; rows equal on all of them keep the order they arrived in (the sort is
+stable, on both renderers). One key per column — a chain naming a column twice
+is a producer error, and a key naming no column of the view is dropped.
+
+```json
+"sort": [ { "column": "title",     "ascending": true },
+          { "column": "state",     "ascending": true },
+          { "column": "deadline",  "ascending": true } ]
+```
+
+`ascending` is a boolean (`true` asc, `false` desc) and is **per key**, so a
+chain may ascend on one column and descend on the next. A `direction` string
+extends this with null placement: `"asc-nulls-first"`, `"desc-nulls-first"`
+(bare asc/desc place nulls last).
+
+**Empty cells** are settled per key and *outside* the direction: a key's blanks
+gather at one end (last by default) and reversing that key does not drag them
+along. A row with a blank in the first key is at that key's end whatever the
+later keys say — nulls are a fact about a cell, not about a row.
 
 **Conformance note**: `direction` is the browser renderer's. `table-view.el`
 spells null placement with a `nulls` field of its own — `"first"` or `"last"`
 (the default) — and reads `ascending` for the direction. Neither renderer reads
 the other's spelling, so a producer that wants nulls first everywhere sends
 both in the one object and each takes the half it knows; the parity vectors do
-exactly that.
+exactly that. The browser renderer additionally accepts a boolean `nullsFirst`
+where `direction` is absent, which is the shape its own `getSort` answers in;
+producers should send `direction`.
+
+**Composing a chain** is the renderer's own business and no part of this
+contract — `table-view.el` appends a tie-breaker with `C-u ^`, the browser
+renderer promotes the column at point to the head of the chain. A producer
+declares what a view *opens* as; what a reader builds on top of it is theirs.
 
 ## Row object
 
@@ -305,6 +329,14 @@ These are renderer-local behaviours, not producer output: row marking, narrowing
 interactive column reorder/add/remove, help toggles, and **computed columns**
 (cells derived by a renderer-side function). Producers emit data; renderers
 decide interaction.
+
+The **sort chips** belong to that list. The browser renderer draws the chain in
+force as a chip per key — column header and `▲`/`▼`, precedence order — at the
+tail of the same strip the crumbs and the filter chips are in. They are inert
+and derived: nothing is stored, so a chip cannot describe an order the rows are
+not in, and a producer neither sends them nor sees them. `table-view.el` prints
+the same chain as words on its hint line. What a producer declares is `sort`;
+how a renderer shows it having been applied is the renderer's.
 
 The **drill-down crumb strip** and **chip labels** belong to that list too. A
 crumb trail is a consumer's path through the data, held on a renderer's handle

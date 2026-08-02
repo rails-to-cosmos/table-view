@@ -5,7 +5,65 @@ the rails-to-cosmos ELPA archive publishes date-stamped snapshots.
 
 ## Unreleased
 
+### Added
+- **Sort chains are composed by PROMOTION, and shown as chips (browser
+  renderer).** Both renderers already ran a declared chain; only Emacs
+  could build one, and it built it with a prefix argument — `C-u ^`
+  appends a tie-breaker at the bottom. A page has no prefix arguments,
+  so the browser gets the other spelling of the same idea:
+  `sortPromote(col)` puts a column at the HEAD of the chain ascending,
+  shifts the rest down, and drops that column from wherever it sat
+  below; promoting the column already leading flips that key alone. A
+  chain is therefore built by pressing over columns in reverse priority
+  order — promote deadline, then state, then title, and the chain is
+  title > state > deadline. One key, no prefix, no mode.
+  What makes ordered presses usable where a prefix argument was is that
+  the chain is now VISIBLE as it grows: it is drawn as a chip per key
+  (column header and `▲`/`▼`, precedence order) at the tail of the strip
+  the crumbs and filter chips already share. The chips are chrome —
+  inert, derived from the live chain at each redraw, so one cannot
+  describe an order the rows are not in — and deliberately not
+  `.tv-chip`, since a consumer counting chips and this renderer's own
+  click delegation mean the filter's tokens by that name. They take the
+  crumb's inert ink, ground and cursor; the arrow alone keeps the
+  foreground.
+  `getSort()` and `setSort(chain)` join the handle as the read and write
+  of the whole chain (`setSort([])` is the clear), and `normalizeSort`
+  now reads a boolean `nullsFirst` where `direction` is absent, which is
+  what makes a chain read out and handed back the chain that was read.
+- **`sort` chains, spelled out (SCHEMA.md).** The array form was one
+  line; it now says what a chain means — every key run in order, the
+  first that separates two rows deciding, ties keeping arrival order
+  (stable on both renderers), direction per key, and empty cells settled
+  per key and outside the direction. New parity vectors
+  (`fixtures/parity/sort-chain.json`, six cases run by both harnesses):
+  tie-breaking, per-key direction, stability under a full tie, nulls
+  inside a chain, a badge key over its palette with a text tie-breaker,
+  and a chain of one being the single sort it always was.
+
+### Fixed
+- **A `values` list holding starred metas alone no longer orders a
+  column (`table-view.el`).** SCHEMA.md has said since the metas landed
+  that a meta is filter vocabulary rather than a cell value and takes no
+  sort position; the browser renderer filtered them out of the value
+  order and Emacs did not. A producer shipping `values:
+  ["*active*","*inactive*"]` beside a badge column — glance's state
+  column does exactly this — had every real keyword tie at the end of
+  that two-element list, so sorting by state ordered nothing. The badge
+  palette below it now rules, as it does in the browser.
+
 ### Changed
+- **A header click PROMOTES rather than replaces (browser renderer).**
+  It is the pointer's spelling of `^` and is now one command with it, so
+  a click no longer throws away a chain the keyboard just built. Clicking
+  a second column leaves the first as a tie-breaker instead of dropping
+  it; the chips say so. `sortBy` is unaffected — a producer stating an
+  order still replaces the chain outright.
+- **The hint line spells the whole chain (browser renderer).** It named
+  the primary key alone, so a view declaring `[{state},{scheduled}]`
+  read as `sort state asc` and lied by omission about what the rows were
+  in. It now prints `sort state asc → scheduled asc`, which is what
+  `table-view.el` has always printed.
 - **Marks and flags are ONE mechanism, instantiated twice (browser
   renderer).** They were two sets with two of everything around them —
   twin toggles, twin clears, and `getMarked`/`getFlagged` as nine-token
