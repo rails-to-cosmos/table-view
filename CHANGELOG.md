@@ -5,6 +5,39 @@ the rails-to-cosmos ELPA archive publishes date-stamped snapshots.
 
 ## Unreleased
 
+### Changed
+- **BREAKING: combination is one rule — TOKENS AND, ALTERNATIVES OR
+  (SCHEMA.md + browser renderer).** Every token narrows, whether or not
+  another token names its key. `tag:a tag:b` is a row carrying both, as
+  before; `state:TODO state:DONE` now asks a cell holding one value to
+  hold two, which is no row, **where it used to answer either state**.
+  The replacement idiom is the new alternation: `state:TODO|DONE`. A
+  predicate's VALUE splits on `|` and each alternative is read as that
+  key's own value, the results OR'd — uniform over every key and every
+  kind of value, so `tag:work|home` carries either, `scheduled:2026-08|2026-09`
+  is either month by prefix, `planned:A|B` is either, and a starred meta
+  alternates like any other value (`state:*active*|DONE`,
+  `tag:*web*|*archive*`). A negation covers the whole token, so
+  `-tag:a|b` carries neither. **A saved query or bookmark spelling a
+  same-key OR now answers nothing; rewrite it with `|`.**
+  Empty alternatives are DROPPED — `a|` is `a`, `|a` is `a`, `a||b` is
+  `a|b` — and a value spelled with bars alone is left with none, which
+  narrows nothing, the same answer `key:` has always given. The bar is a
+  PREDICATE's: a free-text token is the text it spells, bar and all, and
+  a token opening with a quote is free text whatever it spells; a
+  predicate's value has had its quotes taken out by the tokenizer, so a
+  bar inside one is always the operator and a literal bar is free text's
+  alone.
+  What it buys is the arity rule's death: `manyValued` is gone,
+  `queryMatcher` is a list of tests with no grouping in it, and `multi`
+  is left saying only what its name says — the cells hold a delimited
+  list, which the whole-entry meta, the chip rendering and the value
+  domain read. The suggestion list is alternation-aware: a `|` re-opens
+  the value domain, the prefix is what follows the last bar, and
+  accepting lands the alternative behind it, so the committed token stays
+  one token. The filter placeholder teaches the operator
+  (`state:TODO|DONE` in place of `state:active`).
+
 ### Removed
 - **Virtual tag keys, from the grammar and from the suggestion list
   (SCHEMA.md + browser renderer).** An org tag no longer names a filter
@@ -41,7 +74,7 @@ the rails-to-cosmos ELPA archive publishes date-stamped snapshots.
   nobody has put a day on, `-planned:*empty*` is everything with a date,
   and a value is the prefix a date column already takes, asked of every
   one of them at once — `planned:2026-08` is a schedule *or* a deadline in that
-  month. Single-valued, so repeats OR. It is RESERVED because both
+  month. It obeys the one combination rule like every key. It is RESERVED because both
   halves of the wire decide it off the cells alone: no producer set, no
   vocabulary, no clock, which is what a key with no column behind it has
   to be to work on both sides. WHICH columns are dates carries the

@@ -1930,18 +1930,30 @@ async function filterQuery() {
         [shown("state:"), shown("title:"), shown("deadline:")], [40, 40, 40]);
   check("negation excludes", shown("-state:DONE"), 32);
   check("tokens AND together", shown("state:DONE tag:web"), 3);
-  // SCHEMA: predicates sharing one key OR, distinct keys AND, negations AND.
+  // SCHEMA's one combination rule: TOKENS AND, ALTERNATIVES OR.
   const done = shown("state:DONE"), next = shown("state:NEXT");
-  check("predicates sharing a key OR together", shown("state:DONE state:NEXT"), done + next);
-  check("three of them too", shown("state:DONE state:NEXT state:TODO"), done + next + 8);
-  check("distinct keys still AND across the OR groups",
-        shown("state:DONE state:NEXT tag:web"), 6);
-  check("free text ANDs with an OR group",
-        shown("state:DONE state:NEXT system") < done + next, true);
-  check("a negation ANDs rather than joining its key's group",
-        shown("-state:DONE state:NEXT"), next);
-  check("and a negated key is not an OR group of its own",
+  check("a repeated key narrows like any other token",
+        shown("state:DONE state:NEXT"), 0);
+  check("and the same value twice is that value",
+        shown("state:DONE state:DONE"), done);
+  check("a row in either state is ONE token", shown("state:DONE|NEXT"), done + next);
+  check("three alternatives too",
+        shown("state:DONE|NEXT|TODO"), done + next + 8);
+  check("an empty alternative drops out",
+        [shown("state:DONE|"), shown("state:|DONE"), shown("state:DONE||NEXT")],
+        [done, done, done + next]);
+  check("and a value of bars alone narrows nothing, the way key: does",
+        [shown("state:|"), shown("state:||")], [40, 40]);
+  check("distinct keys still AND across an alternation",
+        shown("state:DONE|NEXT tag:web"), 6);
+  check("free text ANDs with one",
+        shown("state:DONE|NEXT system") < done + next, true);
+  check("a negation covers the whole token",
+        shown("-state:DONE|NEXT"), 40 - done - next);
+  check("which De Morgan makes the two negations too",
         shown("-state:DONE -state:NEXT"), 40 - done - next);
+  check("a bar in free text is the character it is, never the operator",
+        shown("system|nothing"), 0);
   check("free text still searches every cell", shown("system") > 0, true);
   check("free text and a predicate AND too",
         shown("system state:DONE") <= shown("state:DONE"), true);
@@ -2013,6 +2025,20 @@ async function filterQuery() {
   b.dispatchEvent(new Ev("keydown", { key: "Tab" }));
   check("and an arrow moves which value that is", b.value, "state:" + STATES[1] + " ");
   check("and the list closes once the token is finished", items(), []);
+
+  // A `|' RE-OPENS the domain, so an alternation is completed one alternative
+  // at a time and stays ONE token.
+  check("a bar asks for the value domain again", type("state:DONE|"), domain(...STATES));
+  check("and the prefix is what follows the LAST bar", type("state:DONE|N"), ["NEXT"]);
+  type("state:DONE|N");
+  b.dispatchEvent(new Ev("keydown", { key: "Tab" }));
+  check("accepting lands the alternative behind the bar, token intact",
+        b.value, "state:DONE|NEXT ");
+  check("a third one the same way", type("state:DONE|NEXT|W"), ["WAITING"]);
+  type("state:DONE|NEXT|W");
+  b.dispatchEvent(new Ev("keydown", { key: "Tab" }));
+  check("and it appends rather than replacing what is there",
+        b.value, "state:DONE|NEXT|WAITING ");
 
   type("state:DONE tit");
   down();
@@ -2722,24 +2748,26 @@ async function queryKeys() {
   check("facet and text AND as two tokens do", shown("tag:glance review") < glance, true);
   check("negation is the rows without the tag", shown("-tag:web"), 40 - web);
   {
-    // SCHEMA splits same-key grouping by arity. A row carries several tags at
-    // once, so repeating the tags column means all of them; a row has one
-    // state, so repeating that key means either.
+    // SCHEMA's one combination rule: tokens AND, alternatives OR. Repeating the
+    // tags column asks for all of them, which a row carrying several tags can
+    // meet; repeating the state column asks a one-value cell for two, which no
+    // row meets — either state is the alternation.
     const ids = (q) => { shown(q); return t.getVisible().map((r) => r.id).sort(); };
     const web = ids("tag:web"), glance = ids("tag:glance");
     const carries = web.filter((x) => glance.indexOf(x) !== -1);
-    check("the multi-valued column ANDs within its key too",
+    check("repeating the multi-valued column asks for both",
           ids("tag:web tag:glance"), carries);
     check("and that is an intersection, not a union",
           [carries.length > 0, carries.length < web.length + glance.length], [true, true]);
 
     const todo = ids("state:TODO"), done = ids("state:DONE");
-    check("a single-valued key still ORs — a row has one state",
-          ids("state:TODO state:DONE"),
-          Array.from(new Set(todo.concat(done))).sort());
+    check("repeating a one-value key asks for two values at once — no row",
+          ids("state:TODO state:DONE"), []);
+    check("and the union is the alternation",
+          ids("state:TODO|DONE"), Array.from(new Set(todo.concat(done))).sort());
 
     // One query with both shapes, plus free text, plus a negation.
-    const mixed = ids("state:TODO state:DONE tag:web tag:glance 2026 -priority:C");
+    const mixed = ids("state:TODO|DONE tag:web tag:glance 2026 -priority:C");
     const byHand = t.getRows().filter((r) => {
       const c = r.cells, tags = String(c.tag).split(":").filter(Boolean);
       return (c.state === "TODO" || c.state === "DONE")
@@ -3248,7 +3276,7 @@ async function queryKeys() {
           ["tv-title", "tv-chips", "tv-filter-wrap"]);
     // The box teaches the grammar, which is the part nobody can guess, in
     // every mode — the control is the same control wherever it is put.
-    const TEACH = `tag:book · state:active · -word · "some phrase"`;
+    const TEACH = `tag:book · state:TODO|DONE · -word · "some phrase"`;
     const summoned = new El("div");
     TableView.mount(summoned, view(20), { palette: true });
     check("and every mode's box teaches the query language",

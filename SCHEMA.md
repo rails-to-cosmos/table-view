@@ -56,7 +56,8 @@ sort position, and a `values` list holding metas alone orders nothing.
 - `sortable` is opt-in: a column says so or it is not sorted on. Both renderers
   read it that way. It gates what the *user* may sort by — a view's declared
   `sort` opens as written whether or not its column opts in.
-- `multi` declares the column multi-valued for the filter's AND/OR rule below.
+- `multi` declares the column's cells delimited value lists, which the filter's
+  whole-entry meta reads (below).
   A renderer that guesses from cell shape must let the declaration win.
   *Experimental*: the field is new and the guessing fallback is what most
   producers still rely on.
@@ -191,24 +192,46 @@ whitespace (`&` accepted as an alias); each token is:
 - `-token` — negation of either form.
 - anything else — free text, case-insensitive substring over the row's cells.
 
-Predicates sharing one key OR together **when the field is single-valued**
-(`state:TODO state:DONE` = either state — AND would always be empty), and
-AND together **when the field is multi-valued** (`tag:a tag:b` = carries
-both, GitHub-label style; a column is multi-valued when its cells hold
-delimited value lists, e.g. org tags — producers and renderers must agree
-per column, glance's `tag` column being the canonical case; `multi: true`
-on the column is how a producer says so, and a renderer guessing from cell
-shape must defer to it). Distinct keys and free-text
-tokens AND. Negations AND regardless. Field-predicate semantics, by column type: `badge` —
-whole-value match, case-insensitive; `text`/`number` — case-insensitive
-substring; date-shaped text cells — prefix match (`scheduled:2026-08`).
+**Combination is one rule: tokens AND, alternatives OR.** Every token narrows,
+whether or not another token names its key. `state:TODO state:DONE` is a row in
+both states, which for a cell holding one value is no row; `tag:a tag:b` is a row
+carrying both, GitHub-label style; and a negation narrows the same way, so
+`-a -b` is neither.
+
+A row matching **either** value is the one token `state:TODO|DONE`: a
+predicate's **value** splits on `|` and each alternative is read as that key's
+own value, the results OR'd. Uniform over every key and every kind of value —
+`tag:work|home` carries either, `scheduled:2026-08|2026-09` is either month by
+prefix, `planned:*empty*|2026` is unplanned or planned that year, and a starred
+meta alternates like any other value (`state:*active*|DONE`). A negation covers
+the whole token: `-tag:a|b` carries neither. Empty alternatives are **dropped**,
+so `a|` is `a` and `a||b` is `a|b`; a value left with no alternative narrows
+nothing, which is the `key:` rule, and that is the whole answer for `key:`,
+`key:|` and `key:||` alike.
+
+The bar is a **predicate's**. A free-text token is the text it spells, bar and
+all, and a token that opens with a quote is free text whatever it spells; a
+predicate's value has had its quotes taken out by the tokenizer, so a bar inside
+one is always the operator and a literal bar is free text's alone.
+
+Field-predicate semantics, by column type: `badge` — whole-value match,
+case-insensitive; `text`/`number` — case-insensitive substring; date-shaped text
+cells — prefix match (`scheduled:2026-08`).
+
+A column is **multi-valued** when its cells hold delimited value lists (org
+tags); `multi: true` is how a producer says so and a renderer guessing from cell
+shape must defer to it. Its cells still hold several values at once — which is
+what a repeated key can meet and a one-value cell cannot — and it is the column
+the whole-entry meta below reads.
 
 **`planned`** is the one reserved key that is not a column, over a view's **date
 columns taken together**: a row is planned when any of them holds anything. So
 `planned:*empty*` is a row nobody has put a day on, `-planned:*empty*` is
 everything with a date, and a value is the same prefix a date column takes,
 asked of every date column at once — `planned:2026-08` is a schedule *or* a
-deadline falling in that month. It is single-valued, so repeats OR (`planned:A planned:B` = either).
+deadline falling in that month. It obeys the one combination rule like every
+key: `planned:A|B` is either, and `planned:A planned:B` is a row whose date
+cells meet both.
 Reserved because both sides decide it off the cells alone — no producer set, no
 vocabulary and no clock — which is what a key with no column behind it has to be
 to work on both halves of the wire; a row therefore never reads as planned on
@@ -217,9 +240,9 @@ already carries: a producer knows its own, a renderer samples cell shape, so a
 page holding fewer than two dated rows finds no date column and answers
 `planned:` more narrowly than the producer would.
 
-Two uniform rules across types: `key:` with nothing typed narrows nothing; a
-predicate value may be quoted (`tag:"two words"`) — only a token that *opens*
-with a quote is free text.
+Two uniform rules across types: a predicate with no alternative left narrows
+nothing (`key:`, and `key:|` with it); a predicate value may be quoted
+(`tag:"two words"`) — only a token that *opens* with a quote is free text.
 
 **Starred metas.** A value written between asterisks is a **meta**: a value with
 semantics of its own, never literal cell text. A bare word is never one, so
@@ -253,7 +276,10 @@ bare word suggests matching column keys (completing to `key:`); after
 `key:`, that column's value domain — `values`, else the badge palette, else
 distinct cell values — plus the metas that key answers, `*empty*` among them.
 A renderer may match a meta through its stars (`arch` reaching `*archive*`),
-which is completion alone: what commits and what a query means keep them.
+which is completion alone: what commits and what a query means keep them. A `|`
+**re-opens** that value domain — the prefix is what follows the last bar and the
+offer lands after it, so an alternation is completed one alternative at a time
+and the committed token stays one token.
 Keyboard-first: arrows/Tab select, Enter accepts, Esc dismisses before it
 clears anything.
 

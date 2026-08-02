@@ -549,19 +549,29 @@ measured is still the text you sent.
 ### The filter box
 
 Its placeholder teaches the grammar rather than naming the box —
-`tag:book · state:active · -word · "some phrase"` — since what a filter box is
+`tag:book · state:TODO|DONE · -word · "some phrase"` — since what a filter box is
 for is obvious and what it accepts is not.
 
 It speaks [`SCHEMA.md`](SCHEMA.md)'s query micro-syntax: `key:value` field
 predicates — only where `key` names a column, so org text like `:work:` or
 `=code=` never becomes one by accident — plus `"quoted text"`, `-negation`, and
-free text for everything else. Predicates sharing a key group by the field's
-**arity**: a single-valued field **ORs** (a row has one state), a multi-valued
-one **ANDs** (a row carries several tags). Distinct keys, free text and
-negations **AND**. So `state:TODO state:NEXT tag:web tag:api review` reads
-*either state, carrying both tags, mentioning review*. A column is multi-valued
-when its cells hold delimited lists (`:a:b:`) — decided by their shape, so the
-column may be called `tag`, `tags` or anything else.
+free text for everything else.
+
+**Combination is one rule: tokens AND, alternatives OR.** Every token narrows,
+whether or not another names its key: `tag:web tag:api` carries both, and
+`state:TODO state:DONE` asks a one-value cell for two values, which is no row. A
+row matching **either** is the one token `state:TODO|DONE` — a predicate's value
+splits on `|` and each alternative is read as that key's own value. So
+`state:TODO|NEXT tag:web tag:api review` reads *either state, carrying both tags,
+mentioning review*. Empty alternatives drop (`a|` is `a`), a value left with
+none narrows nothing the way `key:` does, and a negation covers the whole token
+(`-tag:a|b` carries neither). The bar is a predicate's: free text is the text it
+spells, bar and all.
+
+A column is **multi-valued** when its cells hold delimited lists (`:a:b:`) —
+decided by their shape, so the column may be called `tag`, `tags` or anything
+else. Its cells hold several values at once, which is what a repeated key can
+meet, and it is the column the whole-entry meta below reads.
 
 ```js
 TableView.parseQuery('state:TODO -tags:done', ["state", "tags"])
@@ -632,6 +642,11 @@ keywords in the list. `*empty*` closes every one of those lists, declared or
 not. Neither free-text offer appears here: a half-typed `key:value` is already
 an intent. `planned` has no domain to offer at all — what follows it is a date
 prefix over several columns at once.
+
+A `|` **re-opens** that domain: `state:DONE|` asks for the values again, the
+prefix is what follows the last bar, and accepting lands the alternative behind
+it — so an alternation is built one value at a time and the committed token
+stays one token.
 
 **Starred metas.** A value written between asterisks is a **meta**: a value with
 semantics of its own rather than cell text. A bare word is never one, so
