@@ -37,10 +37,10 @@ the rails-to-cosmos ELPA archive publishes date-stamped snapshots.
 ### Added
 - **`planned`, a reserved virtual filter key over the date columns
   (SCHEMA.md + browser renderer).** A row is planned when any of the
-  view's date columns holds anything, so `planned:none` is a row nobody
-  has put a day on, `-planned:none` is everything with a date, and a
-  value is the prefix a date column already takes, asked of every one of
-  them at once — `planned:2026-08` is a schedule *or* a deadline in that
+  view's date columns holds anything, so `planned:*empty*` is a row
+  nobody has put a day on, `-planned:*empty*` is everything with a date,
+  and a value is the prefix a date column already takes, asked of every
+  one of them at once — `planned:2026-08` is a schedule *or* a deadline in that
   month. Single-valued, so repeats OR. It is RESERVED because both
   halves of the wire decide it off the cells alone: no producer set, no
   vocabulary, no clock, which is what a key with no column behind it has
@@ -482,6 +482,38 @@ the rails-to-cosmos ELPA archive publishes date-stamped snapshots.
   consumer that says nothing sees the line it always saw.
 
 ### Changed
+- **BREAKING: `key:none` is gone; the empty cell is `key:*empty*`
+  (SCHEMA.md + browser renderer).** The bare word reserved a spelling a
+  cell can hold, and what it cost was exactly that: a cell reading
+  `none` was unreachable by predicate, which SCHEMA wrote down as an
+  accepted cost rather than a rule anyone wanted. It is a meta now, so
+  the stars carry the meaning and the word carries none: `state:*empty*`
+  is the empty state cell and `state:none` is a state spelled `none`,
+  found at last. Every key answers it — every column and `planned`, so
+  `-planned:none` is `-planned:*empty*`. **A saved query or URL holding
+  `key:none` now reads as a literal value and matches nothing it used
+  to**; there is no migration and no alias, the point being that no bare
+  word is reserved any more.
+- **A starred word on a MULTI-VALUED column is the whole entry**
+  (SCHEMA.md + browser renderer). `tag:*book*` is the tag `book` where
+  `tag:boo` is any tag holding those letters — the whole-tag reading
+  that went with the virtual tag keys, back as a meta on the one
+  spelling. Decided from the cell, delimiter and all, so a producer and
+  this renderer answer it identically; it is what glance's
+  `tag:*archive*` is built on.
+- **A meta takes no sort position** (browser renderer). A column
+  declaring `values: ["*active*"]` sorted every real value into the one
+  "unlisted" bucket, which is no order at all — glance's state column
+  has been unsorted by its own palette since it began declaring metas.
+  `valueOrder` drops the starred entries, and a `values` list that was
+  metas alone falls through to the badge palette the way a column
+  declaring nothing does.
+- **The suggestion list offers `*empty*` under every key** (browser
+  renderer), at the foot of each column's value domain, declared or not
+  — and a multi-valued column's domain now carries the metas its column
+  DECLARES beside the vocabulary its cells spell, which is how
+  `tag:*archive*` becomes reachable by typing `arch`. Star-blind
+  completion already reached both.
 - **The typed text is an offer of its own, and so is a whole title**
   (browser renderer; the bare-word stage, renderer-local, no grammar or
   SCHEMA change). Row one is what RET takes, which had left a plain text

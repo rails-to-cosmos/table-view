@@ -554,6 +554,10 @@ const TableView = require(path.resolve(file));
 
 const STATES = ["NEXT", "TODO", "WAITING", "CANCELLED", "DONE"];
 const PRI = ["A", "B", "C"];
+/** SCHEMA's uniform meta, which every key's value domain ends with. */
+const EMPTY = "*empty*";
+/** LIST as a value domain reads it: the column's own values, then that meta. */
+const domain = (...list) => list.concat([EMPTY]);
 const WORDS = ["ship", "the", "system", "review", "index", "rewrite", "org", "cache",
                "parser", "daemon", "window", "headline", "sync", "queue", "digest"];
 const TAGS = [":web:glance:", ":emacs:", ":ops:system:", ":read:", ":web:", ":glance:daemon:"];
@@ -840,8 +844,8 @@ async function metaValues() {
   const P = driver({ title: "meta", columns: cols, rows });
 
   // --- the merge: declared values in their order, then the badges they missed
-  check("the domain is values then the unlisted badges",
-        P.type("state:"), ["*active*", "*inactive*", "TODO", "NEXT", "DONE"]);
+  check("the domain is values then the unlisted badges, then the uniform meta",
+        P.type("state:"), ["*active*", "*inactive*", "TODO", "NEXT", "DONE", "*empty*"]);
   check("the badge keywords survive alongside the declared values",
         P.type("state:").indexOf("TODO") !== -1, true);
 
@@ -850,10 +854,10 @@ async function metaValues() {
   const rowsOf = () => P.box.querySelectorAll(".tv-ac-item");
   const dimmed = rowsOf().map((e) => e.classes.has("tv-ac-dim"));
   check("the starred entries are dimmed and the concrete ones are not",
-        dimmed, [true, true, false, false, false]);
+        dimmed, [true, true, false, false, false, true]);
   const nums = rowsOf().map((e) => e.querySelectorAll(".tv-ac-n").length);
   check("a meta shows no count at all", nums.slice(0, 2), [0, 0]);
-  check("its concrete siblings still do", nums.slice(2), [1, 1, 1]);
+  check("its concrete siblings still do", nums.slice(2), [1, 1, 1, 0]);
   check("and those counts are the real ones", P.counts(), [2, 0, 1]);
   const css = document.head.children.map((e) => e.text).join("");
   check("the dim class is italic as well as faint",
@@ -892,8 +896,12 @@ async function metaValues() {
   // `*inactive*' has no such half and stays the literal it was.
   check("the active meta finds the stateless row, the half a renderer can know",
         P.shown("state:*active*"), 1);
-  check("and state:none is that same row, asked for by name",
-        P.shown("state:none"), 1);
+  check("and state:*empty* is that same row, asked for by name",
+        P.shown("state:*empty*"), 1);
+  // The stars are what make a value a meta, so the bare word reserves nothing:
+  // this fixture has no state spelled `none', and the query says so.
+  check("while the bare word is the literal it always could have been",
+        P.shown("state:none"), 0);
   check("the inactive meta stays a literal, so it matches nothing",
         P.shown("state:*inactive*"), 0);
   check("negating the active meta drops the stateless row",
@@ -912,7 +920,7 @@ async function metaValues() {
     rows,
   });
   check("a badge column with no values offers its palette, in palette order",
-        B.type("state:"), ["TODO", "DONE"]);
+        B.type("state:"), domain("TODO", "DONE"));
   check("and every entry keeps its count", B.counts(), [2, 1]);
 
   const M = driver({
@@ -922,7 +930,66 @@ async function metaValues() {
            { id: "2", cells: { title: "two", tag: ":web:" } }],
   });
   check("a multi column still offers its vocabulary, counted",
-        [M.type("tag:"), M.counts()], [["api", "web"], [1, 2]]);
+        [M.type("tag:"), M.counts()], [domain("api", "web"), [1, 2]]);
+}
+
+/**
+ * The starred family: `*empty*' on every key, a starred word on a multi-valued
+ * column as the whole entry, and the bare words neither of them reserves. What
+ * the parity vectors pin is the MATCHING; what belongs here is the offering,
+ * the ordering it does not disturb, and the completion that reaches a meta
+ * without its stars.
+ */
+async function starredMetas() {
+  console.log("\n== starred metas");
+  const cols = [
+    { key: "state", header: "State", type: "badge", sortable: true,
+      values: ["*active*"],
+      badges: [{ value: "TODO", color: "#e0af68" },
+               { value: "DONE", color: "#9ece6a" }] },
+    { key: "title", header: "Headline", type: "text" },
+    { key: "tag", header: "Tags", type: "text", multi: true, values: ["*archive*"] },
+  ];
+  const rows = [
+    { id: "arch", cells: { state: "TODO", title: "filed away", tag: ":web:archive:" } },
+    { id: "near", cells: { state: "DONE", title: "not filed", tag: ":archived:" } },
+    { id: "word", cells: { state: "TODO", title: "unfiled", tag: ":web:" } },
+    { id: "bare", cells: { state: "", title: "nothing stated", tag: "" } },
+  ];
+  const P = driver({ title: "metas", columns: cols, rows });
+  const ids = (q) => { P.shown(q); return P.handle.getVisible().map((r) => r.id); };
+
+  // --- offered per key, wherever an empty cell means anything, which is everywhere
+  check("a badge column ends its domain with the uniform meta",
+        P.type("state:"), ["*active*", "TODO", "DONE", "*empty*"]);
+  check("a multi column offers its declared meta and that one both",
+        P.type("tag:").sort(), ["*archive*", "*empty*", "archive", "archived", "web"]);
+  check("and a free-text column, whose domain is its own cells, offers it too",
+        P.type("title:").indexOf("*empty*") !== -1, true);
+
+  // --- and a meta is reached without its stars, at either stage
+  check("the uniform meta answers to the word inside them", P.type("state:emp"), ["*empty*"]);
+  check("a declared one the same way", P.type("tag:arch").slice(0, 2), ["*archive*", "archive"]);
+  check("and a bare word reaches it through the column that declares it",
+        P.type("arch").indexOf("tag:*archive*") !== -1, true);
+
+  // --- matching: the stars are the whole of what makes a meta
+  check("the uniform meta is the empty cell, on any key",
+        [ids("state:*empty*"), ids("tag:*empty*")], [["bare"], ["bare"]]);
+  check("a starred word on a multi column is the whole entry", ids("tag:*archive*"), ["arch"]);
+  check("where the bare word stays the substring it was",
+        ids("tag:archive"), ["arch", "near"]);
+  check("a starred word on a SINGLE-valued column is a literal, so it finds nothing",
+        ids("state:*todo*"), []);
+
+  // --- a meta takes no sort position: no cell holds one
+  const sorted = () => { P.shown(""); P.handle.sortBy("state", true);
+                         return P.handle.getVisible().map((r) => r.id); };
+  // TODO before DONE is the palette's order; a `values' of metas alone orders
+  // nothing, so without the rule that drops them every row would tie here and
+  // the rows would come back as they went in.
+  check("the badge palette still orders the column its `values' declared a meta in",
+        sorted(), ["arch", "word", "near", "bare"]);
 }
 
 /** Six rows with two columns, which is enough to page, filter and sort over. */
@@ -1853,7 +1920,10 @@ async function filterQuery() {
   check("text predicates are substrings", shown("title:system") > 0, true);
   check("date cells match by prefix", shown("scheduled:2026-03"), 4);
   check("and not by substring", shown("scheduled:03"), 0);
-  check("none matches an empty cell", shown("deadline:none"), 30);
+  check("the empty meta matches an empty cell", shown("deadline:*empty*"), 30);
+  // And the bare word is a literal now, which no date cell spells.
+  check("where the bare word it replaced is text like any other",
+        shown("deadline:none"), 0);
   // The half-typed state the suggestion list serves: it must not narrow, and
   // must not narrow differently per column type.
   check("a key with nothing typed after it narrows nothing",
@@ -1889,11 +1959,13 @@ async function filterQuery() {
   check("an empty box offers nothing", type(""), []);
   check("a quoted token offers nothing", type('"sta'), []);
   check("free text carrying punctuation offers nothing", type(":work"), []);
-  check("key: offers the badge palette", type("state:"), STATES);
+  check("key: offers the badge palette, then the meta every key answers",
+        type("state:"), domain(...STATES));
   check("and the prefix narrows it", type("state:d"), ["DONE"]);
-  check("a declared values list wins", type("priority:"), PRI);
+  check("a declared values list wins", type("priority:"), domain(...PRI));
   check("the tag column's values are the tags themselves, not the cells",
-        type("tag:").sort(), ["daemon", "emacs", "glance", "ops", "read", "system", "web"]);
+        type("tag:").sort(),
+        ["*empty*", "daemon", "emacs", "glance", "ops", "read", "system", "web"]);
   // 40 distinct titles, and the cap is 12 — a ceiling of 12 can fail, one of
   // "some number less than everything" cannot.
   check("the list is capped at twelve, out of forty", type("title:").length, 12);
@@ -1930,7 +2002,7 @@ async function filterQuery() {
   b.dispatchEvent(new Ev("keydown", { key: "Tab" }));
   check("Tab on a key suggestion completes to key:", b.value, "state:");
   check("and stays in the box for the value", (b.blurs || 0) - held, 0);
-  check("and the list moves to the value stage", items(), STATES);
+  check("and the list moves to the value stage", items(), domain(...STATES));
   b.dispatchEvent(new Ev("keydown", { key: "Tab" }));
   check("Tab accepts the value at row one, with a trailing space",
         b.value, "state:" + STATES[0] + " ");
@@ -2753,7 +2825,7 @@ async function queryKeys() {
   b.dispatchEvent(new Ev("keydown", { key: "Tab" }));
   check("Tab on a key completion leaves the value to type", [b.value, first],
         ["state:", "state:"]);
-  check("and the column's domain is what it then offers", items(), STATES);
+  check("and the column's domain is what it then offers", items(), domain(...STATES));
   b.value = "sta";
   b.dispatchEvent(new Ev("input"));
   b.dispatchEvent(new Ev("keydown", { key: "ArrowDown" }));
@@ -2892,7 +2964,8 @@ async function queryKeys() {
       sb.dispatchEvent(new Ev("input"));
       check("a single-valued column offers its distinct cells, unsplit",
             single.querySelectorAll(".tv-ac-label").map((e) => e.text),
-            ["ada lovelace", "alan turing"]);
+            domain("ada lovelace", "alan turing"));
+      // The meta shows no count, so a column of two values still prints two.
       check("counted as cells", single.querySelectorAll(".tv-ac-n").map((e) => Number(e.text)),
             [2, 1]);
     }
@@ -3085,12 +3158,13 @@ async function queryKeys() {
     // them would AND rather than replace.
     const run = (q) => { P2.shown(q); return pt.getVisible().map((r) => r.id); };
     check("planned reads every date column, not one of them",
-          run("-planned:none"), ["1", "2"]);
-    check("and none is the row neither column speaks for", run("planned:none"), ["3"]);
+          run("-planned:*empty*"), ["1", "2"]);
+    check("and the empty meta is the row neither column speaks for",
+          run("planned:*empty*"), ["3"]);
     // The fixture tags every row `:planned:', so a tag reading would keep all
     // three of them where the key's own reading keeps one.
     check("a tag spelled like it is shadowed, the way a column would shadow it",
-          [run("planned:none").length, rows.length], [1, 3]);
+          [run("planned:*empty*").length, rows.length], [1, 3]);
     check("the tag is still reachable through the column that holds it",
           run("tag:planned").length, 3);
     const keys = P2.type("plan");
@@ -3723,7 +3797,7 @@ async function queryKeys() {
     check("nothing was delivered — the token is half a predicate", asked, []);
     check("and the list is already showing that key's values",
           labels().sort(),
-          ["daemon", "emacs", "glance", "ops", "read", "system", "web"]);
+          ["*empty*", "daemon", "emacs", "glance", "ops", "read", "system", "web"]);
     check("each with the rows behind it", counts().every((n) => n > 0), true);
     check("with row one of them chosen, the way every list opens", on(), 1);
 
@@ -3899,7 +3973,7 @@ async function queryKeys() {
     check("and repeated ones intersect, the arity being known",
           P.shown("tag:alpha tag:beta"), 1);
     check("rather than offering the raw cell as a value",
-          P.type("tag:").sort(), ["alpha", "beta"]);
+          P.type("tag:").sort(), ["*empty*", "alpha", "beta"]);
   }
 
   // --- a date column survives a stamp it does not recognise
@@ -4868,6 +4942,7 @@ async function smoke() {
   await queryKeys();
   await sortOrder();
   await metaValues();
+  await starredMetas();
   await rowMarks();
   await crumbTrail();
   await parityVectors();

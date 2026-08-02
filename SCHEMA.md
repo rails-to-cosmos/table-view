@@ -41,13 +41,15 @@ The whole view. All fields optional except `columns`.
 | `align`    | enum          | `"left"` | `"left"` \| `"right"`                               |
 | `sortable` | bool          | `false`  | column may be sorted on (opt-in: default is no)     |
 | `badges`   | array<Badge>  | —        | palette for a `"badge"` column                      |
-| `values`   | array<string> | —        | explicit categorical order (sort priority)          |
+| `values`   | array<string> | —        | explicit categorical order (sort priority), and any filter metas |
 | `compare`  | string        | —        | comparator name: `"number"`, `"string"`, `"natural"`|
 | `multi`    | bool          | —        | cells hold a delimited value list (experimental)    |
 
 **Sort order of a column** resolves as: `compare` name → `values` order (else the
 `badges` order for a badge column), unlisted values last → `type: "number"` is
-numeric → otherwise lexicographic.
+numeric → otherwise lexicographic. A starred meta in `values` is filter
+vocabulary rather than a cell value (see the filter query below), so it takes no
+sort position, and a `values` list holding metas alone orders nothing.
 
 - `"number"` right-aligns and sorts numerically by convention.
 - `"badge"` colours each cell from `badges`; palette order doubles as sort priority.
@@ -198,20 +200,15 @@ per column, glance's `tag` column being the canonical case; `multi: true`
 on the column is how a producer says so, and a renderer guessing from cell
 shape must defer to it). Distinct keys and free-text
 tokens AND. Negations AND regardless. Field-predicate semantics, by column type: `badge` —
-whole-value match, case-insensitive; a producer may add meta-values (e.g.
-glance's `state:*active*` / `state:*inactive*` matching keyword groups —
-`*active*` matches the **empty cell** as well, an unstated row being live
-work, while `*inactive*` matches stated values alone, so the two groups do
-not partition the column and `-state:*active*` excludes the empty cell);
-`text`/`number` — case-insensitive substring; date-shaped text cells —
-prefix match (`scheduled:2026-08`).
+whole-value match, case-insensitive; `text`/`number` — case-insensitive
+substring; date-shaped text cells — prefix match (`scheduled:2026-08`).
 
 **`planned`** is the one reserved key that is not a column, over a view's **date
 columns taken together**: a row is planned when any of them holds anything. So
-`planned:none` is a row nobody has put a day on, `-planned:none` is everything
-with a date, and a value is the same prefix a date column takes, asked of every
-date column at once — `planned:2026-08` is a schedule *or* a deadline falling in
-that month. It is single-valued, so repeats OR (`planned:A planned:B` = either).
+`planned:*empty*` is a row nobody has put a day on, `-planned:*empty*` is
+everything with a date, and a value is the same prefix a date column takes,
+asked of every date column at once — `planned:2026-08` is a schedule *or* a
+deadline falling in that month. It is single-valued, so repeats OR (`planned:A planned:B` = either).
 Reserved because both sides decide it off the cells alone — no producer set, no
 vocabulary and no clock — which is what a key with no column behind it has to be
 to work on both halves of the wire; a row therefore never reads as planned on
@@ -220,18 +217,45 @@ already carries: a producer knows its own, a renderer samples cell shape, so a
 page holding fewer than two dated rows finds no date column and answers
 `planned:` more narrowly than the producer would.
 
-Three uniform rules across types:
-`key:none` matches the empty cell (any type; a literal cell value "none" is
-consequently unreachable by predicate); `key:` with nothing typed narrows
-nothing; a predicate value may be quoted (`tag:"two words"`) — only a token
-that *opens* with a quote is free text.
+Two uniform rules across types: `key:` with nothing typed narrows nothing; a
+predicate value may be quoted (`tag:"two words"`) — only a token that *opens*
+with a quote is free text.
+
+**Starred metas.** A value written between asterisks is a **meta**: a value with
+semantics of its own, never literal cell text. A bare word is never one, so
+every word a cell can hold stays reachable as itself — `state:none` is a cell
+reading `none`. Three kinds, and the first two are decided from the cell, so a
+producer and a renderer answer them identically:
+
+- **`*empty*`** — the empty cell. Every key answers it, `planned` included
+  (`planned:*empty*` is every date column empty), and it outranks any other
+  reading of the value, so a column whose cells could spell `empty` reaches
+  that value by `key:empty`.
+- **`*word*` on a multi-valued column** — the **whole entry**, where the bare
+  word is a substring of the delimited cell: `tag:*book*` is the tag `book`,
+  `tag:boo` is any tag holding those letters.
+- **anything else** — a **producer meta**, a name for a set only the producer
+  can enumerate (glance's `state:*active*` / `state:*inactive*` over the org
+  keyword groups — `*active*` matches the empty cell as well, an unstated row
+  being live work, while `*inactive*` matches stated values alone, so the two
+  do not partition the column and `-state:*active*` excludes the empty cell). A
+  renderer matches it literally, which finds nothing and is therefore narrower
+  than the producer — the blessed direction for a divergence. A view declaring
+  producer metas is expected to filter through the producer.
+
+Metas arrive in a column's `values` (below), which is how a renderer offers
+them; `*empty*` needs no declaring. A producer may also attach meaning to a meta
+being **named at all**: glance leaves archived rows out of an answer unless the
+query names `tag:*archive*`, in any polarity.
 
 **Autocomplete (renderer-local).** The renderer may suggest per stage: a
 bare word suggests matching column keys (completing to `key:`); after
 `key:`, that column's value domain — `values`, else the badge palette, else
-distinct cell values; producer meta-values arrive as ordinary `values`
-entries. Keyboard-first: arrows/Tab select, Enter accepts, Esc dismisses
-before it clears anything.
+distinct cell values — plus the metas that key answers, `*empty*` among them.
+A renderer may match a meta through its stars (`arch` reaching `*archive*`),
+which is completion alone: what commits and what a query means keep them.
+Keyboard-first: arrows/Tab select, Enter accepts, Esc dismisses before it
+clears anything.
 
 ## Renderer handle
 

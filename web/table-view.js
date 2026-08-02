@@ -244,11 +244,19 @@
  *   always has a list. A quoted token still asks for no suggestions at all
  *   (`"boo"' is free text already), and Esc still puts the list away before
  *   Enter commits what is written.
- * - A STARRED META COMPLETES STAR-FREE. The asterisks of `*active*' are reading
- *   notation — the mark that says the producer decides this one — so completion
- *   matches through them: `act' and `active' both reach `*active*', at the value
- *   stage and as a bare word, and the starred spelling still answers to itself.
- *   Display and commit wear the stars; only the matching ignores them.
+ * - A STARRED VALUE IS A META, and a bare word is never one. `*empty*' is the
+ *   empty cell and every key answers it, `planned' included; a starred word on
+ *   a multi-valued column is that WHOLE entry (`tag:*book*' is the tag `book',
+ *   where `tag:boo' is a substring of the cell); anything else is a PRODUCER
+ *   meta over a set only the producer can enumerate (`state:*active*'), matched
+ *   literally here, which narrows. The first two need no producer, so both
+ *   halves of the wire answer them alike.
+ * - A STARRED META COMPLETES STAR-FREE. The asterisks are reading notation —
+ *   the mark that says this value has semantics — so completion matches through
+ *   them: `act' and `active' both reach `*active*', at the value stage and as a
+ *   bare word, and the starred spelling still answers to itself. Display and
+ *   commit wear the stars; only the completion's matching ignores them, and
+ *   what a query MEANS reads them, so `state:active' is the literal `active'.
  * - `palette: true' makes the filter a thing you summon. The page keeps the
  *   chip row and nothing else — an unfiltered table carries no filter chrome at
  *   all — and `openFilter()' raises a centred overlay holding the control, the
@@ -643,21 +651,29 @@
   };
 
   // Ordered domain of a column: explicit `values`, else badge palette order.
+  //
+  // METAS ARE NOT POSITIONS. A meta is filter vocabulary — no cell holds one —
+  // so a column that declares `*active*' among its `values' would otherwise
+  // sort every real value into the one bucket "unlisted", which is no order at
+  // all. They come out here, and a `values' that was metas alone falls through
+  // to the palette the way a column declaring none does.
   /** @param {Column} col  @returns {string[]|null} */
   function valueOrder(col) {
-    if (col.values) return col.values.map(String);
+    const declared = col.values ? col.values.map(String).filter((v) => !META.test(v)) : null;
+    if (declared && declared.length) return declared;
     if (col.type === "badge") return (col.badges || []).map((b) => String(b.value));
     return null;
   }
 
-  /** A producer meta-value, which SCHEMA spells `*active*'. */
+  /** A meta value, which SCHEMA spells `*empty*' / `*active*'. */
   const META = /^\*.+\*$/;
 
   /**
-   * A meta without its stars. They are READING notation — the mark that says
-   * "the producer decides this one" — so completion matches through them and
-   * `act' reaches `*active*'. What is drawn and what is inserted keep them, and
-   * the starred spelling still answers to itself.
+   * A meta without its stars — its WORD, which is what a rule reading one needs
+   * (the whole-entry match on a multi-valued column) and what completion
+   * matches through, so `act' reaches `*active*'. What is drawn and what is
+   * inserted keep the stars, a query MEANS them, and the starred spelling still
+   * answers to itself.
    */
   const starless = (v) => (META.test(v) ? v.slice(1, -1) : v);
   /** Does the lowercased value LOWER open with P, stars either way? */
@@ -666,10 +682,21 @@
   const spells = (lower, p) => lower === p || starless(lower) === p;
 
   /**
-   * The one meta this renderer can partly answer: SCHEMA puts the EMPTY cell in
-   * the active group, and an empty cell needs no keyword set to recognise.
+   * The one PRODUCER meta this renderer can partly answer: SCHEMA puts the EMPTY
+   * cell in the active group, and an empty cell needs no keyword set to
+   * recognise.
    */
   const ACTIVE_META = "*active*";
+
+  /**
+   * The meta every key answers: SCHEMA's empty cell, on any column and on
+   * `planned'. A cell is empty or it is not, so no producer set, no vocabulary
+   * and no clock are needed and the two halves of the wire cannot disagree
+   * about a row. It replaced the bare word `none', which reserved a spelling a
+   * cell could hold: a cell reading `none' is ordinary text again, and
+   * `key:none' finds it.
+   */
+  const EMPTY_META = "*empty*";
 
   /**
    * SCHEMA's virtual key over a view's DATE columns together: a row is planned
@@ -695,6 +722,18 @@
     if (!badges) return declared;
     const named = new Set(declared.map((v) => v.toLowerCase()));
     return declared.concat(badges.filter((v) => !named.has(v.toLowerCase())));
+  }
+
+  /**
+   * The metas COL declares: producer vocabulary, which no cell of it holds. A
+   * column whose values are derived rather than declared — a multi-valued one,
+   * whose domain is the vocabulary its cells spell — takes them from here, so a
+   * declared meta is offered whether or not the column's domain came from the
+   * rows.
+   * @param {Column} col  @returns {string[]}
+   */
+  function declaredMetas(col) {
+    return (col.values || []).map(String).filter((v) => META.test(v));
   }
 
   // Less-than over raw cell values for a column (mirrors table-view.el).
@@ -1544,10 +1583,10 @@
         // pure-free-text query costs exactly what it did before.
         return v ? (r) => rowText(r).search.includes(v) : () => true;
       const col = colByKey(tok.key);
-      // The date columns as one field. `none' is the row nobody put a day on; a
-      // value is the same prefix a date column takes, asked of every one of
-      // them, and a cell that prefix-matches is a cell with something in it, so
-      // the presence test never has to be spelled twice.
+      // The date columns as one field. `*empty*' is the row nobody put a day
+      // on; a value is the same prefix a date column takes, asked of every one
+      // of them, and a cell that prefix-matches is a cell with something in it,
+      // so the presence test never has to be spelled twice.
       //
       // The only key `queryKeys' names that is not a column, so past this the
       // token's key IS one — `parseQuery' resolves against that list, and
@@ -1555,16 +1594,29 @@
       if (tok.key === PLANNED_KEY && !col) {
         if (!v) return () => true;               // half-typed: narrows nothing
         const dates = dateColumns();
-        if (v === "none") return (r) => dates.every((i) => !rowText(r).cells[i]);
+        if (v === EMPTY_META) return (r) => dates.every((i) => !rowText(r).cells[i]);
         return (r) => dates.some((i) => rowText(r).cells[i].startsWith(v));
       }
       if (!col) return () => true;               // no such key: narrows nothing
       const i = columns().indexOf(col);
       // `key:' with nothing after it yet — the half-typed state the suggestion
       // list exists to serve — narrows nothing, whatever the column's type.
-      // Asking for an empty cell is what `none' is for.
+      // Asking for an empty cell is what `*empty*' is for, on every key: it is
+      // the uniform meta, so it is answered before any column's own reading and
+      // before a producer's. The bare word `none' this was once spelled as is
+      // ordinary text now, and a cell reading `none' is found by `key:none'.
       if (!v) return () => true;
-      if (v === "none") return (r) => rowText(r).cells[i] === "";
+      if (v === EMPTY_META) return (r) => rowText(r).cells[i] === "";
+      // A starred word on a MULTI-valued column is that WHOLE entry, where the
+      // bare word is a substring of the delimited cell: `tag:*book*' is the tag
+      // `book' and `tag:boo' is any tag holding those letters. Decidable here —
+      // the delimiter is in the cell — so a producer and this renderer answer
+      // it identically, which is what makes it a meta both sides carry rather
+      // than one the producer resolves alone.
+      if (i === multiColumn() && META.test(v)) {
+        const want = starless(v);
+        return (r) => tagsIn(rowText(r).cells[i]).indexOf(want) !== -1;
+      }
       // A producer meta names a set only the producer can enumerate, so it is
       // matched literally here and finds nothing, and a view that declares
       // metas is expected to filter through `onFilter'. `*active*' has one term
@@ -2822,7 +2874,7 @@
           const v = tagVocab();
           const counts = new Map();
           for (const tag of v.list) counts.set(tag, (v.ids.get(tag) || new Set()).size);
-          d = { list: v.list, counts };
+          d = { list: declaredMetas(col).concat(v.list), counts };
           domains.set(col.key, d);
           return d;
         }
@@ -2989,9 +3041,15 @@
       // twelve on offer, so a domain deep enough to bury it still leads with
       // it, and the search stops once it is in hand and the list is full.
       const dom = domainOf(st.col);
+      // `*empty*' rides at the foot of every column's domain, declared or not:
+      // it is the one meta every key answers, and no column's own order has a
+      // place for a value no cell holds. A producer that named it itself keeps
+      // the place it gave it.
+      const domain = dom.list.indexOf(EMPTY_META) === -1
+        ? dom.list.concat([EMPTY_META]) : dom.list;
       /** @type {{text: string, count: number, full: boolean, dim: boolean}|null} */
       let whole = null;
-      for (const v of dom.list) {
+      for (const v of domain) {
         if (whole && out.length >= AC_MAX) break;
         const lower = String(v).toLowerCase();
         if (!opensWith(lower, p)) continue;

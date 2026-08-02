@@ -582,11 +582,11 @@ different rows, so the same token was a predicate for whoever held the tagged
 row and free text for whoever did not.
 
 One key that is not a column is **reserved**: `planned` reads the view's date
-columns together, so `planned:none` is a row nobody has put a day on,
-`-planned:none` is everything with a date, and `planned:2026-08` is a schedule
-*or* a deadline in that month. Reserved because both sides of the wire decide it
-off the cells alone — no producer set, no vocabulary, no clock — where the metas
-below need the producer.
+columns together, so `planned:*empty*` is a row nobody has put a day on,
+`-planned:*empty*` is everything with a date, and `planned:2026-08` is a
+schedule *or* a deadline in that month. Reserved because both sides of the wire
+decide it off the cells alone — no producer set, no vocabulary, no clock — where
+the producer metas below need the producer.
 
 A **suggestion list** under the box completes it. A bare word offers, in order:
 
@@ -628,30 +628,45 @@ own order, then any **badge value they did not already name**, else the distinct
 cell values — each with the number of rows behind it, and the value typed in
 full at their head whatever that order says. The two are merged rather than one
 shadowing the other, so a column that declares meta-values keeps its concrete
-keywords in the list. Neither free-text offer appears here: a half-typed
-`key:value` is already an intent. `planned` has no domain to offer at all —
-what follows it is a date prefix over several columns at once.
+keywords in the list. `*empty*` closes every one of those lists, declared or
+not. Neither free-text offer appears here: a half-typed `key:value` is already
+an intent. `planned` has no domain to offer at all — what follows it is a date
+prefix over several columns at once.
 
-**Producer meta-values.** A domain value written between asterisks —
-`*active*`, `*inactive*` — is a *producer* meta: a name for a set of values
-that only the producer can resolve. It renders dimmed and italic, apart from
-the concrete values beside it, and **carries no count**, because counting it
-here would print 0 (no cell holds the literal string) beside an entry that in
-fact matches plenty. Accepting one inserts it verbatim, asterisks and all:
-`state:*active*`.
+**Starred metas.** A value written between asterisks is a **meta**: a value with
+semantics of its own rather than cell text. A bare word is never one, so
+everything a cell can spell stays reachable as itself — `state:none` is a state
+reading `none`. Three kinds, of which the renderer answers the first two in full:
+
+- `*empty*` — the **empty cell**, on every key including `planned`. No producer
+  needed: a cell is empty or it is not.
+- `*word*` on a multi-valued column — the **whole entry**, where the bare word
+  is a substring of the delimited cell: `tag:*book*` is the tag `book` and
+  `tag:boo` is any tag holding those letters.
+- anything else — a **producer meta**, a name for a set only the producer can
+  resolve (`*active*`, `*inactive*`).
+
+A meta renders dimmed and italic, apart from the concrete values beside it, and
+**carries no count**, because counting it here would print 0 (no cell holds the
+literal string) beside an entry that in fact matches plenty. Accepting one
+inserts it verbatim, asterisks and all: `state:*active*`. It also takes no
+**sort** position for the same reason — a `values` list of metas alone orders
+nothing, and the badge palette under it still does.
 
 **A meta completes star-free.** The asterisks are reading notation — the mark
-that says the producer decides this one — so **display and commit wear them and
-matching ignores them**: `state:act` and `state:active` both offer `*active*`,
-`state:*act` still does, and the bare word `active` surfaces `state:*active*`
-through the column that declares it. Typed in full, star-free or not, it leads
-the list, so RET commits `state:*active*` from four letters.
+that says this value has semantics — so **display and commit wear them and
+completion matches through them**: `state:act` and `state:active` both offer
+`*active*`, `state:*act` still does, `emp` reaches `*empty*`, and the bare word
+`active` surfaces `state:*active*` through the column that declares it. Typed in
+full, star-free or not, it leads the list, so RET commits `state:*active*` from
+four letters. What a query **means** reads the stars, so `state:active` filters
+for the literal `active`.
 
-The local evaluator matches such a token **literally**, which is to say it
-matches nothing. That is deliberate rather than a gap: a view that declares
-metas is one whose filtering belongs to the producer, and it is expected to
-pass `onFilter` so the query is answered where the meaning lives. glance does
-exactly this, so its users never reach the literal path. **Arrows** move, **Tab**/**Enter**
+The local evaluator matches a **producer** meta literally, which is to say it
+matches nothing. That is deliberate rather than a gap: a view that declares such
+metas is one whose filtering belongs to the producer, and it is expected to pass
+`onFilter` so the query is answered where the meaning lives. glance does exactly
+this, so its users never reach the literal path. **Arrows** move, **Tab**/**Enter**
 accept, **Escape** dismisses, a click accepts without taking focus.
 
 **Row one is always the choice.** A list with anything to offer opens with its

@@ -1,6 +1,6 @@
 {
   "capability": "query",
-  "doc": "SCHEMA.md's filter micro-syntax, applied end to end: a query in, the ids it leaves out. Browser-renderer only -- table-view.el's `/' is a plain substring over the row, with no grammar to hold to this. The `state:*...*' cases are a renderer's half of a producer meta: which keywords are in a group is the producer's to say, so the only term decidable here is the empty cell SCHEMA puts in `*active*'. Most cases share the file's `view'; a case may carry one of its own, either whole or as {\"$ref\": NAME} naming one of `views'.",
+  "doc": "SCHEMA.md's filter micro-syntax, applied end to end: a query in, the ids it leaves out. Browser-renderer only -- table-view.el's `/' is a plain substring over the row, with no grammar to hold to this. The `state:*...*' cases are a renderer's half of a producer meta: which keywords are in a group is the producer's to say, so the only term decidable here is the empty cell SCHEMA puts in `*active*'. The `*empty*' and multi-valued `*word*' metas need no producer at all, so both sides answer them alike and these cases bind both. Most cases share the file's `view'; a case may carry one of its own, either whole or as {\"$ref\": NAME} naming one of `views'.",
   "views": {
     "planned": {
       "title": "planned",
@@ -25,6 +25,28 @@
                                       "scheduled": "", "deadline": "" } },
         { "id": "blank", "cells": { "state": "", "title": "nobody stated this one",
                                     "scheduled": "", "deadline": "" } }
+      ]
+    },
+    "metas": {
+      "title": "the starred family",
+      "columns": [
+        { "key": "state", "header": "State", "type": "badge",
+          "badges": [
+            { "value": "TODO", "color": "#e0af68", "group": "active" },
+            { "value": "none", "color": "#9ece6a", "group": "inactive" }
+          ] },
+        { "key": "title", "header": "Headline" },
+        { "key": "tag", "header": "Tags", "multi": true }
+      ],
+      "rows": [
+        { "id": "arch", "cells": { "state": "TODO", "title": "filed away",
+                                   "tag": ":web:archive:" } },
+        { "id": "near", "cells": { "state": "TODO", "title": "not filed",
+                                   "tag": ":archived:" } },
+        { "id": "word", "cells": { "state": "none", "title": "a state spelled none",
+                                   "tag": ":web:" } },
+        { "id": "bare", "cells": { "state": "", "title": "nothing stated",
+                                   "tag": "" } }
       ]
     },
     "tagged-planned": {
@@ -87,7 +109,7 @@
       "expect": { "ids": ["a"] } },
     { "name": "distinct keys AND", "q": "state:TODO tag:api",
       "expect": { "ids": ["a"] } },
-    { "name": "none matches the empty cell", "q": "tag:none",
+    { "name": "the empty meta matches the empty cell", "q": "tag:*empty*",
       "expect": { "ids": ["c", "d"] } },
     { "name": "the active meta matches the empty cell",
       "doc": "SCHEMA puts an unstated row in `*active*' -- live work. The keyword half of the group needs the producer's sets, so locally the empty cell is the whole answer.",
@@ -97,9 +119,9 @@
       "q": "state:*inactive*", "expect": { "ids": [] } },
     { "name": "negating the active meta drops the empty cell",
       "q": "-state:*active*", "expect": { "ids": ["a", "b", "c"] } },
-    { "name": "state:none is that same empty cell, asked for by name",
-      "doc": "Unchanged by the meta, and now a subset of it.",
-      "q": "state:none", "expect": { "ids": ["d"] } },
+    { "name": "state:*empty* is that same empty cell, asked for by name",
+      "doc": "A subset of `*active*', which takes the empty cell and the active keywords both.",
+      "q": "state:*empty*", "expect": { "ids": ["d"] } },
     { "name": "a key with nothing typed narrows nothing", "q": "state:",
       "expect": { "ids": ["a", "b", "c", "d"] } },
     { "name": "a date-shaped column matches by prefix", "q": "scheduled:2026-08",
@@ -133,10 +155,10 @@
     { "name": "planned is the date columns taken together",
       "doc": "A row is planned when EITHER date cell holds anything; `due' has only a deadline.",
       "view": { "$ref": "planned" },
-      "q": "-planned:none", "expect": { "ids": ["both", "sched", "due"] } },
-    { "name": "planned:none is a row nobody put a day on",
+      "q": "-planned:*empty*", "expect": { "ids": ["both", "sched", "due"] } },
+    { "name": "planned:*empty* is a row nobody put a day on",
       "view": { "$ref": "planned" },
-      "q": "planned:none", "expect": { "ids": ["neither", "blank"] } },
+      "q": "planned:*empty*", "expect": { "ids": ["neither", "blank"] } },
     { "name": "a planned value is the date prefix, over every date column at once",
       "view": { "$ref": "planned" },
       "q": "planned:2026-08", "expect": { "ids": ["both", "sched", "due"] } },
@@ -159,10 +181,37 @@
     { "name": "planned ANDs with a column predicate like any distinct key",
       "doc": "The agenda's shape, spelled with a concrete keyword: which keywords are `*active*' is the producer's to say, so a vector states the half decidable here.",
       "view": { "$ref": "planned" },
-      "q": "state:TODO -planned:none", "expect": { "ids": ["both", "sched"] } },
+      "q": "state:TODO -planned:*empty*", "expect": { "ids": ["both", "sched"] } },
     { "name": "a tag spelled like planned cannot take the key",
       "doc": "Two rows are tagged `:planned:' and `planned' still reads as the date key -- there is nothing left for a tag to shadow it with.",
       "view": { "$ref": "tagged-planned" },
-      "q": "planned:none", "expect": { "ids": ["t2"] } }
+      "q": "planned:*empty*", "expect": { "ids": ["t2"] } },
+
+    { "name": "a bare word is a literal, so a cell reading none is findable",
+      "doc": "The stars are what make a value a meta, so `none' reserves nothing: one row's state IS the word.",
+      "view": { "$ref": "metas" },
+      "q": "state:none", "expect": { "ids": ["word"] } },
+    { "name": "and the empty meta is the cell that holds nothing, not that word",
+      "view": { "$ref": "metas" },
+      "q": "state:*empty*", "expect": { "ids": ["bare"] } },
+    { "name": "the empty meta reads any column the same way",
+      "view": { "$ref": "metas" },
+      "q": "tag:*empty*", "expect": { "ids": ["bare"] } },
+    { "name": "a starred word on a multi-valued column is the whole entry",
+      "doc": "`:archived:' holds the letters and is not the tag, so the meta parts them where the bare word cannot.",
+      "view": { "$ref": "metas" },
+      "q": "tag:*archive*", "expect": { "ids": ["arch"] } },
+    { "name": "where the bare word is the substring it always was",
+      "view": { "$ref": "metas" },
+      "q": "tag:archive", "expect": { "ids": ["arch", "near"] } },
+    { "name": "negating the whole-entry meta keeps the row that merely holds it",
+      "view": { "$ref": "metas" },
+      "q": "-tag:*archive*", "expect": { "ids": ["near", "word", "bare"] } },
+    { "name": "and the rule is the column's, not one tag's",
+      "view": { "$ref": "metas" },
+      "q": "tag:*web*", "expect": { "ids": ["arch", "word"] } },
+    { "name": "two whole-entry metas AND, the column being multi-valued",
+      "view": { "$ref": "metas" },
+      "q": "tag:*web* tag:*archive*", "expect": { "ids": ["arch"] } }
   ]
 }
