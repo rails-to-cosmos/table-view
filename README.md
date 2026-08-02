@@ -541,10 +541,10 @@ consumer binds them and dispatches the command (`onAction`, or the
 
 **Three roles, three readings.** A *state* is a filled pill in its palette
 colour; an *applied filter* is a frost chip; a *tag* is small muted lowercase
-text with no box at all, several separating on a middot. The multi-valued column's cells render a chip per value — split by
-the same splitter the tag vocabulary uses — and the suggestion list wears a tag
-the same way wherever it names one. Presentation only: what is searched, sorted
-and measured is still the text you sent.
+text with no box at all, several separating on a middot. The multi-valued
+column's cells render a chip per value, split by the same splitter that builds
+that column's value domain. Presentation only: what is searched, sorted and
+measured is still the text you sent.
 
 ### The filter box
 
@@ -574,39 +574,34 @@ implement the same grammar at the other end. Filtering locally applies the
 parsed query; with `onFilter` the raw text goes to the producer and the grammar
 is its business.
 
-A key may also be one the **rows imply** — SCHEMA's virtual keys. The derivation
-a producer and a renderer both arrive at is org's: every distinct tag in the
-`tags` column is a key, so `contact:tanik` means tagged `contact` and matching
-`tanik`. Membership is whole-tag (`con:` is not `:contact:`), an empty value is
-presence alone (`-contact:` is everything untagged), and a column of the same
-name shadows the tag.
+An org **tag names no key**. `tag:course` is the one spelling of a tag facet,
+and the facet-then-search that `course:text` used to be is the two tokens
+`tag:course text` — the predicate reads the tags cell, the free text reads the
+row. A key derived from the ROWS could not work: a producer and a renderer hold
+different rows, so the same token was a predicate for whoever held the tagged
+row and free text for whoever did not.
 
-One virtual key is **reserved**: `planned` reads the view's date columns
-together, so `planned:none` is a row nobody has put a day on, `-planned:none` is
-everything with a date, and `planned:2026-08` is a schedule *or* a deadline in
-that month. It shadows a tag spelled like it, and it is reserved because both
-sides of the wire decide it off the cells alone — no producer set, no
-vocabulary, no clock — where the metas below need the producer.
+One key that is not a column is **reserved**: `planned` reads the view's date
+columns together, so `planned:none` is a row nobody has put a day on,
+`-planned:none` is everything with a date, and `planned:2026-08` is a schedule
+*or* a deadline in that month. Reserved because both sides of the wire decide it
+off the cells alone — no producer set, no vocabulary, no clock — where the metas
+below need the producer.
 
 A **suggestion list** under the box completes it. A bare word offers, in order:
 
 1. the **value or key it already spells** (`book` → `tag:book`, `tag` → `tag:`)
-   — the one offer that needs no more typing, so it leads even the `book:` key
-   beside it, which asks for the same rows in a token still half written;
+   — the one offer that needs no more typing;
 2. the **text itself**, as a free-text token (`rf` → `"rf"`, committed `rf`);
-3. the **keys** it opens — the view's columns, then the tags the rows imply
-   (`boo` → `book:`, with the count of rows holding it), a key it spells in full
-   ahead of the ones it only opens;
+3. the **keys** it opens — the view's columns, and `planned` — a key it spells
+   in full ahead of the ones it only opens;
 4. the columns whose declared domain holds it as a **value** by prefix (`TOD` →
-   `state:TODO`) — exact facts about the data;
+   `state:TODO`, `boo` → `tag:book` with the count of rows holding it) — exact
+   facts about the data;
 5. up to five whole **titles** it is inside, prefix hits first (`tanik` →
-   `"tanik's birthday gift and party"`);
-6. and, only when nothing exact was found, up to five **word completions**,
-   dimmed: whole title words starting with what was typed, paired with the tags
-   their rows carry (`tan` → `contact:tanik`). Every one of them is a query that
-   finds something, by construction — it was counted from the rows it came from.
+   `"tanik's birthday gift and party"`).
 
-Exact beats fuzzy, and fuzzy never crowds.
+Exact beats fuzzy.
 
 **Two of those offers are free text**, and each says which it is in a muted
 aside where the others print a count.
@@ -621,13 +616,12 @@ choice* a plain search would otherwise be reachable only by quoting or by
 Escape, which is a grammar lesson charged for a search.
 
 A **title** (`title`) is a whole title one of the loaded rows carries, committed
-quoted because titles hold spaces. A reader typing a fragment of a headline is
-after the **row**, so its own title outranks the derived `contact:tanik`
-pairings below it — a title is a thing that reader has seen, where the pairing
-is a key the renderer worked out. The vocabulary is the loaded set,
-deduplicated; the tier is capped at five inside the twelve the list takes, and
-takes the word completions' two-character floor for the same reason they do.
-Neither offer is dimmed: both are facts.
+quoted because titles hold spaces: a reader typing a fragment of a headline is
+after the **row**, and a title is a thing that reader has seen. The set is the
+loaded rows', deduplicated; the tier is capped at five inside the twelve the
+list takes, and waits for two characters, one letter being inside most of a
+store and saying nothing about any of it. Neither offer is dimmed: both are
+facts.
 
 After `key:` comes that column's value domain: its declared `values` in their
 own order, then any **badge value they did not already name**, else the distinct
@@ -635,9 +629,8 @@ cell values — each with the number of rows behind it, and the value typed in
 full at their head whatever that order says. The two are merged rather than one
 shadowing the other, so a column that declares meta-values keeps its concrete
 keywords in the list. Neither free-text offer appears here: a half-typed
-`key:value` is already an intent. A virtual key has no domain to offer at all —
-under a tag key what follows is ordinary text, and under `planned` it is a date
-prefix.
+`key:value` is already an intent. `planned` has no domain to offer at all —
+what follows it is a date prefix over several columns at once.
 
 **Producer meta-values.** A domain value written between asterisks —
 `*active*`, `*inactive*` — is a *producer* meta: a name for a set of values

@@ -174,14 +174,17 @@ A shared micro-syntax for the filter box, so producers filtering server-side
 whitespace (`&` accepted as an alias); each token is:
 
 - `key:value` — a field predicate, **only when `key` is a column `key`** of
-  the view (`=` accepted as an alias for `:`) **or a producer-defined
-  virtual key**. Otherwise the token is free text — org cell text like
-  `:work:` or `=code=` never turns into a predicate by accident. Virtual
-  keys must be derivable identically by producer and renderer from the view
-  data (e.g. glance: every distinct org tag in the `tags` column is a key;
-  `contact:tanik` = tagged `contact` AND matching `tanik`). Columns shadow
-  virtual keys on collision, and `planned` (below) shadows a virtual key
-  spelled like it.
+  the view (`=` accepted as an alias for `:`) **or `planned`** (below).
+  Otherwise the token is free text — org cell text like `:work:` or `=code=`
+  never turns into a predicate by accident, and neither does an org TAG:
+  `tag:course` is the one spelling of a tag facet, and the facet-then-search
+  it used to be spelled as is the two tokens `tag:course text`. A key derived
+  from the ROWS is not available to either side: producer and renderer hold
+  different rows, so the same token would be a predicate for one and free text
+  for the other. A producer may still add a key of its OWN — one it names
+  rather than derives — provided a renderer reading it as free text narrows to
+  a subset of what the producer answers (glance's `ref:ROWID`, over a link
+  graph only the store holds, is one).
 - `"quoted text"` — free text containing spaces.
 - `-token` — negation of either form.
 - anything else — free text, case-insensitive substring over the row's cells.
@@ -203,16 +206,16 @@ not partition the column and `-state:*active*` excludes the empty cell);
 `text`/`number` — case-insensitive substring; date-shaped text cells —
 prefix match (`scheduled:2026-08`).
 
-**`planned`** is a reserved virtual key over a view's **date columns taken
-together**: a row is planned when any of them holds anything. So
+**`planned`** is the one reserved key that is not a column, over a view's **date
+columns taken together**: a row is planned when any of them holds anything. So
 `planned:none` is a row nobody has put a day on, `-planned:none` is everything
 with a date, and a value is the same prefix a date column takes, asked of every
 date column at once — `planned:2026-08` is a schedule *or* a deadline falling in
 that month. It is single-valued, so repeats OR (`planned:A planned:B` = either).
 Reserved because both sides decide it off the cells alone — no producer set, no
-vocabulary and no clock — which is what a virtual key has to be to work on both
-halves of the wire; a row therefore never reads as planned on one side and not
-on the other. WHICH columns are dates is the same asymmetry the prefix rule
+vocabulary and no clock — which is what a key with no column behind it has to be
+to work on both halves of the wire; a row therefore never reads as planned on
+one side and not on the other. WHICH columns are dates is the same asymmetry the prefix rule
 already carries: a producer knows its own, a renderer samples cell shape, so a
 page holding fewer than two dated rows finds no date column and answers
 `planned:` more narrowly than the producer would.

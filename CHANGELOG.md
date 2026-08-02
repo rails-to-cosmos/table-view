@@ -5,6 +5,35 @@ the rails-to-cosmos ELPA archive publishes date-stamped snapshots.
 
 ## Unreleased
 
+### Removed
+- **Virtual tag keys, from the grammar and from the suggestion list
+  (SCHEMA.md + browser renderer).** An org tag no longer names a filter
+  key: `course:text` is free text, colon and all, and `tag:course text`
+  is the one spelling — the predicate reads the tags cell, the free text
+  reads the row, and nothing expressible is lost. What is bought is the
+  worst divergence the grammar had: the keys a query could name were
+  DERIVED FROM ROWS, and a producer and a renderer hold different rows,
+  so the same token was a predicate for whoever held the tagged row and
+  free text for whoever did not. The two readings differ in one respect
+  and it is written down: `tag:` matches its column by SUBSTRING where
+  the tag key matched whole-tag, so `tag:glan` finds a row tagged
+  `:glance:` where `glan:` found nothing.
+  `tokenTest`'s virtual-key branch, `queryKeys`'s vocabulary half (it
+  and `namedKeys` are now one function) and `manyValued`'s tag arity go
+  with it. `tagVocab` stays, as the tags column's VALUE DOMAIN: `tag:`
+  completes and counts against it, and the cells still render a chip per
+  value from the same splitter.
+- **Scoped word completions from the suggestion list.** The tier that
+  offered `contact:tanik` for `tan` — whole title words paired with the
+  tags their rows sat under — composed a token the grammar no longer
+  has. Its machinery goes: the title WORD index and its postings (the
+  index is the distinct titles now), `scopedCompletions`, `lowerBound`,
+  the punctuation-stripping `bareWord`/`EDGES` pair that existed so a
+  title word could not compose a tag it was not, `tagVocab`'s per-row
+  map, and the suggestion row's tag ornament. The whole-TITLE tier
+  stands, which is what a reader typing a fragment of a headline was
+  reaching for.
+
 ### Added
 - **`planned`, a reserved virtual filter key over the date columns
   (SCHEMA.md + browser renderer).** A row is planned when any of the
@@ -14,16 +43,15 @@ the rails-to-cosmos ELPA archive publishes date-stamped snapshots.
   them at once — `planned:2026-08` is a schedule *or* a deadline in that
   month. Single-valued, so repeats OR. It is RESERVED because both
   halves of the wire decide it off the cells alone: no producer set, no
-  vocabulary, no clock, which is what a virtual key has to be to work on
-  both sides, and it therefore shadows a tag spelled like it the way a
-  column key would. WHICH columns are dates carries the asymmetry the
-  prefix rule already has — a producer knows its own, this renderer
-  samples cell shape — so a page holding fewer than two dated rows finds
-  no date column and answers more narrowly than the producer.
+  vocabulary, no clock, which is what a key with no column behind it has
+  to be to work on both sides. WHICH columns are dates carries the
+  asymmetry the prefix rule already has — a producer knows its own, this
+  renderer samples cell shape — so a page holding fewer than two dated
+  rows finds no date column and answers more narrowly than the producer.
   `fixtures/parity/filter-query.json` gains ten cases over two views of
-  their own; the driver gains the key's standing in the vocabulary
-  (offered as a key, offered once, shadowing the tag, and no value list
-  to enumerate). `table-view.el` has no query grammar and is untouched.
+  their own; the driver gains the key's standing (offered as a key,
+  offered once, and no value list to enumerate). `table-view.el` has no
+  query grammar and is untouched.
 - **`sortBy(column, ascending)` on the browser renderer's handle.** A
   header click TOGGLES; this STATES an order, so a consumer applying a
   canned view — glance's agenda — lands on the same one every time it is

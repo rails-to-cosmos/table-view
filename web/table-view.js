@@ -63,8 +63,8 @@
  *   win over the palette, materialize sheets included.
  * - Which column is multi-valued is resolved once and read everywhere: a
  *   column declaring `multi: true' settles it, and only when none does is it
- *   guessed from cell shape. The comparator, the vocabulary, the virtual tag
- *   keys and the filter's AND/OR rule all read that one verdict.
+ *   guessed from cell shape. The comparator, that column's value domain and the
+ *   filter's AND/OR rule all read that one verdict.
  * - The chrome — bar, title, filter chips, filter input, table skeleton, hint —
  *   is built once at mount. Updates touch only the row window, the hint line,
  *   the sort arrows and the chips, so the filter input keeps focus and caret
@@ -204,24 +204,21 @@
  *   highlight the box and a producer can implement the same grammar. Filtering
  *   locally applies the parsed query; with `onFilter' the raw text goes to the
  *   producer and the grammar is its business.
- * - Besides the view's columns, a key may be one the rows imply: SCHEMA calls
- *   these virtual keys, and the one derivation a producer and a renderer can
- *   both arrive at is org's — every distinct tag in the `tags' column is a key,
- *   so `contact:tanik' is tagged `contact' and matching `tanik'. Membership is
- *   whole-tag (`con:' is not `:contact:'), an empty value is presence alone, and
- *   a column of the same name shadows the tag.
+ * - The keys are the view's own: its columns, and `planned' (SCHEMA's one
+ *   reserved key, over the date columns together). An org TAG is not one —
+ *   `tag:course' is the one spelling, and `course:text' is the two tokens
+ *   `tag:course text' — so the same token means the same thing on both halves
+ *   of the wire, where a vocabulary read off the loaded rows made it a
+ *   predicate for whoever held the tagged row and free text for whoever did not.
  * - A suggestion list under the box completes it. A bare word offers, in order:
  *   the value or key it already SPELLS (`book' → `tag:book', `tag' → `tag:'),
  *   which needs no more typing; the TEXT ITSELF as a free-text token; the
  *   column keys it opens; the columns whose declared domain holds it as a value
- *   by prefix (`TOD' → `state:TODO'); up to five whole TITLES it is inside,
- *   prefix hits first; and, only when nothing exact was found, up to five tags
- *   whose rows merely contain it, dimmed. Exact beats fuzzy and fuzzy never
- *   crowds — a scoped count is a substring count and must not dress like a
- *   value match. After `key:' comes that column's value domain (`values', else
- *   the badge palette, else the distinct cell values), each with the number of
- *   rows behind it and the value typed in full at its head; a virtual key has
- *   no domain to offer.
+ *   by prefix (`TOD' → `state:TODO'); and up to five whole TITLES it is inside,
+ *   prefix hits first. Exact beats fuzzy throughout. After `key:' comes that
+ *   column's value domain (`values', else the badge palette, else the distinct
+ *   cell values), each with the number of rows behind it and the value typed in
+ *   full at its head; `planned' has no domain to offer.
  *   Arrows — and C-n/C-p, which both editors' users reach for here — move it,
  *   Esc dismisses, and a click accepts without taking focus. Tab completes and
  *   stays, at either stage. Enter is stage-aware: completing a key leaves the
@@ -236,10 +233,9 @@
  *   and quotes are written only where the text holds whitespace or a colon. A
  *   TITLE (`title') is a whole title one of the loaded rows carries, committed
  *   quoted because titles hold spaces: a reader typing a fragment of a headline
- *   is after the ROW, so its own title outranks the derived `contact:tanik'
- *   pairings below it. Both are facts, so neither is dimmed; the titles are the
- *   loaded set's, deduplicated, and take the scoped tier's two-character floor
- *   for the scoped tier's reason.
+ *   is after the ROW. Both are facts, so neither is dimmed; the titles are the
+ *   loaded set's, deduplicated, and wait for two characters, one letter being
+ *   inside most of a store and saying nothing about any of it.
  * - ROW ONE IS ALWAYS THE CHOICE. An open list means Enter takes its first
  *   offer, so the common case costs no arrow; the ordering above is the whole
  *   of what that key means. The literal being an offer of its own is what keeps
@@ -455,17 +451,6 @@
     const ua = typeof navigator === "object" && navigator ? navigator.userAgent || "" : "";
     return /Chrom(e|ium)\//.test(ua) && !/Firefox|Electron\//.test(ua);
   }
-
-  /**
-   * Punctuation a word wears in prose and never in a query. Stripped from both
-   * edges of every indexed word and of every prefix matched against them, so
-   * the two forms agree — and, colons being among them, so that no title word
-   * can compose a suggestion that reads like a tag it is not. "Lisp:" indexes
-   * as lisp; a colon in a suggestion comes from a real tag or from nowhere.
-   * Interior punctuation stays: hyphens and underscores are part of a word.
-   */
-  const EDGES = /^[:,.;!?"'()[\]{}]+|[:,.;!?"'()[\]{}]+$/g;
-  const bareWord = (w) => w.replace(EDGES, "");
 
   /**
    * The values CELL spells, org-style: `:a:b:' is a and b. The one splitter —
@@ -891,7 +876,8 @@
    are, in the ink the counts wear: it annotates the row, and no row carries
    both. */
 .tv-ac-aside{color:var(--tv-muted)}
-/* A scoped tag is a substring count, and reads as one. */
+/* A producer meta names a set only the producer can enumerate, and reads as
+   the notation it is rather than as a value beside the concrete ones. */
 .tv-ac-dim{opacity:.6;font-style:italic}
 .tv-ac-note{padding:5px 10px;border-top:1px solid var(--tv-border);
   color:var(--tv-muted);font-size:11px;white-space:nowrap}
@@ -987,8 +973,8 @@
 .tv-tag,.tv-tags{color:var(--tv-muted);font-size:.92em}
 .tv-tags .tv-tag{font-size:inherit;color:inherit}   /* never compound the two */
 /* Shown in the form a query spells them, so what is read is what is typed: the
-   vocabulary lowercases, and a key typed in any other case is free text. Done
-   in the stylesheet rather than in the markup, so the text a copy takes is the
+   value domain lowercases, and the tag key matches its value folded. Done in
+   the stylesheet rather than in the markup, so the text a copy takes is the
    text the file holds. */
 .tv-tag{text-transform:lowercase}
 .tv-pill{display:inline-block;padding:0 8px;border-radius:999px;
@@ -1177,7 +1163,7 @@
 
     /**
      * Forget what was read off the rows: value domains, the tag vocabulary and
-     * the word index. The index is the expensive one, so its rebuild is queued
+     * the title index. The index is the expensive one, so its rebuild is queued
      * for an idle moment rather than left for whoever types next.
      */
     function dropDomains() {
@@ -1189,8 +1175,8 @@
       // evidence: a table mounted before its rows arrive — an empty store, a
       // query that matched nothing, a mount filled by `setRows' a moment later
       // — decides there is no such column and never looks again, and the tag
-      // keys, their values and their arity all go with it.  Date-ness is read
-      // off the rows the same way and dies with them for the same reason.
+      // values and their arity go with it.  Date-ness is read off the rows the
+      // same way and dies with them for the same reason.
       multiAt = undefined;
       dateAt = undefined;
       queueIndex();
@@ -1215,13 +1201,12 @@
     }
 
     /**
-     * The virtual keys, and the rows behind each. SCHEMA lets a producer define
-     * keys that are not columns, provided a renderer can derive the same set
-     * from the same view data; the one derivation both sides agree on is org's
-     * — every distinct tag in the `tags' column is a key. Cached and thrown
-     * away with the text cache, since the rows are what it was read off.
-     * @type {{list: string[], ids: Map<string, Set<string>>,
-     *          byRow: Map<string, string[]>}|null}
+     * The multi-valued column's VALUE DOMAIN: every distinct tag its cells
+     * spell, and the rows behind each. It is what `tag:' completes against and
+     * counts by — a raw `:a:b:' cell can never prefix-match a bare word.
+     * Cached and thrown away with the text cache, since the rows are what it
+     * was read off.
+     * @type {{list: string[], ids: Map<string, Set<string>>}|null}
      */
     let vocab = null;
 
@@ -1266,31 +1251,25 @@
     /** @type {number|undefined} */
     let multiAt;
 
-    /** The `title' column's index, or -1; where a scoped completion finds words. */
+    /** The `title' column's index, or -1; where a whole-title offer is read. */
     function titleColumn() { return columns().findIndex((c) => c.key === "title"); }
 
     /**
-     * The tag vocabulary, derived once per row set: the tags themselves, the
-     * rows each holds, and each row's tags. Both directions are kept because
-     * both are asked for on the hot paths — membership when a predicate runs,
-     * and a row's tags when the suggestions count them — and deriving either
-     * from the other per keystroke means splitting cells all over again.
+     * The tag vocabulary, derived once per row set: the tags themselves, sorted,
+     * and the rows each holds. The rows are what the count beside an offer
+     * counts, so they are kept rather than recounted per keystroke.
      */
     function tagVocab() {
       if (vocab) return vocab;
       const at = multiColumn();
-      const ids = new Map(), byRow = new Map();
+      const ids = new Map();
       if (at !== -1)
-        for (const r of state.rows) {
-          const tags = tagsIn(rowText(r).cells[at]);
-          if (!tags.length) continue;
-          byRow.set(r.id, tags);
-          for (const tag of tags) {
+        for (const r of state.rows)
+          for (const tag of tagsIn(rowText(r).cells[at])) {
             const held = ids.get(tag);
             if (held) held.add(r.id); else ids.set(tag, new Set([r.id]));
           }
-        }
-      vocab = { list: Array.from(ids.keys()).sort(), ids, byRow };
+      vocab = { list: Array.from(ids.keys()).sort(), ids };
       return vocab;
     }
 
@@ -1482,30 +1461,21 @@
     const columnKeys = () => columns().map((c) => c.key);
 
     /**
-     * The keys the VIEW itself implies: its columns, then `planned' where no
-     * column already carries that name. One spelling for the two places that
+     * Every key a predicate may name: the view's columns, then `planned' where
+     * no column already carries that name. One spelling for the two places that
      * ask — the resolution list and the completion tier — so a view with a
      * column of its own called `planned' cannot list it twice in one and once
      * in the other.
-     */
-    function namedKeys() {
-      const keys = columnKeys();
-      if (keys.indexOf(PLANNED_KEY) === -1) keys.push(PLANNED_KEY);
-      return keys;
-    }
-
-    /**
-     * Every key a predicate may name: the columns, then the virtual keys the
-     * rows imply. Columns lead, so a tag sharing a column's name is shadowed by
-     * it — SCHEMA's collision rule, and the reason resolution is one ordered
-     * list rather than two lookups.
+     *
+     * The view's own, and nothing the rows imply: an org tag names no key, so
+     * `tag:course' is the one spelling and `course:text' is the two tokens
+     * `tag:course text'. A vocabulary read off the rows made the SAME token a
+     * predicate for a renderer holding the tagged row and free text for one
+     * that was not, which is a query meaning two things on one wire.
      */
     function queryKeys() {
-      // `planned' is neither a column nor a tag, and it outranks a tag spelled
-      // like it — `tokenTest' answers it before it reaches the vocabulary — so
-      // the view's own keys lead and the tags follow.
-      const keys = namedKeys();
-      for (const tag of tagVocab().list) if (keys.indexOf(tag) === -1) keys.push(tag);
+      const keys = columnKeys();
+      if (keys.indexOf(PLANNED_KEY) === -1) keys.push(PLANNED_KEY);
       return keys;
     }
 
@@ -1574,25 +1544,21 @@
         // pure-free-text query costs exactly what it did before.
         return v ? (r) => rowText(r).search.includes(v) : () => true;
       const col = colByKey(tok.key);
-      // The date columns as one field, ahead of the vocabulary so a tag spelled
-      // `planned' is shadowed the way a column would shadow it. `none' is the
-      // row nobody put a day on; a value is the same prefix a date column takes,
-      // asked of every one of them, and a cell that prefix-matches is a cell
-      // with something in it, so the presence test never has to be spelled twice.
+      // The date columns as one field. `none' is the row nobody put a day on; a
+      // value is the same prefix a date column takes, asked of every one of
+      // them, and a cell that prefix-matches is a cell with something in it, so
+      // the presence test never has to be spelled twice.
+      //
+      // The only key `queryKeys' names that is not a column, so past this the
+      // token's key IS one — `parseQuery' resolves against that list, and
+      // anything else arrived as free text and left at the top.
       if (tok.key === PLANNED_KEY && !col) {
         if (!v) return () => true;               // half-typed: narrows nothing
         const dates = dateColumns();
         if (v === "none") return (r) => dates.every((i) => !rowText(r).cells[i]);
         return (r) => dates.some((i) => rowText(r).cells[i].startsWith(v));
       }
-      if (!col) {
-        // A virtual key: carrying the tag, and matching the text beside it.
-        // Membership comes from the vocabulary rather than from the cell, so
-        // `con:' cannot match `:contact:' — the same split built both.
-        const ids = tagVocab().ids.get(tok.key) || new Set();
-        if (!v) return (r) => ids.has(r.id);
-        return (r) => ids.has(r.id) && rowText(r).search.includes(v);
-      }
+      if (!col) return () => true;               // no such key: narrows nothing
       const i = columns().indexOf(col);
       // `key:' with nothing after it yet — the half-typed state the suggestion
       // list exists to serve — narrows nothing, whatever the column's type.
@@ -1630,9 +1596,9 @@
     function manyValued(key) {
       const col = colByKey(key);
       // `planned' stands over the date columns, which are single-valued, so it
-      // ORs its repeats the way they do: `planned:A planned:B' is either.
-      if (!col) return key !== PLANNED_KEY;  // a virtual key is one of its values
-      return columns().indexOf(col) === multiColumn();
+      // ORs its repeats the way they do: `planned:A planned:B' is either. It is
+      // the one key with no column behind it, so a column is the whole question.
+      return !!col && columns().indexOf(col) === multiColumn();
     }
 
     function queryMatcher(q) {
@@ -1653,8 +1619,7 @@
       // only hold one of them, so repeating it means either (`state:TODO
       // state:DONE'). A multi-valued one can hold both, so repeating it means
       // both — GitHub's label semantics, and org's, `tag:a tag:b' being a row
-      // carrying each. The virtual keys are that column's values, so they
-      // inherit its arity.
+      // carrying each.
       for (const [key, g] of groups)
         musts.push(g.length === 1 ? g[0] : manyValued(key) ? (r) => {
           for (const t of g) if (!t(r)) return false;
@@ -2823,15 +2788,14 @@
     // never asked, and the list is only ever an aid to typing the grammar.
 
     const AC_MAX = 12;          // suggestions offered at once
-    const SCOPED_MAX = 5;       // scoped completions offered, when nothing exact was found
-    const SCOPED_MIN = 2;       // ... and only past this much typing
-    const TITLE_MAX = 5;        // whole titles offered, on the same floor
+    const TITLE_MAX = 5;        // whole titles offered
+    const TITLE_MIN = 2;        // ... and only past this much typing
     const DOMAIN_MAX = 200;     // distinct values kept before the prefix narrows them
 
     /**
      * @type {{stage: string, tok: Token,
      *         items: {text: string, count: number, full: boolean, dim: boolean,
-     *                  tag?: string, show?: string, aside?: string}[]}|null}
+     *                  show?: string, aside?: string}[]}|null}
      */
     let ac = null;
     let acAt = 0;
@@ -2899,9 +2863,9 @@
       const t = tokenAtCaret();
       if (!t || t.quoted) return null;
       if (t.key !== null) {
-        // A virtual key takes no value list: under a tag key what follows is
-        // free text over the rows it scopes, and under `planned' it is a date
-        // prefix over several columns at once. Neither is a domain to enumerate.
+        // `planned' takes no value list: what follows it is a date prefix over
+        // several columns at once, which is no domain to enumerate. It is the
+        // one key with no column behind it, so every other one has a domain.
         const col = colByKey(t.key);
         return col ? { stage: "value", tok: t, col, prefix: t.value } : null;
       }
@@ -2919,7 +2883,7 @@
      * of what that key means: WHAT THE WORD SPELLS IN FULL LEADS WHAT IT MERELY
      * OPENS, at either stage.
      * @returns {{text: string, count: number, full: boolean, dim: boolean,
-     *             tag?: string, show?: string, aside?: string}[]}
+     *             show?: string, aside?: string}[]}
      */
     function suggestFor(st) {
       const p = st.prefix.toLowerCase();
@@ -2958,27 +2922,18 @@
           const top = hits.shift();
           out.push({ text: top.text, count: top.count, full: true, dim: top.dim });
         }
-        // 2. The keys the word opens — the view's columns, then the keys the
-        //    rows imply. Both are exact facts, so neither is dimmed; the
-        //    columns come first because they are the view's own vocabulary,
-        //    and a tag carries the count of the rows that hold it, a column
-        //    having no one number to show.  `planned' rides with the columns:
-        //    it is the view's own vocabulary too, and having it in this list is
-        //    also what keeps a tag spelled like it out of the tier below.
-        const keys = namedKeys();
+        // 2. The keys the word opens — the view's columns, and `planned' with
+        //    them, it being the view's own vocabulary too. Exact facts, so
+        //    none is dimmed, and none carries a count: a column has no one
+        //    number to show. A TAG is not among them — `tag:course' is the one
+        //    spelling, and tier 1 or 3 offers it as the value it is.
+        const keys = queryKeys();
         const opens = keys.filter((k) => k.toLowerCase().startsWith(p));
         // A key the word spells in full leads the ones it only opens.
         for (const k of opens.filter((k) => k.toLowerCase() === p)
                              .concat(opens.filter((k) => k.toLowerCase() !== p))) {
           out.push({ text: k + ":", count: -1, full: false, dim: false });
           if (out.length === AC_MAX) break;
-        }
-        const held = tagVocab().ids;
-        for (const tag of tagVocab().list) {
-          if (out.length === AC_MAX) break;
-          const rows = held.get(tag);
-          if (!rows || keys.indexOf(tag) !== -1 || !tag.startsWith(p)) continue;
-          out.push({ text: tag + ":", count: rows.size, full: false, dim: false, tag });
         }
         // 3. The values it merely opens, in the order the sort left them.
         for (const hit of hits) {
@@ -2987,13 +2942,11 @@
         }
         // 4. The TITLES the text is inside, whole. Someone typing a fragment of
         //    a headline is looking for the ROW, so the offer is that row's own
-        //    title as a free-text token, ahead of the derived pairings below —
-        //    a title is a thing the reader has seen, where `contact:tanik' is a
-        //    key the renderer worked out. Prefix hits lead the ones that merely
-        //    hold it, the same rule the tiers above follow. On the scoped
-        //    floor, and for the scoped reason: one letter is inside most of the
-        //    store and says nothing about any of it.
-        if (p.length >= SCOPED_MIN) {
+        //    title as a free-text token — a title is a thing the reader has
+        //    seen. Prefix hits lead the ones that merely hold it, the same rule
+        //    the tiers above follow. On a floor of its own: one letter is
+        //    inside most of the store and says nothing about any of it.
+        if (p.length >= TITLE_MIN) {
           const opensT = [], holds = [];
           for (const t of titleIndex().titles) {
             if (t.lower.indexOf(p) === -1) continue;
@@ -3017,19 +2970,6 @@
                        count: -1, full: true, dim: false });
           }
         }
-        // 5. Words the rows finish for it, scoped to the tag they were found
-        //    under. Only an EXACT value match makes these redundant — a value
-        //    merely opening with what was typed is a guess of the same kind, so
-        //    the two stand together. They are dimmed either way: a scoped count
-        //    counts a word in a title and must not dress like a value match. A
-        //    single letter completes to most of the store, which says nothing
-        //    and costs a pass over every row to say.
-        if (!exact && p.length >= SCOPED_MIN)
-          for (const hit of scopedCompletions(p).slice(0, SCOPED_MAX)) {
-            if (out.length === AC_MAX) break;
-            out.push({ text: hit.tag + ":" + hit.word, count: hit.count,
-                       full: true, dim: true, tag: hit.tag });
-          }
         // THE LITERAL, spliced to its rank rather than pushed: it leads, so the
         // caps above cannot crowd it out, the way the exact value is seeded
         // ahead of them. Row one is what RET takes, and without this row a
@@ -3037,8 +2977,9 @@
         // grammar lesson charged for a search. It yields to one thing: an offer
         // that SPELLS what was typed, which is an answer where this is the
         // letters back again.
-        const spelled = exact || keys.some((k) => k.toLowerCase() === p)
-                              || tagVocab().list.indexOf(p) !== -1;
+        // A tag spelled in full needs no clause of its own: the tags column's
+        // domain IS the vocabulary, so tier 1 has already called it exact.
+        const spelled = exact || keys.some((k) => k.toLowerCase() === p);
         out.splice(spelled ? 1 : 0, 0, literalOffer(st.prefix));
         if (out.length > AC_MAX) out.pop();
         return out;
@@ -3092,30 +3033,20 @@
     }
 
     /**
-     * What was read off the titles, in one pass and one cache: every title
-     * word, sorted, with the tags it appears under and how many rows each of
-     * those pairings covers; and the distinct titles themselves, in row order,
-     * lowercased beside the RAW cell they came from — the cased text is what
-     * `displayText' costs a link parse for, and only the few titles offered
-     * need it. Built whole on first use rather
-     * than patched: a prefix query wants sorted words, an upsert can move any
-     * of them, and rebuilding on the next keystroke is both simpler and cheaper
-     * than keeping a sorted structure correct through every row change.
-     * Thrown away with the text cache, which is where it was read from.
-     * A posting is a flat `[tag, count, tag, count, …]' rather than a map:
-     * most words sit under one or two tags, and at this size the allocation of
-     * a map per word costs more than the linear scan of a short array saves.
-     * @type {{words: string[], posts: (string|number)[][],
-     *         titles: {lower: string, cell: Cell|undefined}[]}|null}
+     * The distinct titles, in row order, lowercased beside the RAW cell they
+     * came from — the cased text is what `displayText' costs a link parse for,
+     * and only the few titles offered need it. Built whole on first use rather
+     * than patched: an upsert can move any of them, and rebuilding on the next
+     * keystroke is both simpler and cheaper than keeping the set correct
+     * through every row change. Thrown away with the text cache, which is where
+     * it was read from.
+     * @type {{titles: {lower: string, cell: Cell|undefined}[]}|null}
      */
     let wordIndex = null;
 
     function titleIndex() {
       if (wordIndex) return wordIndex;
-      const byRow = tagVocab().byRow;
       const at = titleColumn();
-      /** @type {Map<string, (string|number)[]>} */
-      const acc = new Map();
       /** @type {{lower: string, cell: Cell|undefined}[]} */
       const titles = [];
       const seen = new Set();
@@ -3123,81 +3054,12 @@
       if (at !== -1)
         for (const r of state.rows) {
           const lower = rowText(r).cells[at];
-          // The titles are every row's, where the words below are only a
-          // TAGGED row's: a title is offered as itself and needs no tag to be
-          // paired with.
-          if (lower && !seen.has(lower)) {
-            seen.add(lower);
-            titles.push({ lower, cell: (r.cells || {})[titleKey] });
-          }
-          const tags = byRow.get(r.id);
-          if (!tags) continue;
-          // A literal split does here what a regex one would: `displayText'
-          // has already turned every run of control characters into a single
-          // space, and the empty strings a double space leaves are skipped.
-          // Edge punctuation goes before anything else looks at the word, so
-          // the deduplication below sees the forms a query would.
-          const words = lower.split(" ").map(bareWord);
-          for (let w = 0; w < words.length; w++) {
-            const word = words[w];
-            // A word twice in one title is still one row; the titles are short
-            // enough that looking back beats a set per row.
-            if (!word || words.indexOf(word) !== w) continue;
-            let post = acc.get(word);
-            if (!post) acc.set(word, (post = []));
-            for (const tag of tags) {
-              let i = 0;
-              while (i < post.length && post[i] !== tag) i += 2;
-              if (i < post.length) post[i + 1] = /** @type {number} */ (post[i + 1]) + 1;
-              else post.push(tag, 1);
-            }
-          }
+          if (!lower || seen.has(lower)) continue;
+          seen.add(lower);
+          titles.push({ lower, cell: (r.cells || {})[titleKey] });
         }
-      const words = Array.from(acc.keys()).sort();
-      const built = { words, posts: words.map((w) => acc.get(w) || []), titles };
-      wordIndex = built;
-      return built;
-    }
-
-    /** The first index in WORDS at or after P. @param {string[]} words */
-    function lowerBound(words, p) {
-      let lo = 0, hi = words.length;
-      while (lo < hi) {
-        const mid = (lo + hi) >> 1;
-        if (words[mid] < p) lo = mid + 1; else hi = mid;
-      }
-      return lo;
-    }
-
-    /**
-     * Scoped completions for the prefix P: title words that begin with it,
-     * each paired with a tag of the rows it was found in. Typing `tan' offers
-     * `contact:tanik' — a completion of the word rather than an echo of the
-     * fragment, so every row offered matches at least the rows it was counted
-     * from, and accepting one can never come back empty.
-     *
-     * The sorted index makes this the prefix range and its postings: a binary
-     * search and a walk to the end of the range, rather than a pass over the
-     * rows per keystroke.
-     * @param {string} prefix  @returns {{tag: string, word: string, count: number}[]}
-     */
-    function scopedCompletions(prefix) {
-      const idx = titleIndex();
-      const p = bareWord(prefix);       // matched against words cleaned the same way
-      if (!p) return [];
-      const out = [];
-      for (let i = lowerBound(idx.words, p); i < idx.words.length; i++) {
-        const word = idx.words[i];
-        if (!word.startsWith(p)) break;
-        if (word.length === p.length) continue;   // what was typed completes nothing
-        const post = idx.posts[i];
-        for (let k = 0; k < post.length; k += 2)
-          out.push({ tag: /** @type {string} */ (post[k]),
-                     word, count: /** @type {number} */ (post[k + 1]) });
-      }
-      return out.sort((a, b) => b.count - a.count
-                             || (a.tag === b.tag ? (a.word < b.word ? -1 : 1)
-                                                 : (a.tag < b.tag ? -1 : 1)));
+      wordIndex = { titles };
+      return wordIndex;
     }
 
     function closeAc() {
@@ -3212,11 +3074,7 @@
       let html = "";
       for (let i = 0; i < ac.items.length; i++) {
         const it = ac.items[i];
-        // A row naming a tag wears it the way the cells do, so the same value
-        // is the same shape wherever it is read.
-        const label = it.tag
-          ? `<span class="tv-tag">${esc(it.tag)}</span>${esc(it.text.slice(it.tag.length))}`
-          : esc(it.show === undefined ? it.text : it.show);
+        const label = esc(it.show === undefined ? it.text : it.show);
         // A row saying what it IS takes the slot a count would have used: both
         // annotate the offer, and neither has anything to say beside the other.
         html += `<div class="tv-ac-item${it.dim ? " tv-ac-dim" : ""}`
