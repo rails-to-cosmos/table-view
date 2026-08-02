@@ -454,6 +454,36 @@ the rails-to-cosmos ELPA archive publishes date-stamped snapshots.
   consumer that says nothing sees the line it always saw.
 
 ### Changed
+- **The typed text is an offer of its own, and so is a whole title**
+  (browser renderer; the bare-word stage, renderer-local, no grammar or
+  SCHEMA change). Row one is what RET takes, which had left a plain text
+  search reachable only by quoting the word or by dismissing the list —
+  a grammar lesson charged for a search. The list now carries what it
+  will do: **the literal**, drawn quoted with a muted `text search`
+  aside and committed BARE, the quoting being the grammar's notation for
+  text rather than part of the token (quotes are written into the commit
+  only where the text holds whitespace or a colon and a bare token would
+  break up); and **up to five whole titles the text is inside**, each
+  shown in full with a `title` aside and committed quoted, since a
+  reader typing a fragment of a headline is after the ROW. Ranking:
+  an offer that SPELLS what was typed still leads (`book` still
+  preselects `tag:book`, `tag` still preselects `tag:`), the literal
+  takes row one otherwise, the titles sit under the key and value tiers
+  and ABOVE the derived `contact:tanik` pairings — a title is a thing
+  the reader has seen, where the pairing is a key the renderer worked
+  out — and prefix hits lead the merely-contained ones within the tier.
+  The title vocabulary is the loaded rows', deduplicated, read off the
+  same index the word completions use and built with it on the same idle
+  pass; the tier takes their two-character floor for their reason, and
+  its five sit inside the twelve the whole list takes. A title carrying
+  a `"` is not offered — the grammar has no escape inside a quoted
+  token, so the offer would commit as something that no longer matches
+  the row it came from. Neither offer is dimmed (both are facts), and
+  each takes the slot a count would have used, so no row shows both. A
+  bare word therefore always has a list; a quoted token still asks for
+  no suggestions at all (`"boo"` is free text as written), and the value
+  stage is untouched — a half-typed `key:value` is already an intent.
+  Driver 1027 → 1046.
 - **A starred meta completes star-free** (browser renderer). The
   asterisks of `*active*`/`*inactive*` are READING notation — the mark
   that says the producer decides this one — so they are no longer

@@ -76,6 +76,25 @@ function probe(box, handle) {
   };
   const items = () => box.querySelectorAll(".tv-ac-label").map((e) => e.text);
   const counts = () => box.querySelectorAll(".tv-ac-n").map((e) => Number(e.text));
+  // A free-text offer — the literal, a whole title — annotates itself with an
+  // aside where a predicate suggestion prints its count. So the rows carrying a
+  // count are not `items()' positionally any more, and the two questions those
+  // two arrays were answering get one accessor each.
+  /** The labels of the rows that suggest a token, the free-text offers aside. */
+  const offers = () => box.querySelectorAll(".tv-ac-item")
+    .filter((e) => e.querySelectorAll(".tv-ac-aside").length === 0)
+    .map((e) => e.querySelector(".tv-ac-label").text);
+  /** The suggestion row wearing LABEL, or null. */
+  const rowFor = (label) => box.querySelectorAll(".tv-ac-item")
+    .filter((e) => e.querySelector(".tv-ac-label").text === label)[0] || null;
+  /** What LABEL's row shows in its annotation slot; null when it shows nothing. */
+  const slotOf = (sel) => (label) => {
+    const el = rowFor(label), a = el && el.querySelector(sel);
+    return a ? a.text : null;
+  };
+  const countOf = (label) => { const n = slotOf(".tv-ac-n")(label);
+                               return n === null ? null : Number(n); };
+  const asideOf = slotOf(".tv-ac-aside");
   // The live chips are the ones carrying an index — which is also the property
   // that makes them removable, and what tells them from a crumb wearing the
   // same shape beside them.
@@ -84,7 +103,7 @@ function probe(box, handle) {
   /** Commit a query without clearing what is already applied. */
   const commit = (q) => { b().value = q; press("Enter"); };
   return { box, handle, b, reset, press, commit, type, shown, items, counts,
-           chipsOf, crumbsOf };
+           offers, countOf, asideOf, chipsOf, crumbsOf };
 }
 
 /**
@@ -859,7 +878,7 @@ async function metaValues() {
   check("and what commits still wears the stars",
         P.handle.getQuery(), "state:*inactive*");
   check("a bare word reaches one through its column too",
-        P.type("active"), ["state:*active*"]);
+        P.type("active"), ["state:*active*", `"active"`]);
   check("chosen there as well", metaAt(), 0);
   check("while a word inside no meta reaches none of them",
         P.type("state:tive"), []);
@@ -1860,12 +1879,13 @@ async function filterQuery() {
   shown("");
 
   // The suggestion list.
-  check("a bare word suggests the column keys it opens", type("sta"), ["state:"]);
+  check("a bare word suggests the column keys it opens, under the literal",
+        type("sta"), [`"sta"`, "state:"]);
   // A bare word offers the keys it opens: the view's columns, then the tags
   // the rows imply, both spelled `key:'.
   check("the prefix narrows them",
         type("s").filter((x) => x.endsWith(":")), ["state:", "scheduled:", "system:"]);
-  check("a key with no match offers nothing", type("zzz"), []);
+  check("a word matching no key still offers the literal", type("zzz"), [`"zzz"`]);
   check("an empty box offers nothing", type(""), []);
   check("a quoted token offers nothing", type('"sta'), []);
   check("free text carrying punctuation offers nothing", type(":work"), []);
@@ -1901,8 +1921,12 @@ async function filterQuery() {
   // Accept mechanics.
   // Tab completes and stays; Enter completes and goes.
   const b = filterOf(box);
+  // The literal leads a prefix that spells nothing, so one arrow is what stands
+  // between the caret and the key it opens.
+  const down = () => b.dispatchEvent(new Ev("keydown", { key: "ArrowDown" }));
   type("sta");
   const held = b.blurs || 0;
+  down();
   b.dispatchEvent(new Ev("keydown", { key: "Tab" }));
   check("Tab on a key suggestion completes to key:", b.value, "state:");
   check("and stays in the box for the value", (b.blurs || 0) - held, 0);
@@ -1911,6 +1935,7 @@ async function filterQuery() {
   check("Tab accepts the value at row one, with a trailing space",
         b.value, "state:" + STATES[0] + " ");
   type("sta");
+  down();
   b.dispatchEvent(new Ev("keydown", { key: "Tab" }));
   b.dispatchEvent(new Ev("keydown", { key: "ArrowDown" }));
   b.dispatchEvent(new Ev("keydown", { key: "Tab" }));
@@ -1918,12 +1943,18 @@ async function filterQuery() {
   check("and the list closes once the token is finished", items(), []);
 
   type("state:DONE tit");
+  down();
   b.dispatchEvent(new Ev("keydown", { key: "Tab" }));
   check("accepting replaces the caret's token and keeps the rest",
         b.value, "state:DONE title:");
   type("-sta");
+  down();
   b.dispatchEvent(new Ev("keydown", { key: "Tab" }));
   check("a negated token keeps its -", b.value, "-state:");
+  // Including the literal, which is a token like any other and negates like one.
+  type("-sta");
+  b.dispatchEvent(new Ev("keydown", { key: "Tab" }));
+  check("and so does the literal, which is a token like any other", b.value, "-sta ");
 
   // Precedence: the list gets Enter and Esc first.
   type("sta");
@@ -2580,10 +2611,15 @@ async function virtualKeys() {
   const P = driver(40);
   const box = P.box, t = P.handle, b = P.b();
   const KEYS = columns.map((c) => c.key);
-  const { reset, shown, items, counts, type } = P;
-  /** The rows of one tier: keys end in `:', word completions are dimmed. */
+  const { reset, shown, items, counts, countOf, type } = P;
+  /**
+   * The rows of one tier: keys end in `:', word completions are dimmed. The
+   * free-text offers — the literal and the whole titles — are none of the
+   * three, and are told apart by the aside they carry in place of a count.
+   */
   const tier = (n) => box.querySelectorAll(".tv-ac-item").filter((e) => {
     const label = e.querySelector(".tv-ac-label").text;
+    if (e.querySelectorAll(".tv-ac-aside").length) return false;
     if (n === 1) return label.endsWith(":");
     return n === 3 ? e.classes.has("tv-ac-dim")
                    : !label.endsWith(":") && !e.classes.has("tv-ac-dim");
@@ -2695,7 +2731,8 @@ async function virtualKeys() {
   check("and two characters are the least that completes anything",
         (type("s"), tier(3).length), 0);
   check("keys come before the scoped completions",
-        (() => { const l = type("sy"); const k = l.filter((x) => x.endsWith(":")).length;
+        (() => { const l = type("sy").slice(1);        // past the literal, which leads
+                 const k = l.filter((x) => x.endsWith(":")).length;
                  return l.slice(0, k).every((x) => x.endsWith(":")); })(), true);
 
   // Tier 2: values a column has, reached by prefix as well as in full.
@@ -2720,17 +2757,20 @@ async function virtualKeys() {
   type("d");
   check("a one-letter prefix still reaches values — only tier three waits",
         tier(2).length > 0, true);
-  // Row one is the choice whatever tier it came from — a guessed word as much
-  // as a column key. An open list always has an answer for RET.
+  // Row one is the choice whatever tier it came from. A prefix that spells
+  // nothing leads with the literal, and everything the tiers found sits behind
+  // it — an open list always has an answer for RET.
   const guesses = type("rev");
-  check("row one is chosen where every offer is a guessed word",
-        [guesses.length > 0, guesses.every((x) => !x.endsWith(":")),
-         box.querySelectorAll(".tv-ac-on").length], [true, true, 1]);
+  check("the literal leads where nothing spells the word",
+        [guesses[0], guesses.length > 1,
+         box.querySelectorAll(".tv-ac-on").length], [`"rev"`, true, 1]);
   check("and where a column completion leads",
         (() => { type("sta"); return box.querySelectorAll(".tv-ac-on").length; })(), 1);
-  // A whole word nothing completes opens no list, so RET is the query's again.
-  check("a word nothing completes offers nothing to choose",
-        [type("sync").length, box.querySelectorAll(".tv-ac-on").length], [0, 0]);
+  // A whole word no key or value completes still has the literal to choose,
+  // which is the free text RET always applied there.
+  check("a word no key or value completes still leads with the literal",
+        [type("sync")[0], tier(1).length, tier(2).length,
+         box.querySelectorAll(".tv-ac-on").length], [`"sync"`, 0, 0, 1]);
   check("and RET applies it as the free text it is", shown("sync") > 0, true);
 
   reset();
@@ -2738,7 +2778,8 @@ async function virtualKeys() {
   b.dispatchEvent(new Ev("input"));
   check("a list that opens at all opens with its first row chosen",
         box.querySelectorAll(".tv-ac-on").length, 1);
-  const first = items()[0];
+  b.dispatchEvent(new Ev("keydown", { key: "ArrowDown" }));   // past the literal
+  const first = items()[1];
   b.dispatchEvent(new Ev("keydown", { key: "Tab" }));
   check("Tab on a key completion leaves the value to type", b.value, first);
   check("and a virtual key offers no value list", items(), []);
@@ -2751,15 +2792,17 @@ async function virtualKeys() {
   // A tag name is a key like any other: its prefix completes to `tag:'.
   reset();
   const keyed = type("sys");
-  check("a tag prefix completes to the tag as a key", keyed[0], "system:");
-  check("with the rows that hold it", counts()[0], shown("system:"));
+  check("a tag prefix completes to the tag as a key, under the literal",
+        keyed.slice(0, 2), [`"sys"`, "system:"]);
+  check("with the rows that hold it", countOf("system:"), shown("system:"));
   check("and it is not dimmed — a vocabulary key is an exact fact",
         (() => { type("sys");
-                 return box.querySelectorAll(".tv-ac-item")[0].classes.has("tv-ac-dim"); })(),
+                 return box.querySelectorAll(".tv-ac-item")[1].classes.has("tv-ac-dim"); })(),
         false);
   reset();
   b.value = "sys";
   b.dispatchEvent(new Ev("input"));
+  b.dispatchEvent(new Ev("keydown", { key: "ArrowDown" }));
   b.dispatchEvent(new Ev("keydown", { key: "Tab" }));
   check("Tab lands the key with the caret past the colon", b.value, "system:");
   b.value = "system:sy";
@@ -2783,12 +2826,12 @@ async function virtualKeys() {
     ];
     const C = driver({ columns: own, rows });
     const cbox = C.box, ct = C.handle, cb = C.b();
-    const offer = C.type, nums = C.counts;
+    const offer = C.type;
     const list = offer("tan");
     check("tan completes to the word it starts, scoped by tag",
           list.indexOf("contact:tanik") !== -1, true);
     check("counting the rows tagged contact whose title has it",
-          nums()[list.indexOf("contact:tanik")], 2);
+          C.countOf("contact:tanik"), 2);
     check("every tag the word sits under comes too",
           list.filter((x) => x.indexOf(":tan") !== -1).sort(),
           ["alberblanc:tanik", "contact:tanik", "doc:tanik", "idea:tangent"]);
@@ -2910,9 +2953,10 @@ async function virtualKeys() {
       tb.value = "pa";                       // a prefix: typed in full it is exact
       tb.dispatchEvent(new Ev("input"));
       const said = twice.querySelectorAll(".tv-ac-label").map((e) => e.text);
-      const tally = twice.querySelectorAll(".tv-ac-n").map((e) => Number(e.text));
-      check("a word repeated in one title still counts one row",
-            [said.indexOf("home:pay") !== -1, tally[said.indexOf("home:pay")]], [true, 1]);
+      const at = said.indexOf("home:pay");
+      const n = at === -1 ? null
+        : Number(twice.querySelectorAll(".tv-ac-item")[at].querySelector(".tv-ac-n").text);
+      check("a word repeated in one title still counts one row", [at !== -1, n], [true, 1]);
     }
 
     offer("boo");
@@ -2930,31 +2974,34 @@ async function virtualKeys() {
     // still half written.
     offer("book");
     check("a word that SPELLS a tag leads with the value, ahead of the key",
-          plain().slice(0, 2), ["tag:book", "book:"]);
+          plain().slice(0, 3), ["tag:book", `"book"`, "book:"]);
     check("and that row is the chosen one", chosen(), 0);
     cb.dispatchEvent(new Ev("keydown", { key: "Enter" }));
     check("so RET commits it with no arrow at all",
           [ct.getQuery(), cb.value], ["tag:book", ""]);
     check("finding the rows the tag holds", ct.getVisible().length, 2);
 
-    // A prefix has nothing spelled in full to lead with, so row one is the
-    // first offer — and RET takes that, rather than the letters typed.
-    check("a prefix leads with the key, the tag being only opened", offer("boo")[0], "book:");
+    // A prefix has nothing spelled in full to lead with, so the literal takes
+    // row one and the key it opens is one arrow behind.
+    check("a prefix leads with the literal, the tag being only opened",
+          offer("boo").slice(0, 2), [`"boo"`, "book:"]);
     check("chosen there too", chosen(), 0);
+    cb.dispatchEvent(new Ev("keydown", { key: "ArrowDown" }));
     cb.dispatchEvent(new Ev("keydown", { key: "Enter" }));
-    check("and RET takes it — a key completes and waits for its value",
+    check("and RET on the key completes it and waits for its value",
           cb.value, "book:");
     offer("boo");
     cb.dispatchEvent(new Ev("keydown", { key: "ArrowDown" }));
     check("an arrow still walks on from row one", chosen(), 1);
 
-    // The literal is reached through the grammar rather than through a second
-    // meaning for RET: a quoted token is free text and asks for no suggestions.
+    // A token that already OPENS with a quote is free text as written, so it
+    // asks for no suggestions — the literal row would be the token back again.
     check("a quoted word offers nothing to hijack RET", offer(`"boo"`).length, 0);
     cb.dispatchEvent(new Ev("keydown", { key: "Enter" }));
     check("so RET applies it as written",
           [ct.getQuery(), ct.getVisible().length > 0], [`"boo"`, true]);
-    check("and a word nothing completes has no list either", offer("zzz").length, 0);
+    check("and a word nothing else completes offers the literal alone",
+          offer("zzz"), [`"zzz"`]);
     cb.dispatchEvent(new Ev("keydown", { key: "Enter" }));
     check("so it too applies literally", [ct.getQuery(), ct.getVisible().length], ["zzz", 0]);
 
@@ -2977,9 +3024,107 @@ async function virtualKeys() {
       check("the value typed in full leads the ones it merely opens",
             deep.querySelectorAll(".tv-ac-label").map((e) => e.text),
             ["course", "course-notes", "coursework"]);
+      // And the domain is the whole of what it offers: a half-typed `key:value'
+      // is already an intent, so neither free-text offer belongs under it.
+      check("with no free-text offer among them — the value stage has none",
+            deep.querySelectorAll(".tv-ac-aside").length, 0);
       db.dispatchEvent(new Ev("keydown", { key: "Enter" }));
       check("so RET commits that one, not the first the column declared",
             dt.getQuery(), "kind:course");
+    }
+  }
+
+  // --- the two free-text offers: the literal, and the whole titles
+  // Row one is what RET takes, so a plain search has to BE an offer; and a
+  // reader typing a fragment of a headline is after the row, so the row's own
+  // title is one too. Both commit free text, and each says which it is.
+  {
+    const cols = [{ key: "title", header: "Headline", type: "text" },
+                  { key: "tag", header: "Tags", type: "text" }];
+    const rows = [
+      { id: "1", cells: { title: "tanik's birthday gift and party", tag: ":contact:" } },
+      { id: "2", cells: { title: "rfcs worth reading this winter", tag: ":article:" } },
+      { id: "3", cells: { title: "a second look at the rfcs", tag: ":article:" } },
+    ];
+    const L = driver({ columns: cols, rows });
+    const lb = L.b(), lt = L.handle;
+    const offer = L.type, at = () => L.box.querySelectorAll(".tv-ac-item")
+      .findIndex((e) => e.classes.has("tv-ac-on"));
+    const key = (k) => lb.dispatchEvent(new Ev("keydown", { key: k }));
+
+    // --- the literal
+    check("a prefix nothing spells leads with the text itself, quoted",
+          [offer("rf")[0], L.asideOf(`"rf"`), at()], [`"rf"`, "text search", 0]);
+    key("Enter");
+    check("and RET commits it BARE — quotes are the notation, not the token",
+          [lt.getQuery(), lb.value], ["rf", ""]);
+    check("finding what a text search finds", lt.getVisible().length, 2);
+    L.reset();
+    check("a word that SPELLS a key still outranks it",
+          offer("tag").slice(0, 2), ["tag:", `"tag"`]);
+    check("and so does one that spells a value", offer("article").slice(0, 2),
+          ["tag:article", `"article"`]);
+    // Whitespace can only reach a bare token through a quote written inside
+    // one, and there the bare spelling would break into two tokens.
+    check("text holding whitespace commits quoted, since bare would break up",
+          offer(`a"b c"`)[0], `"ab c"`);
+    key("Enter");
+    check("and that is what lands", lt.getQuery(), `"ab c"`);
+
+    // --- the titles
+    L.reset();
+    const said = offer("tanik");
+    check("a title fragment offers the whole title, shown in full",
+          [said[1], L.asideOf(said[1])],
+          ["tanik's birthday gift and party", "title"]);
+    key("ArrowDown");
+    key("Enter");
+    check("one arrow past the literal, and RET commits it QUOTED — titles hold spaces",
+          [lt.getQuery(), lt.getVisible().length],
+          [`"tanik's birthday gift and party"`, 1]);
+
+    L.reset();
+    const rf = offer("rf");
+    check("a title the text merely holds comes after one it opens",
+          rf.slice(1, 3), ["rfcs worth reading this winter", "a second look at the rfcs"]);
+    check("and the derived pairing stays reachable under them both",
+          [rf.indexOf("article:rfcs") > rf.indexOf("a second look at the rfcs"),
+           L.countOf("article:rfcs")], [true, 2]);
+
+    // Two rows spelling one title are one offer: the tier is the distinct
+    // titles, and a query naming one finds every row that carries it.
+    {
+      const twin = driver({ columns: cols, rows: rows.concat([
+        { id: "4", cells: { title: "rfcs worth reading this winter", tag: ":read:" } }]) });
+      const twice = twin.type("rfcs");
+      check("one title on two rows is offered once",
+            twice.filter((x) => x === "rfcs worth reading this winter").length, 1);
+      twin.b().dispatchEvent(new Ev("keydown", { key: "ArrowDown" }));
+      twin.b().dispatchEvent(new Ev("keydown", { key: "Enter" }));
+      check("and committing it finds both of them", twin.handle.getVisible().length, 2);
+    }
+
+    // Five is the cap, inside the twelve the whole list takes.
+    {
+      const many = driver({ columns: cols, rows: Array.from({ length: 9 }, (_, i) =>
+        ({ id: "m" + i, cells: { title: `quarterly report ${i}`, tag: ":ops:" } })) });
+      const capped = many.type("quarterly");
+      check("no more than five whole titles, however many hold the text",
+            capped.filter((x) => x.indexOf("quarterly report") === 0).length, 5);
+      check("and the list is inside its own ceiling", capped.length <= 12, true);
+    }
+
+    // A title is a fact about a row, so it stands even where a value is spelled
+    // in full — what an exact match suppresses is the guessing tier alone.
+    {
+      const ex = driver({ columns: cols, rows: [
+        { id: "1", cells: { title: "book the flight", tag: ":book:" } },
+        { id: "2", cells: { title: "nothing here", tag: ":idea:" } }] });
+      const spelled = ex.type("book");
+      check("an exact value leads, the literal behind it, the title still there",
+            [spelled.slice(0, 2), spelled.indexOf("book the flight") !== -1,
+             ex.box.querySelectorAll(".tv-ac-dim").length],
+            [["tag:book", `"book"`], true, 0]);
     }
   }
 
@@ -3631,9 +3776,15 @@ async function virtualKeys() {
     const type = (q) => { b.value = q; b.dispatchEvent(new Ev("input")); };
     const on = () => st.querySelectorAll(".tv-ac-on").length;
 
-    // The contract: `tag:' by RET, then the tags with their counts.
+    // A prefix spells nothing, so the literal has row one and the key it opens
+    // is behind it. Typed in full the key IS an answer, and leads again.
     type("ta");
-    check("a bare word offers the column key", labels()[0], "tag:");
+    check("a prefix leads with the literal, the key behind it",
+          labels().slice(0, 2), [`"ta"`, "tag:"]);
+
+    // The contract: `tag:' by RET, then the tags with their counts.
+    type("tag");
+    check("a bare word spelling the column key offers it first", labels()[0], "tag:");
     check("which is the one thing preselected", on(), 1);
     b.dispatchEvent(new Ev("keydown", { key: "Enter" }));
     check("RET completes it to `key:' and stays", [b.value, b.blurs || 0], ["tag:", 0]);
@@ -3671,7 +3822,7 @@ async function virtualKeys() {
 
     // Tab is unchanged at both stages: accept and stay, either way.
     b.focus();
-    type("ta");
+    type("tag");
     b.dispatchEvent(new Ev("keydown", { key: "Tab" }));
     check("Tab on a key completes it and stays", [b.value, b.blurs], ["tag:", 2]);
     const tagPick = labels()[0];
@@ -3694,7 +3845,7 @@ async function virtualKeys() {
     // The presence predicate is reached by putting the list away first, which
     // is the one ladder Escape has always walked.
     b.focus();
-    type("ta");
+    type("tag");
     b.dispatchEvent(new Ev("keydown", { key: "Enter" }));      // `tag:', values listed
     b.dispatchEvent(new Ev("keydown", { key: "Escape" }));     // the list, not the text
     b.dispatchEvent(new Ev("keydown", { key: "Enter" }));
@@ -3780,14 +3931,17 @@ async function virtualKeys() {
     const offer = W.type;
 
     // The reported title, verbatim: "Lisp:" must index as lisp and compose a
-    // suggestion that reads like the tag it names and no other.
+    // suggestion that reads like the tag it names and no other. Read off the
+    // predicate rows alone — a whole-title offer shows the title, colons and
+    // all, which is the one place a colon here is nobody's doing.
+    const said = () => W.offers();
     check("a word wearing a colon indexes without it",
-          offer("lis").filter((x) => !x.endsWith(":")), ["article:lisp"]);
+          (offer("lis"), said().filter((x) => !x.endsWith(":"))), ["article:lisp"]);
     check("and no colon-bearing variant of it exists anywhere",
-          offer("lis").some((x) => x.indexOf("lisp:") !== -1), false);
+          (offer("lis"), said().some((x) => x.indexOf("lisp:") !== -1)), false);
     check("the reported title yields no tag-shaped artifact",
-          offer("lisp").concat(offer("gabriel"), offer("radio"))
-            .every((x) => x.split(":").length <= 2), true);
+          ["lisp", "gabriel", "radio"]
+            .every((q) => (offer(q), said().every((x) => x.split(":").length <= 2))), true);
 
     // Every edge, one table.
     for (const [typed, want] of [["quot", "article:quotes"], ["paren", "article:parens"],
@@ -3802,10 +3956,13 @@ async function virtualKeys() {
 
     // The invariant, over every prefix the fixture can answer.
     const every = [];
-    for (const q of ["lis", "gab", "rad", "quo", "par", "bra", "epi", "sof", "eng", "wel", "sna"])
-      every.push(...offer(q));
-    check("no suggestion's value part carries a colon", 
-          every.every((x) => x.slice(x.indexOf(":") + 1).indexOf(":") === -1), true);
+    for (const q of ["lis", "gab", "rad", "quo", "par", "bra", "epi", "sof", "eng", "wel", "sna"]) {
+      offer(q);
+      every.push(...said());
+    }
+    check("no suggestion's value part carries a colon",
+          [every.length > 0,
+           every.every((x) => x.slice(x.indexOf(":") + 1).indexOf(":") === -1)], [true, true]);
   }
 
   // --- the multi-valued verdict dies with the rows it was read from
@@ -3933,7 +4090,7 @@ async function virtualKeys() {
     // --- the dropdown
     b.value = "sys";
     b.dispatchEvent(new Ev("input"));
-    const keyRow = box.querySelectorAll(".tv-ac-item")[0];
+    const keyRow = box.querySelectorAll(".tv-ac-item")[1];      // [0] is the literal
     check("a tag-key row wears the tag in the same muted hand",
           [keyRow.querySelectorAll(".tv-tag").map((e) => e.text),
            keyRow.querySelector(".tv-ac-label").text], [["system"], "system:"]);
@@ -3948,7 +4105,7 @@ async function virtualKeys() {
     check("column-key rows wear none of it", (() => {
       b.value = "sta";
       b.dispatchEvent(new Ev("input"));
-      return box.querySelectorAll(".tv-ac-item")[0].querySelectorAll(".tv-tag").length;
+      return box.querySelectorAll(".tv-ac-item")[1].querySelectorAll(".tv-tag").length;
     })(), 0);
     b.dispatchEvent(new Ev("keydown", { key: "Escape" }));
 

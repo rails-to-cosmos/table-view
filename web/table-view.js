@@ -211,28 +211,43 @@
  *   whole-tag (`con:' is not `:contact:'), an empty value is presence alone, and
  *   a column of the same name shadows the tag.
  * - A suggestion list under the box completes it. A bare word offers, in order:
- *   the value it already SPELLS, where a column holds one (`book' →
- *   `tag:book'); the column keys it opens; the columns whose declared domain
- *   holds it as a value by prefix (`TOD' → `state:TODO'); and, only when
- *   nothing exact was found, up to five tags whose rows merely contain it,
- *   dimmed. Exact beats fuzzy and fuzzy never crowds — a scoped count is a
- *   substring count and must not dress like a value match. After `key:' comes
- *   that column's value domain (`values', else the badge palette, else the
- *   distinct cell values), each with the number of rows behind it and the value
- *   typed in full at its head; a virtual key has no domain to offer.
+ *   the value or key it already SPELLS (`book' → `tag:book', `tag' → `tag:'),
+ *   which needs no more typing; the TEXT ITSELF as a free-text token; the
+ *   column keys it opens; the columns whose declared domain holds it as a value
+ *   by prefix (`TOD' → `state:TODO'); up to five whole TITLES it is inside,
+ *   prefix hits first; and, only when nothing exact was found, up to five tags
+ *   whose rows merely contain it, dimmed. Exact beats fuzzy and fuzzy never
+ *   crowds — a scoped count is a substring count and must not dress like a
+ *   value match. After `key:' comes that column's value domain (`values', else
+ *   the badge palette, else the distinct cell values), each with the number of
+ *   rows behind it and the value typed in full at its head; a virtual key has
+ *   no domain to offer.
  *   Arrows — and C-n/C-p, which both editors' users reach for here — move it,
  *   Esc dismisses, and a click accepts without taking focus. Tab completes and
  *   stays, at either stage. Enter is stage-aware: completing a key leaves the
  *   caret past the colon with that key's values already listed, since `tag:'
  *   is half a predicate and the values are the next thing to choose; only a
  *   finished token sends it on to commit and hand over.
+ * - TWO OF THOSE OFFERS ARE FREE TEXT rather than a predicate, and each says so
+ *   in a muted aside where the others print a count. The LITERAL (`text
+ *   search') is what was typed: drawn quoted, which is the grammar's notation
+ *   for text and the thing the row teaches, and committed BARE, which is what a
+ *   reader who knew the grammar would have written — the two match identically,
+ *   and quotes are written only where the text holds whitespace or a colon. A
+ *   TITLE (`title') is a whole title one of the loaded rows carries, committed
+ *   quoted because titles hold spaces: a reader typing a fragment of a headline
+ *   is after the ROW, so its own title outranks the derived `contact:tanik'
+ *   pairings below it. Both are facts, so neither is dimmed; the titles are the
+ *   loaded set's, deduplicated, and take the scoped tier's two-character floor
+ *   for the scoped tier's reason.
  * - ROW ONE IS ALWAYS THE CHOICE. An open list means Enter takes its first
  *   offer, so the common case costs no arrow; the ordering above is the whole
- *   of what that key means. The literal is reached through the grammar rather
- *   than through a second meaning for Enter: a quoted token asks for no
- *   suggestions at all (`"boo"' is free text), Esc puts the list away before
- *   Enter commits what is written, and a word nothing completes has no list to
- *   begin with.
+ *   of what that key means. The literal being an offer of its own is what keeps
+ *   a plain search one keystroke away under that rule, and it puts what Enter
+ *   will do on show rather than leaving it implied — a bare word therefore
+ *   always has a list. A quoted token still asks for no suggestions at all
+ *   (`"boo"' is free text already), and Esc still puts the list away before
+ *   Enter commits what is written.
  * - A STARRED META COMPLETES STAR-FREE. The asterisks of `*active*' are reading
  *   notation — the mark that says the producer decides this one — so completion
  *   matches through them: `act' and `active' both reach `*active*', at the value
@@ -872,6 +887,10 @@
 .tv-ac-item{display:flex;justify-content:space-between;align-items:baseline;gap:14px;
   padding:3px 10px;white-space:nowrap;cursor:pointer;color:var(--tv-fg)}
 .tv-ac-n{color:var(--tv-muted);font-variant-numeric:tabular-nums}
+/* An offer that is free text rather than a predicate says so where the counts
+   are, in the ink the counts wear: it annotates the row, and no row carries
+   both. */
+.tv-ac-aside{color:var(--tv-muted)}
 /* A scoped tag is a substring count, and reads as one. */
 .tv-ac-dim{opacity:.6;font-style:italic}
 .tv-ac-note{padding:5px 10px;border-top:1px solid var(--tv-border);
@@ -2806,12 +2825,13 @@
     const AC_MAX = 12;          // suggestions offered at once
     const SCOPED_MAX = 5;       // scoped completions offered, when nothing exact was found
     const SCOPED_MIN = 2;       // ... and only past this much typing
+    const TITLE_MAX = 5;        // whole titles offered, on the same floor
     const DOMAIN_MAX = 200;     // distinct values kept before the prefix narrows them
 
     /**
      * @type {{stage: string, tok: Token,
      *         items: {text: string, count: number, full: boolean, dim: boolean,
-     *                  tag?: string}[]}|null}
+     *                  tag?: string, show?: string, aside?: string}[]}|null}
      */
     let ac = null;
     let acAt = 0;
@@ -2899,7 +2919,7 @@
      * of what that key means: WHAT THE WORD SPELLS IN FULL LEADS WHAT IT MERELY
      * OPENS, at either stage.
      * @returns {{text: string, count: number, full: boolean, dim: boolean,
-     *             tag?: string}[]}
+     *             tag?: string, show?: string, aside?: string}[]}
      */
     function suggestFor(st) {
       const p = st.prefix.toLowerCase();
@@ -2965,7 +2985,39 @@
           if (out.length === AC_MAX) break;
           out.push({ text: hit.text, count: hit.count, full: true, dim: hit.dim });
         }
-        // 4. Words the rows finish for it, scoped to the tag they were found
+        // 4. The TITLES the text is inside, whole. Someone typing a fragment of
+        //    a headline is looking for the ROW, so the offer is that row's own
+        //    title as a free-text token, ahead of the derived pairings below —
+        //    a title is a thing the reader has seen, where `contact:tanik' is a
+        //    key the renderer worked out. Prefix hits lead the ones that merely
+        //    hold it, the same rule the tiers above follow. On the scoped
+        //    floor, and for the scoped reason: one letter is inside most of the
+        //    store and says nothing about any of it.
+        if (p.length >= SCOPED_MIN) {
+          const opensT = [], holds = [];
+          for (const t of titleIndex().titles) {
+            if (t.lower.indexOf(p) === -1) continue;
+            if (t.lower === p) continue;          // spelled already; the literal has it
+            // The grammar has no escape inside a quoted token, so a title
+            // carrying one would commit as a token that no longer matches the
+            // row it came from. Better absent than offered and empty.
+            if (t.lower.indexOf('"') !== -1) continue;
+            (t.lower.startsWith(p) ? opensT : holds).push(t);
+          }
+          for (const t of opensT.concat(holds).slice(0, TITLE_MAX)) {
+            if (out.length === AC_MAX) break;
+            // The cased text is read HERE, for the five on offer, rather than
+            // per title when the index was built: `displayText' parses org
+            // links, and every title of a loaded store is a bill this tier can
+            // pay five rows of instead.
+            const show = displayText(t.cell);
+            // Quoted, titles holding spaces; the aside says which row it is,
+            // where the tiers above show a count.
+            out.push({ text: `"${show}"`, show, aside: "title",
+                       count: -1, full: true, dim: false });
+          }
+        }
+        // 5. Words the rows finish for it, scoped to the tag they were found
         //    under. Only an EXACT value match makes these redundant — a value
         //    merely opening with what was typed is a guess of the same kind, so
         //    the two stand together. They are dimmed either way: a scoped count
@@ -2978,6 +3030,17 @@
             out.push({ text: hit.tag + ":" + hit.word, count: hit.count,
                        full: true, dim: true, tag: hit.tag });
           }
+        // THE LITERAL, spliced to its rank rather than pushed: it leads, so the
+        // caps above cannot crowd it out, the way the exact value is seeded
+        // ahead of them. Row one is what RET takes, and without this row a
+        // plain text search is reachable only by quoting or by Escape — a
+        // grammar lesson charged for a search. It yields to one thing: an offer
+        // that SPELLS what was typed, which is an answer where this is the
+        // letters back again.
+        const spelled = exact || keys.some((k) => k.toLowerCase() === p)
+                              || tagVocab().list.indexOf(p) !== -1;
+        out.splice(spelled ? 1 : 0, 0, literalOffer(st.prefix));
+        if (out.length > AC_MAX) out.pop();
         return out;
       }
       // The column's value domain, led by the value typed in FULL — the one
@@ -3013,16 +3076,37 @@
     }
 
     /**
-     * Every title word, sorted, with the tags it appears under and how many
-     * rows each of those pairings covers. Built whole on first use rather than
-     * patched: a prefix query wants sorted words, an upsert can move any of
-     * them, and rebuilding on the next keystroke is both simpler and cheaper
+     * The literal offer: what was typed, as a free-text token. It is DRAWN
+     * quoted, the grammar's own notation for "this is text" and the thing the
+     * row is there to teach, and it COMMITS bare, which is what a reader who
+     * knew the grammar would have written — the two match identically, and
+     * quotes are owed only where a separator would break the token up. (Of
+     * those, only whitespace can reach here, through a quote written mid-token:
+     * a colon makes the token a predicate, or free text with no list at all.)
+     * @param {string} text
+     */
+    function literalOffer(text) {
+      return { text: /[\s:]/.test(text) ? `"${text}"` : text,
+               show: `"${text}"`, aside: "text search",
+               count: -1, full: true, dim: false };
+    }
+
+    /**
+     * What was read off the titles, in one pass and one cache: every title
+     * word, sorted, with the tags it appears under and how many rows each of
+     * those pairings covers; and the distinct titles themselves, in row order,
+     * lowercased beside the RAW cell they came from — the cased text is what
+     * `displayText' costs a link parse for, and only the few titles offered
+     * need it. Built whole on first use rather
+     * than patched: a prefix query wants sorted words, an upsert can move any
+     * of them, and rebuilding on the next keystroke is both simpler and cheaper
      * than keeping a sorted structure correct through every row change.
      * Thrown away with the text cache, which is where it was read from.
      * A posting is a flat `[tag, count, tag, count, …]' rather than a map:
      * most words sit under one or two tags, and at this size the allocation of
      * a map per word costs more than the linear scan of a short array saves.
-     * @type {{words: string[], posts: (string|number)[][]}|null}
+     * @type {{words: string[], posts: (string|number)[][],
+     *         titles: {lower: string, cell: Cell|undefined}[]}|null}
      */
     let wordIndex = null;
 
@@ -3032,8 +3116,20 @@
       const at = titleColumn();
       /** @type {Map<string, (string|number)[]>} */
       const acc = new Map();
-      if (byRow.size && at !== -1)
+      /** @type {{lower: string, cell: Cell|undefined}[]} */
+      const titles = [];
+      const seen = new Set();
+      const titleKey = at === -1 ? "" : columns()[at].key;
+      if (at !== -1)
         for (const r of state.rows) {
+          const lower = rowText(r).cells[at];
+          // The titles are every row's, where the words below are only a
+          // TAGGED row's: a title is offered as itself and needs no tag to be
+          // paired with.
+          if (lower && !seen.has(lower)) {
+            seen.add(lower);
+            titles.push({ lower, cell: (r.cells || {})[titleKey] });
+          }
           const tags = byRow.get(r.id);
           if (!tags) continue;
           // A literal split does here what a regex one would: `displayText'
@@ -3041,7 +3137,7 @@
           // space, and the empty strings a double space leaves are skipped.
           // Edge punctuation goes before anything else looks at the word, so
           // the deduplication below sees the forms a query would.
-          const words = rowText(r).cells[at].split(" ").map(bareWord);
+          const words = lower.split(" ").map(bareWord);
           for (let w = 0; w < words.length; w++) {
             const word = words[w];
             // A word twice in one title is still one row; the titles are short
@@ -3058,7 +3154,7 @@
           }
         }
       const words = Array.from(acc.keys()).sort();
-      const built = { words, posts: words.map((w) => acc.get(w) || []) };
+      const built = { words, posts: words.map((w) => acc.get(w) || []), titles };
       wordIndex = built;
       return built;
     }
@@ -3120,11 +3216,14 @@
         // is the same shape wherever it is read.
         const label = it.tag
           ? `<span class="tv-tag">${esc(it.tag)}</span>${esc(it.text.slice(it.tag.length))}`
-          : esc(it.text);
+          : esc(it.show === undefined ? it.text : it.show);
+        // A row saying what it IS takes the slot a count would have used: both
+        // annotate the offer, and neither has anything to say beside the other.
         html += `<div class="tv-ac-item${it.dim ? " tv-ac-dim" : ""}`
               + `${i === acAt ? " tv-ac-on" : ""}" data-i="${i}">`
               + `<span class="tv-ac-label">${label}</span>`
-              + (it.count < 0 ? "" : `<span class="tv-ac-n">${it.count}</span>`)
+              + (it.aside ? `<span class="tv-ac-aside">${esc(it.aside)}</span>`
+                          : it.count < 0 ? "" : `<span class="tv-ac-n">${it.count}</span>`)
               + `</div>`;
       }
       // Where the browser eats C-n before the page can see it, say so rather

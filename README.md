@@ -590,28 +590,54 @@ vocabulary, no clock — where the metas below need the producer.
 
 A **suggestion list** under the box completes it. A bare word offers, in order:
 
-1. the **value it already spells**, where some column's domain holds one (`book`
-   → `tag:book`) — the one offer that needs no more typing, so it leads even the
-   `book:` key beside it, which asks for the same rows in a token still half
-   written;
-2. the **keys** it opens — the view's columns, then the tags the rows imply
+1. the **value or key it already spells** (`book` → `tag:book`, `tag` → `tag:`)
+   — the one offer that needs no more typing, so it leads even the `book:` key
+   beside it, which asks for the same rows in a token still half written;
+2. the **text itself**, as a free-text token (`rf` → `"rf"`, committed `rf`);
+3. the **keys** it opens — the view's columns, then the tags the rows imply
    (`boo` → `book:`, with the count of rows holding it), a key it spells in full
    ahead of the ones it only opens;
-3. the columns whose declared domain holds it as a **value** by prefix (`TOD` →
+4. the columns whose declared domain holds it as a **value** by prefix (`TOD` →
    `state:TODO`) — exact facts about the data;
-4. and, only when nothing exact was found, up to five **word completions**,
+5. up to five whole **titles** it is inside, prefix hits first (`tanik` →
+   `"tanik's birthday gift and party"`);
+6. and, only when nothing exact was found, up to five **word completions**,
    dimmed: whole title words starting with what was typed, paired with the tags
    their rows carry (`tan` → `contact:tanik`). Every one of them is a query that
    finds something, by construction — it was counted from the rows it came from.
 
-Exact beats fuzzy, and fuzzy never crowds. After `key:` comes that column's
-value domain: its declared `values` in their own order, then any **badge value
-they did not already name**, else the distinct cell values — each with the
-number of rows behind it, and the value typed in full at their head whatever
-that order says. The two are merged rather than one shadowing the
-other, so a column that declares meta-values keeps its concrete keywords in the
-list. A virtual key has no domain to offer: under a tag key what follows is
-ordinary text, and under `planned` it is a date prefix.
+Exact beats fuzzy, and fuzzy never crowds.
+
+**Two of those offers are free text**, and each says which it is in a muted
+aside where the others print a count.
+
+The **literal** (`text search`) is what was typed. It is drawn **quoted**,
+because that is the grammar's own notation for "this is text" and the row is
+where you learn it, and it commits **bare**, because bare is what a reader who
+knew the grammar would have written — the two match identically. Quotes are
+written into the commit only where the text holds whitespace or a colon and a
+bare token would break up. Its rank is the point: under *row one is always the
+choice* a plain search would otherwise be reachable only by quoting or by
+Escape, which is a grammar lesson charged for a search.
+
+A **title** (`title`) is a whole title one of the loaded rows carries, committed
+quoted because titles hold spaces. A reader typing a fragment of a headline is
+after the **row**, so its own title outranks the derived `contact:tanik`
+pairings below it — a title is a thing that reader has seen, where the pairing
+is a key the renderer worked out. The vocabulary is the loaded set,
+deduplicated; the tier is capped at five inside the twelve the list takes, and
+takes the word completions' two-character floor for the same reason they do.
+Neither offer is dimmed: both are facts.
+
+After `key:` comes that column's value domain: its declared `values` in their
+own order, then any **badge value they did not already name**, else the distinct
+cell values — each with the number of rows behind it, and the value typed in
+full at their head whatever that order says. The two are merged rather than one
+shadowing the other, so a column that declares meta-values keeps its concrete
+keywords in the list. Neither free-text offer appears here: a half-typed
+`key:value` is already an intent. A virtual key has no domain to offer at all —
+under a tag key what follows is ordinary text, and under `planned` it is a date
+prefix.
 
 **Producer meta-values.** A domain value written between asterisks —
 `*active*`, `*inactive*` — is a *producer* meta: a name for a set of values
@@ -639,17 +665,20 @@ accept, **Escape** dismisses, a click accepts without taking focus.
 first row highlighted, so RET takes it and the common case costs no arrow. The
 ordering above is therefore the whole of what RET means, and the consequence is
 worth stating plainly: **with suggestions showing, RET commits the top
-suggestion rather than the letters you typed.** The literal stays the grammar's
-to give — a **quoted** token is free text and asks for no suggestions at all
-(`"boo"`), **Escape** puts the list away so the next RET commits what is
-written, and a word nothing completes never opened a list to begin with.
+suggestion rather than the letters you typed.** Which is exactly why the letters
+you typed are an offer of their own, at the head of the list unless something
+spells them: what RET does is on show rather than implied, and a bare word
+therefore always has a list. A **quoted** token still asks for no suggestions at
+all (`"boo"` is free text as written), and **Escape** still puts the list away
+so the next RET commits what is in the box.
 
 **Tab** completes and stays, at either stage. **Enter** is stage-aware:
 completing a *key* leaves the caret past the colon with that key's values
-already listed — `ta` → RET → `tag:` and the tags with their counts — because
+already listed — `tag` → RET → `tag:` and the tags with their counts — because
 `tag:` is half a predicate; only a *finished* token sends Enter on to commit and
 hand the table over. A second RET there takes the value at row one, so the bare
-presence predicate `tag:` is RET, Escape, RET. **C-n**/**C-p** move the list too,
+presence predicate `tag:` is RET, Escape, RET. Typed as the prefix `ta` the key
+is one arrow down, the literal having row one. **C-n**/**C-p** move the list too,
 while it is open and the box has focus — the
 Emacs minibuffer and vim's insert-mode completion agree on those. Platform
 reality: Chrome-family browsers take C-n for a new window before the page sees
