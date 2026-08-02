@@ -111,12 +111,20 @@ exactly that.
 
 ## Row object
 
-| field   | type              | meaning                                       |
-|---------|-------------------|-----------------------------------------------|
-| `id`    | string            | stable identity; keys updates and marks       |
-| `cells` | object            | column-key → cell value                       |
+| field    | type              | meaning                                      |
+|----------|-------------------|----------------------------------------------|
+| `id`     | string            | stable identity; keys updates and marks      |
+| `cells`  | object            | column-key → cell value                      |
+| `linked` | `true`            | the row leads somewhere; a renderer may mark it |
 
 `cells` maps each column `key` to a value. A missing key renders empty.
+
+`linked` is **sparse**: send `true` or send nothing — never `false`. It says the
+row's subject holds a link a consumer can follow, which is a producer's
+knowledge rather than anything the cells spell. A renderer may mark the row and
+one that ignores it is conformant, by the unknown-fields rule. The browser
+renderer underlines the `title` column's cell, leaving its colour alone, and
+marks nothing at all in a view with no column of that key.
 
 ### Cell value
 

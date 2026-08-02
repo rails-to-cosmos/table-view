@@ -1543,6 +1543,105 @@ async function rowMarks() {
   }
 }
 
+/** Two rows under a title column, one of which leads somewhere. */
+const LINK_VIEW = {
+  title: "linked",
+  columns: [{ key: "state", header: "State", type: "text" },
+            { key: "title", header: "Headline", type: "text" }],
+  rows: [{ id: "a", cells: { state: "TODO", title: "alpha" }, linked: true },
+         { id: "b", cells: { state: "TODO", title: "bravo" } }],
+};
+
+/**
+ * `linked': a producer's row flag, drawn on the title cell and nowhere else.
+ * The whole feature is where the mark lands and what it is made of, so that is
+ * what the checks are: the cell it picks, the views it declines to mark, and an
+ * underline reading through the grounds every other row state writes.
+ */
+async function linkedRows() {
+  console.log("\n== linked rows");
+
+  // --- where the mark lands
+  {
+    const L = driver(LINK_VIEW);
+    const rowOfId = (id) => L.box.querySelectorAll("tbody tr[data-id]")
+      .find((tr) => tr.dataset.id === id);
+    const marked = () => L.box.querySelectorAll("tbody td.tv-linked")
+      .map((td) => td.parentNode.dataset.id);
+    check("the linked row is marked and the other one is not", marked(), ["a"]);
+    check("on one cell of it, and that cell is the title column's",
+          [rowOfId("a").children.filter((td) => td.classes.has("tv-linked")).length,
+           rowOfId("a").children.findIndex((td) => td.classes.has("tv-linked"))],
+          [1, 1]);
+    // The cell is chosen by KEY, so a view spelling its columns the other way
+    // round marks the other position. Reading it as "the second column" would
+    // pass the check above and fail here.
+    const R = driver({ title: "linked", columns: LINK_VIEW.columns.slice().reverse(),
+                       rows: LINK_VIEW.rows });
+    check("by its key rather than by its position",
+          R.box.querySelectorAll("tbody tr[data-id]")[0].children
+            .findIndex((td) => td.classes.has("tv-linked")), 0);
+
+    // The flag is row data like a cell is, so it arrives and leaves by the
+    // ordinary row ops rather than by a call of its own.
+    L.handle.upsertRow({ id: "b", cells: { state: "TODO", title: "bravo" }, linked: true });
+    await painted();
+    check("an upsert can hand a row the mark", marked(), ["a", "b"]);
+    L.handle.upsertRow({ id: "b", cells: { state: "TODO", title: "bravo" } });
+    await painted();
+    check("and take it back off", marked(), ["a"]);
+  }
+
+  // --- and the two views it marks nothing in
+  {
+    const N = driver({ title: "no title column",
+                       columns: [{ key: "name", header: "Name" },
+                                 { key: "state", header: "State" }],
+                       rows: [{ id: "a", cells: { name: "alpha", state: "TODO" },
+                                linked: true }] });
+    check("a view with no title column carries no mark, and still renders the row",
+          [N.box.querySelectorAll("td.tv-linked").length,
+           N.box.querySelectorAll("tbody tr[data-id]").length], [0, 1]);
+    // The field is additive: a producer that never sends it gets the table it
+    // always got, which is the claim the unknown-fields rule rests on.
+    const O = driver(10);
+    check("and rows that never carry the field are marked nowhere",
+          O.box.querySelectorAll("td.tv-linked").length, 0);
+  }
+
+  // --- what it is made of: text, where every other row state is a ground
+  {
+    const css = cssText();
+    const rule = /\.tv-table tbody td\.tv-linked\{([^}]*)\}/.exec(css);
+    const body = rule ? rule[1] : "";
+    check("the mark is a text decoration",
+          [!!rule, /text-decoration:underline/.test(body)], [true, true]);
+    // Ink UNCHANGED is the design: a colour would read as a second badge, and a
+    // ground would contest the four the row states already write.
+    check("and it writes neither a colour nor a ground",
+          [/(^|;)color:/.test(body), /background/.test(body)], [false, false]);
+
+    const P = driver(LINK_VIEW, { marks: true });
+    const h = P.handle;
+    const cellOf = (id) => P.box.querySelectorAll("tbody tr[data-id]")
+      .find((tr) => tr.dataset.id === id).children
+      .find((td) => td.classes.has("tv-linked"));
+    h.toggleMark("a"); h.flagRow("a");
+    h.select("a", 1);
+    await painted();
+    check("a row that is marked, flagged and under the cursor keeps its mark",
+          [P.box.querySelectorAll("tbody tr.tv-sel td.tv-linked").length,
+           ["tv-marked", "tv-flagged", "tv-sel"]
+             .map((c) => cellOf("a").parentNode.classes.has(c))],
+          [1, [true, true, true]]);
+    // The washes are the td's own two, and they land on the same cell without
+    // touching the decoration: one writes background, the other text.
+    check("and the column band crossing that very cell leaves it standing",
+          [cellOf("a").classes.has("tv-colsel"), cellOf("a").classes.has("tv-cell-sel")],
+          [true, true]);
+  }
+}
+
 /**
  * The crumb trail and the chip alias: two things a consumer drives that the
  * renderer only draws. Neither touches the grammar — a crumb's query is never
@@ -4972,6 +5071,7 @@ async function smoke() {
   await metaValues();
   await starredMetas();
   await rowMarks();
+  await linkedRows();
   await crumbTrail();
   await parityVectors();
 

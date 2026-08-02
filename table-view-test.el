@@ -627,6 +627,20 @@ load order and check the row-id order equals EXPECTED."
     (should (equal (get-text-property (match-beginning 0) 'face)
                    '(:foreground "green" :weight bold)))))
 
+(ert-deftest tv-test-linked-row-field-is-ignored ()
+  ;; The additive rule one level up, on the ROW: glance sends `linked' so the
+  ;; browser renderer can underline a title, and this renderer knows nothing of
+  ;; it.  Asserted as the whole propertized buffer against the same view
+  ;; without the field, so a stray face or an extra character would show.
+  (let* ((spec "{ \"columns\": [ {\"key\":\"title\",\"header\":\"Headline\"} ],
+                  \"rows\": [ {\"id\":\"a\",\"cells\":{\"title\":\"alpha\"}%s},
+                              {\"id\":\"b\",\"cells\":{\"title\":\"bravo\"}} ] }")
+         (plain (tv-test--with-display (format spec "") (buffer-string)))
+         (flagged (tv-test--with-display (format spec ", \"linked\": true")
+                    (buffer-string))))
+    (should (string-match-p "alpha" flagged))
+    (should (equal flagged plain))))
+
 ;;; Navigation (f/b)
 
 (defun tv-test--col-at-point ()

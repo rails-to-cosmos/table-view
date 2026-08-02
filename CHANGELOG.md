@@ -68,6 +68,21 @@ the rails-to-cosmos ELPA archive publishes date-stamped snapshots.
   reaching for.
 
 ### Added
+- **`linked`, an optional Row field (SCHEMA.md + browser renderer).** A
+  producer sends `linked: true` on a row that leads somewhere — it holds a
+  link a consumer can follow — and the browser renderer UNDERLINES that
+  row's `title` cell. Sparse: `true` or absent, never `false`, so a row
+  with nowhere to go is byte for byte the row it was before the field
+  existed. The mark is a `text-decoration` and the ink does not move,
+  which is what makes it orthogonal to every other row state: the zebra,
+  the mark, the flag, the cursor and the two selection bands all write
+  BACKGROUNDS, so a linked row under the cursor with a band across its
+  title still reads as linked. Chosen by column KEY rather than by
+  position, and a view with no `title` column is marked nowhere — the
+  flag says the row leads somewhere and there is no other cell that would
+  be true of. `table-view.el` ignores it by the unknown-fields rule, with
+  an ERT case asserting the propertized buffer is the one the same view
+  without the field renders.
 - **`planned`, a reserved virtual filter key over the date columns
   (SCHEMA.md + browser renderer).** A row is planned when any of the
   view's date columns holds anything, so `planned:*empty*` is a row
