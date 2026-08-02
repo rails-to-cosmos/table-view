@@ -180,7 +180,8 @@ whitespace (`&` accepted as an alias); each token is:
   keys must be derivable identically by producer and renderer from the view
   data (e.g. glance: every distinct org tag in the `tags` column is a key;
   `contact:tanik` = tagged `contact` AND matching `tanik`). Columns shadow
-  virtual keys on collision.
+  virtual keys on collision, and `planned` (below) shadows a virtual key
+  spelled like it.
 - `"quoted text"` — free text containing spaces.
 - `-token` — negation of either form.
 - anything else — free text, case-insensitive substring over the row's cells.
@@ -200,7 +201,23 @@ glance's `state:*active*` / `state:*inactive*` matching keyword groups —
 work, while `*inactive*` matches stated values alone, so the two groups do
 not partition the column and `-state:*active*` excludes the empty cell);
 `text`/`number` — case-insensitive substring; date-shaped text cells —
-prefix match (`scheduled:2026-08`). Three uniform rules across types:
+prefix match (`scheduled:2026-08`).
+
+**`planned`** is a reserved virtual key over a view's **date columns taken
+together**: a row is planned when any of them holds anything. So
+`planned:none` is a row nobody has put a day on, `-planned:none` is everything
+with a date, and a value is the same prefix a date column takes, asked of every
+date column at once — `planned:2026-08` is a schedule *or* a deadline falling in
+that month. It is single-valued, so repeats OR (`planned:A planned:B` = either).
+Reserved because both sides decide it off the cells alone — no producer set, no
+vocabulary and no clock — which is what a virtual key has to be to work on both
+halves of the wire; a row therefore never reads as planned on one side and not
+on the other. WHICH columns are dates is the same asymmetry the prefix rule
+already carries: a producer knows its own, a renderer samples cell shape, so a
+page holding fewer than two dated rows finds no date column and answers
+`planned:` more narrowly than the producer would.
+
+Three uniform rules across types:
 `key:none` matches the empty cell (any type; a literal cell value "none" is
 consequently unreachable by predicate); `key:` with nothing typed narrows
 nothing; a predicate value may be quoted (`tag:"two words"`) — only a token

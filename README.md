@@ -170,7 +170,7 @@ for a column whose key is `"name"`). Booleans are `t` / omitted.
 | `header`   | header label                                                                                                                                                                                        |
 | `type`     | `"number"` (numeric sort), `"badge"` (colored from a palette), or omitted (string)                                                                                                                  |
 | `align`    | `"right"` to right-justify; omitted means left                                                                                                                                                      |
-| `sortable` | whether `^` can sort by this column — **opt-in**: a column declares it or `^` passes over it, per [SCHEMA.md](SCHEMA.md). The spec's own `sort` opens as written either way |
+| `sortable` | whether `^` can sort by this column — **opt-in**: a column declares it or `^` passes over it, per [SCHEMA.md](SCHEMA.md). The spec's own `sort` opens as written either way, and so does a `sortBy()` call: the opt-in gates what a READER may reach, not what the embedding page may ask for |
 | `values`   | ordered list of the column's expected values, e.g. `["low","medium","high"]`; that order becomes the sort order (categorical). Colours stay in `badges` — `values` is ordering only                 |
 | `compare`  | sort method override: `"number"`, `"string"`, or `"natural"` (number-aware, so `2 < 10`); a name registered in `table-view-comparators`; or (in an elisp spec) a `(a b) -> bool` predicate function |
 | `badges`   | for `type: "badge"`: list of `{ "value": V, "color": C }`; declared order is also the sort priority. A badge's optional `group` (a producer's own label, e.g. glance's `active`/`inactive`) is read by neither renderer and ignored here                    |
@@ -336,6 +336,7 @@ hands the query to the producer, and whatever `setRows` delivers is what shows.
 | `openFilter()`     | summon the filter — raises the palette, or focuses the resident box |
 | `closeFilter()`    | dismiss it and give the keyboard back to the table            |
 | `stripLastToken()` | drop the typed text, else the last chip, and reapply; false if nothing was left |
+| `sortBy(col, asc?)` | sort on that column key, ascending unless `asc` is `false`; false if no column carries the key |
 | `pushCrumb(c)`     | leave a `{label, query}` crumb behind; returns how deep the trail is now |
 | `popCrumb()`       | take the last crumb off and hand it back — `{label, query}`, or `null` on an empty trail. It applies nothing |
 | `setCrumbs(list)` / `getCrumbs()` | replace the trail; read it back as copies |
@@ -580,6 +581,13 @@ a producer and a renderer both arrive at is org's: every distinct tag in the
 presence alone (`-contact:` is everything untagged), and a column of the same
 name shadows the tag.
 
+One virtual key is **reserved**: `planned` reads the view's date columns
+together, so `planned:none` is a row nobody has put a day on, `-planned:none` is
+everything with a date, and `planned:2026-08` is a schedule *or* a deadline in
+that month. It shadows a tag spelled like it, and it is reserved because both
+sides of the wire decide it off the cells alone — no producer set, no
+vocabulary, no clock — where the metas below need the producer.
+
 A **suggestion list** under the box completes it. A bare word offers, in order:
 
 1. the **keys** it opens — the view's columns, then the tags the rows imply
@@ -596,7 +604,8 @@ value domain: its declared `values` in their own order, then any **badge value
 they did not already name**, else the distinct cell values — each with the
 number of rows behind it. The two are merged rather than one shadowing the
 other, so a column that declares meta-values keeps its concrete keywords in the
-list. A virtual key has no domain to offer, so what follows it is ordinary text.
+list. A virtual key has no domain to offer: under a tag key what follows is
+ordinary text, and under `planned` it is a date prefix.
 
 **Producer meta-values.** A domain value written between asterisks —
 `*active*`, `*inactive*` — is a *producer* meta: a name for a set of values

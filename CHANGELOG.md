@@ -5,6 +5,34 @@ the rails-to-cosmos ELPA archive publishes date-stamped snapshots.
 
 ## Unreleased
 
+### Added
+- **`planned`, a reserved virtual filter key over the date columns
+  (SCHEMA.md + browser renderer).** A row is planned when any of the
+  view's date columns holds anything, so `planned:none` is a row nobody
+  has put a day on, `-planned:none` is everything with a date, and a
+  value is the prefix a date column already takes, asked of every one of
+  them at once — `planned:2026-08` is a schedule *or* a deadline in that
+  month. Single-valued, so repeats OR. It is RESERVED because both
+  halves of the wire decide it off the cells alone: no producer set, no
+  vocabulary, no clock, which is what a virtual key has to be to work on
+  both sides, and it therefore shadows a tag spelled like it the way a
+  column key would. WHICH columns are dates carries the asymmetry the
+  prefix rule already has — a producer knows its own, this renderer
+  samples cell shape — so a page holding fewer than two dated rows finds
+  no date column and answers more narrowly than the producer.
+  `fixtures/parity/filter-query.json` gains ten cases over two views of
+  their own; the driver gains the key's standing in the vocabulary
+  (offered as a key, offered once, shadowing the tag, and no value list
+  to enumerate). `table-view.el` has no query grammar and is untouched.
+- **`sortBy(column, ascending)` on the browser renderer's handle.** A
+  header click TOGGLES; this STATES an order, so a consumer applying a
+  canned view — glance's agenda — lands on the same one every time it is
+  asked for rather than reversing on the second press. It replaces the
+  sort in force, answers `false` when no column carries the key, and
+  ignores `sortable`: the opt-in gates what a READER may reach, not what
+  the embedding page may ask for. `toggleSort` is now that function plus
+  the toggle, so the two cannot drift.
+
 ### Changed
 - **A cell step off either end gives the column up** (browser renderer).
   `select(id, col)` clamped the index to the columns that exist, so a

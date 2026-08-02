@@ -650,6 +650,14 @@
   const ACTIVE_META = "*active*";
 
   /**
+   * SCHEMA's virtual key over a view's DATE columns together: a row is planned
+   * when any of them holds anything. Answered here in full, unlike the metas
+   * above — the cells are all it takes, so no producer set, no vocabulary and
+   * no clock are needed and the two sides cannot disagree about a row.
+   */
+  const PLANNED_KEY = "planned";
+
+  /**
    * The values a column offers for completion: its declared `values' in their
    * own order, then any badge value they did not already name.  Merged rather
    * than shadowed — a producer adding meta-values to a badge column would
@@ -1140,8 +1148,10 @@
       // evidence: a table mounted before its rows arrive — an empty store, a
       // query that matched nothing, a mount filled by `setRows' a moment later
       // — decides there is no such column and never looks again, and the tag
-      // keys, their values and their arity all go with it.
+      // keys, their values and their arity all go with it.  Date-ness is read
+      // off the rows the same way and dies with them for the same reason.
       multiAt = undefined;
+      dateAt = undefined;
       queueIndex();
     }
 
@@ -1431,13 +1441,29 @@
     const columnKeys = () => columns().map((c) => c.key);
 
     /**
+     * The keys the VIEW itself implies: its columns, then `planned' where no
+     * column already carries that name. One spelling for the two places that
+     * ask — the resolution list and the completion tier — so a view with a
+     * column of its own called `planned' cannot list it twice in one and once
+     * in the other.
+     */
+    function namedKeys() {
+      const keys = columnKeys();
+      if (keys.indexOf(PLANNED_KEY) === -1) keys.push(PLANNED_KEY);
+      return keys;
+    }
+
+    /**
      * Every key a predicate may name: the columns, then the virtual keys the
      * rows imply. Columns lead, so a tag sharing a column's name is shadowed by
      * it — SCHEMA's collision rule, and the reason resolution is one ordered
      * list rather than two lookups.
      */
     function queryKeys() {
-      const keys = columnKeys();
+      // `planned' is neither a column nor a tag, and it outranks a tag spelled
+      // like it — `tokenTest' answers it before it reaches the vocabulary — so
+      // the view's own keys lead and the tags follow.
+      const keys = namedKeys();
       for (const tag of tagVocab().list) if (keys.indexOf(tag) === -1) keys.push(tag);
       return keys;
     }
@@ -1473,6 +1499,27 @@
     }
 
     /**
+     * Which columns hold dates, for the one predicate that reads them all at
+     * once. Sampled by `dateColumn' rather than named, which is the same
+     * asymmetry the prefix rule already has: a producer knows which of its
+     * columns are dates and this decides it off the cells, so a page carrying
+     * fewer than two dated rows finds no date column and `planned' narrows
+     * where a producer's own would not (SCHEMA, Filter query).
+     *
+     * Cached like `multiColumn''s verdict and thrown away with it: each column
+     * costs a sample of up to forty cells, and this asks every column.
+     * @returns {number[]}
+     */
+    function dateColumns() {
+      if (dateAt !== undefined) return dateAt;
+      dateAt = [];
+      for (let i = 0; i < columns().length; i++) if (dateColumn(i)) dateAt.push(i);
+      return dateAt;
+    }
+    /** @type {number[]|undefined} */
+    let dateAt;
+
+    /**
      * TOK as a row test, negation aside — `queryMatcher' applies that, since
      * where a token lands in the AND/OR shape depends on it. Free text is a
      * substring of the whole row; a field predicate reads one cell, by SCHEMA's
@@ -1486,6 +1533,17 @@
         // pure-free-text query costs exactly what it did before.
         return v ? (r) => rowText(r).search.includes(v) : () => true;
       const col = colByKey(tok.key);
+      // The date columns as one field, ahead of the vocabulary so a tag spelled
+      // `planned' is shadowed the way a column would shadow it. `none' is the
+      // row nobody put a day on; a value is the same prefix a date column takes,
+      // asked of every one of them, and a cell that prefix-matches is a cell
+      // with something in it, so the presence test never has to be spelled twice.
+      if (tok.key === PLANNED_KEY && !col) {
+        if (!v) return () => true;               // half-typed: narrows nothing
+        const dates = dateColumns();
+        if (v === "none") return (r) => dates.every((i) => !rowText(r).cells[i]);
+        return (r) => dates.some((i) => rowText(r).cells[i].startsWith(v));
+      }
       if (!col) {
         // A virtual key: carrying the tag, and matching the text beside it.
         // Membership comes from the vocabulary rather than from the cell, so
@@ -1530,7 +1588,9 @@
     /** Does KEY name a field a row may hold several of at once? */
     function manyValued(key) {
       const col = colByKey(key);
-      if (!col) return true;                 // a virtual key is one of its values
+      // `planned' stands over the date columns, which are single-valued, so it
+      // ORs its repeats the way they do: `planned:A planned:B' is either.
+      if (!col) return key !== PLANNED_KEY;  // a virtual key is one of its values
       return columns().indexOf(col) === multiColumn();
     }
 
@@ -2379,19 +2439,31 @@
       selectRow(rows[0].id, state.selCol ?? undefined);
     }
 
-    function toggleSort(key) {
-      const col = colByKey(key);
-      if (!col || col.sortable !== true) return;
-      const primary = state.sortKeys[0];
-      state.sortKeys = (primary && primary.column === key)
-        ? [{ column: key, ascending: !primary.ascending, nullsFirst: false }]
-        : [{ column: key, ascending: true, nullsFirst: false }];
+    /**
+     * Sort on KEY in ASCENDING, replacing whatever sort was in force. False
+     * when no column carries that key, so a caller can tell a sort that did not
+     * happen from one that did.
+     * @param {string} key @param {boolean} ascending @returns {boolean}
+     */
+    function sortTo(key, ascending) {
+      if (!colByKey(key)) return false;
+      state.sortKeys = [{ column: key, ascending, nullsFirst: false }];
       page = 0;                          // a different order, read from the top
       continuous = false;
       dropSorted();
       scroll.scrollTop = 0;
       renderArrows();
       renderRows(true);
+      return true;
+    }
+
+    /** A header click: this column ascending, or the other way if it is already
+     *  the primary one. `sortable' gates what a READER may reach. */
+    function toggleSort(key) {
+      const col = colByKey(key);
+      if (!col || col.sortable !== true) return;
+      const primary = state.sortKeys[0];
+      sortTo(key, !(primary && primary.column === key && primary.ascending));
     }
 
     function dispatch(command, row) {
@@ -2785,8 +2857,9 @@
       const t = tokenAtCaret();
       if (!t || t.quoted) return null;
       if (t.key !== null) {
-        // A virtual key takes no value list — what follows it is free text over
-        // the rows it scopes, and there is no domain to offer for that.
+        // A virtual key takes no value list: under a tag key what follows is
+        // free text over the rows it scopes, and under `planned' it is a date
+        // prefix over several columns at once. Neither is a domain to enumerate.
         const col = colByKey(t.key);
         return col ? { stage: "value", tok: t, col, prefix: t.value } : null;
       }
@@ -2810,8 +2883,10 @@
         //    rows imply. Both are exact facts, so neither is dimmed; the
         //    columns come first because they are the view's own vocabulary,
         //    and a tag carries the count of the rows that hold it, a column
-        //    having no one number to show.
-        const keys = columnKeys();
+        //    having no one number to show.  `planned' rides with the columns:
+        //    it is the view's own vocabulary too, and having it in this list is
+        //    also what keeps a tag spelled like it out of the tier below.
+        const keys = namedKeys();
         for (const k of keys) {
           if (!k.toLowerCase().startsWith(p)) continue;
           out.push({ text: k + ":", count: -1, full: false, dim: false, pick: true });
@@ -3446,6 +3521,16 @@
         return gone;
       },
       stripLastToken,
+      /**
+       * Sort on COLUMN, ascending unless ASCENDING is false, replacing whatever
+       * sort is in force. A header click TOGGLES; this states an order, so a
+       * consumer applying a canned view lands on the same one every time. It
+       * ignores `sortable', which gates what a READER may reach rather than
+       * what a producer's own agent may ask for.
+       * @param {string} column @param {boolean} [ascending]
+       * @returns {boolean} false when no column carries that key
+       */
+      sortBy(column, ascending) { return sortTo(column, ascending !== false); },
       openFilter,
       closeFilter,
       selectStep,

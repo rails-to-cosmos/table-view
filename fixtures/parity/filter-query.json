@@ -1,6 +1,49 @@
 {
   "capability": "query",
-  "doc": "SCHEMA.md's filter micro-syntax, applied end to end: a query in, the ids it leaves out. Browser-renderer only -- table-view.el's `/' is a plain substring over the row, with no grammar to hold to this. One view for every case. The `state:*...*' cases are a renderer's half of a producer meta: which keywords are in a group is the producer's to say, so the only term decidable here is the empty cell SCHEMA puts in `*active*'.",
+  "doc": "SCHEMA.md's filter micro-syntax, applied end to end: a query in, the ids it leaves out. Browser-renderer only -- table-view.el's `/' is a plain substring over the row, with no grammar to hold to this. The `state:*...*' cases are a renderer's half of a producer meta: which keywords are in a group is the producer's to say, so the only term decidable here is the empty cell SCHEMA puts in `*active*'. Most cases share the file's `view'; a case may carry one of its own, either whole or as {\"$ref\": NAME} naming one of `views'.",
+  "views": {
+    "planned": {
+      "title": "planned",
+      "columns": [
+        { "key": "state", "header": "State", "type": "badge",
+          "badges": [
+            { "value": "TODO", "color": "#e0af68", "group": "active" },
+            { "value": "DONE", "color": "#9ece6a", "group": "inactive" }
+          ] },
+        { "key": "title", "header": "Headline" },
+        { "key": "scheduled", "header": "Scheduled" },
+        { "key": "deadline", "header": "Deadline" }
+      ],
+      "rows": [
+        { "id": "both", "cells": { "state": "TODO", "title": "ship the table view",
+                                   "scheduled": "2026-08-01", "deadline": "2026-08-05" } },
+        { "id": "sched", "cells": { "state": "TODO", "title": "write two words",
+                                    "scheduled": "2026-08-03", "deadline": "" } },
+        { "id": "due", "cells": { "state": "DONE", "title": "read the notes",
+                                  "scheduled": "", "deadline": "2026-08-10" } },
+        { "id": "neither", "cells": { "state": "TODO", "title": "a jotting with no day",
+                                      "scheduled": "", "deadline": "" } },
+        { "id": "blank", "cells": { "state": "", "title": "nobody stated this one",
+                                    "scheduled": "", "deadline": "" } }
+      ]
+    },
+    "tagged-planned": {
+      "title": "planned shadows a tag",
+      "columns": [
+        { "key": "title", "header": "Headline" },
+        { "key": "tag", "header": "Tags", "multi": true },
+        { "key": "scheduled", "header": "Scheduled" }
+      ],
+      "rows": [
+        { "id": "t1", "cells": { "title": "tagged and dated", "tag": ":planned:",
+                                 "scheduled": "2026-08-01" } },
+        { "id": "t2", "cells": { "title": "tagged, no day", "tag": ":planned:",
+                                 "scheduled": "" } },
+        { "id": "t3", "cells": { "title": "dated, untagged", "tag": "",
+                                 "scheduled": "2026-08-02" } }
+      ]
+    }
+  },
   "view": {
     "title": "query",
     "columns": [
@@ -76,6 +119,41 @@
     { "name": "a bare hyphen negates the empty term, which matches everything",
       "q": "-", "expect": { "ids": [] } },
     { "name": "an empty query filters nothing", "q": "",
-      "expect": { "ids": ["a", "b", "c", "d"] } }
+      "expect": { "ids": ["a", "b", "c", "d"] } },
+
+    { "name": "planned is the date columns taken together",
+      "doc": "A row is planned when EITHER date cell holds anything; `due' has only a deadline.",
+      "view": { "$ref": "planned" },
+      "q": "-planned:none", "expect": { "ids": ["both", "sched", "due"] } },
+    { "name": "planned:none is a row nobody put a day on",
+      "view": { "$ref": "planned" },
+      "q": "planned:none", "expect": { "ids": ["neither", "blank"] } },
+    { "name": "a planned value is the date prefix, over every date column at once",
+      "view": { "$ref": "planned" },
+      "q": "planned:2026-08", "expect": { "ids": ["both", "sched", "due"] } },
+    { "name": "so a prefix one column misses can still be met by the other",
+      "doc": "Only the deadline falls in that decade of the month.",
+      "view": { "$ref": "planned" },
+      "q": "planned:2026-08-1", "expect": { "ids": ["due"] } },
+    { "name": "and a prefix is a prefix, never a substring",
+      "view": { "$ref": "planned" },
+      "q": "planned:08-03", "expect": { "ids": [] } },
+    { "name": "planned repeats OR, being single-valued like the columns it reads",
+      "view": { "$ref": "planned" },
+      "q": "planned:2026-08-03 planned:2026-08-10", "expect": { "ids": ["sched", "due"] } },
+    { "name": "planned with nothing typed narrows nothing",
+      "view": { "$ref": "planned" },
+      "q": "planned:", "expect": { "ids": ["both", "sched", "due", "neither", "blank"] } },
+    { "name": "negating planned drops what it matched",
+      "view": { "$ref": "planned" },
+      "q": "-planned:2026-08-1", "expect": { "ids": ["both", "sched", "neither", "blank"] } },
+    { "name": "planned ANDs with a column predicate like any distinct key",
+      "doc": "The agenda's shape, spelled with a concrete keyword: which keywords are `*active*' is the producer's to say, so a vector states the half decidable here.",
+      "view": { "$ref": "planned" },
+      "q": "state:TODO -planned:none", "expect": { "ids": ["both", "sched"] } },
+    { "name": "planned shadows a tag spelled like it",
+      "doc": "`:planned:' is in the vocabulary and `planned' still reads as the date key, the way a column key would shadow it.",
+      "view": { "$ref": "tagged-planned" },
+      "q": "planned:none", "expect": { "ids": ["t2"] } }
   ]
 }

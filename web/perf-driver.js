@@ -676,6 +676,23 @@ async function sortOrder() {
   p.applyDelta([{ op: "delete", index: 0 }]);
   check("with no sort the window is the store",
         p.getRows().map((r) => r.cells.name), ["", "apple", "fig"]);
+
+  // --- m: `sortBy' STATES an order where a header click toggles one.  A
+  // consumer applying a canned view -- glance's agenda -- has to land on the
+  // same order every time it is asked for, so asking twice must not reverse it.
+  const said = new El("div");
+  const q = TableView.mount(said, { title: "order", columns: cols, rows });
+  check("sortBy orders the window", (q.sortBy("name"),
+        q.getVisible().map((r) => r.cells.name)), ["apple", "fig", "pear", ""]);
+  check("and asking again says the same thing", (q.sortBy("name"),
+        q.getVisible().map((r) => r.cells.name)), ["apple", "fig", "pear", ""]);
+  check("false takes the other direction", (q.sortBy("name", false),
+        q.getVisible().map((r) => r.cells.name)), ["pear", "fig", "apple", ""]);
+  // `sortable' is opt-in and gates the READER's key; neither column here
+  // declares it, and both of the above sorted, which is the whole of the rule.
+  check("a column nothing carries is refused, and says so", q.sortBy("nope"), false);
+  check("and the order it was in is left alone",
+        q.getVisible().map((r) => r.cells.name), ["pear", "fig", "apple", ""]);
 }
 
 
@@ -731,8 +748,12 @@ async function parityVectors() {
     if (mine.indexOf(v.capability) === -1) continue;
     const file = read(v.file);
     check(`${v.file} declares ${v.capability}`, file.capability, v.capability);
+    // A case takes the file's view, one of its own, or `{"$ref": NAME}' naming
+    // one of the file's `views' — so a view several cases share is written once.
+    const viewOf = (c) => (c.view && c.view.$ref ? file.views[c.view.$ref]
+                                                 : c.view || file.view);
     for (const c of file.cases)
-      runners[v.capability](c, c.view || file.view, `${v.file}: ${c.name}`);
+      runners[v.capability](c, viewOf(c), `${v.file}: ${c.name}`);
   }
 }
 
@@ -2808,6 +2829,48 @@ async function virtualKeys() {
           [true, true]);
     check("keys before values",
           plain().indexOf("book:") < plain().indexOf("tag:book"), true);
+  }
+
+  // --- `planned': the reserved key over the date columns
+  // The semantics are the parity vectors' (fixtures/parity/filter-query.json);
+  // what belongs here is the key's standing in the vocabulary, which vectors
+  // over one query cannot show.
+  {
+    const cols = [
+      { key: "title", header: "Headline", type: "text" },
+      { key: "tag", header: "Tags", type: "text" },
+      { key: "scheduled", header: "Scheduled", type: "text" },
+      { key: "deadline", header: "Deadline", type: "text" },
+    ];
+    const rows = [
+      { id: "1", cells: { title: "dated both ways", tag: ":planned:",
+                          scheduled: "2026-08-01", deadline: "2026-08-05" } },
+      { id: "2", cells: { title: "a deadline alone", tag: ":planned:",
+                          scheduled: "", deadline: "2026-08-10" } },
+      { id: "3", cells: { title: "no day at all", tag: ":planned:",
+                          scheduled: "", deadline: "" } },
+    ];
+    const P2 = driver({ columns: cols, rows });
+    const pbox = P2.box, pt = P2.handle, pb = P2.b();
+    // Each query from a clean box: a committed one becomes a chip, and two of
+    // them would AND rather than replace.
+    const run = (q) => { P2.shown(q); return pt.getVisible().map((r) => r.id); };
+    check("planned reads every date column, not one of them",
+          run("-planned:none"), ["1", "2"]);
+    check("and none is the row neither column speaks for", run("planned:none"), ["3"]);
+    // The fixture tags every row `:planned:', so a tag reading would keep all
+    // three of them where the key's own reading keeps one.
+    check("a tag spelled like it is shadowed, the way a column would shadow it",
+          [run("planned:none").length, rows.length], [1, 3]);
+    check("the tag is still reachable through the column that holds it",
+          run("tag:planned").length, 3);
+    const keys = P2.type("plan");
+    check("it is offered as a key, so a reader can find it",
+          keys.indexOf("planned:") !== -1, true);
+    check("and only once, the tag of that name not offering a second",
+          keys.filter((x) => x === "planned:").length, 1);
+    check("it offers no value list — what follows is a date prefix, not a domain",
+          P2.type("planned:").length, 0);
   }
 
   // --- C-n and C-p drive the list, and only while it is open
