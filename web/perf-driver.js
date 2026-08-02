@@ -751,6 +751,7 @@ async function metaValues() {
     { id: "1", cells: { title: "one", state: "TODO" } },
     { id: "2", cells: { title: "two", state: "TODO" } },
     { id: "3", cells: { title: "three", state: "DONE" } },
+    { id: "4", cells: { title: "four", state: "" } },
   ];
   const P = driver({ title: "meta", columns: cols, rows });
 
@@ -782,9 +783,23 @@ async function metaValues() {
   P.box.querySelectorAll(".tv-ac-item")[0].dispatchEvent(new Ev("click"));
   check("accepting inserts it with its asterisks", P.b().value.trim(), "state:*active*");
 
-  // --- and the local evaluator says so honestly
-  check("locally a meta is a literal, so it matches nothing",
-        P.shown("state:*active*"), 0);
+  // --- and the local evaluator answers the one half it can
+  //
+  // SCHEMA puts the EMPTY cell in `*active*' -- a row nobody has stated is live
+  // work -- and that term names no keyword, so it reads the same here as at the
+  // producer. The keyword half is the producer's and drops out, which is why
+  // `*active*' finds the one stateless row rather than the three active ones.
+  // `*inactive*' has no such half and stays the literal it was.
+  check("the active meta finds the stateless row, the half a renderer can know",
+        P.shown("state:*active*"), 1);
+  check("and state:none is that same row, asked for by name",
+        P.shown("state:none"), 1);
+  check("the inactive meta stays a literal, so it matches nothing",
+        P.shown("state:*inactive*"), 0);
+  check("negating the active meta drops the stateless row",
+        P.shown("-state:*active*"), 3);
+  check("while negating the inactive one drops nothing",
+        P.shown("-state:*inactive*"), 4);
   check("while a concrete value matches as ever", P.shown("state:TODO"), 2);
 
   // --- regressions either side of the merge

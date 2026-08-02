@@ -1,6 +1,6 @@
 {
   "capability": "query",
-  "doc": "SCHEMA.md's filter micro-syntax, applied end to end: a query in, the ids it leaves out. Browser-renderer only -- table-view.el's `/' is a plain substring over the row, with no grammar to hold to this. One view for every case.",
+  "doc": "SCHEMA.md's filter micro-syntax, applied end to end: a query in, the ids it leaves out. Browser-renderer only -- table-view.el's `/' is a plain substring over the row, with no grammar to hold to this. One view for every case. The `state:*...*' cases are a renderer's half of a producer meta: which keywords are in a group is the producer's to say, so the only term decidable here is the empty cell SCHEMA puts in `*active*'.",
   "view": {
     "title": "query",
     "columns": [
@@ -19,6 +19,8 @@
       { "id": "b", "cells": { "state": "DONE", "title": "write two words",
                               "tag": ":web:", "scheduled": "2026-09-02" } },
       { "id": "c", "cells": { "state": "TODO", "title": "read :work: notes",
+                              "tag": "", "scheduled": "" } },
+      { "id": "d", "cells": { "state": "", "title": "a jotting nobody stated",
                               "tag": "", "scheduled": "" } }
     ]
   },
@@ -31,7 +33,7 @@
     { "name": "a badge value does not match by substring", "q": "state:DON",
       "expect": { "ids": [] } },
     { "name": "a leading hyphen negates", "q": "-state:DONE",
-      "expect": { "ids": ["a", "c"] } },
+      "expect": { "ids": ["a", "c", "d"] } },
     { "name": "a single-valued field ORs its repeats",
       "doc": "AND would always be empty, so repeating `state' means either.",
       "q": "state:TODO state:DONE", "expect": { "ids": ["a", "b", "c"] } },
@@ -43,9 +45,20 @@
     { "name": "distinct keys AND", "q": "state:TODO tag:api",
       "expect": { "ids": ["a"] } },
     { "name": "none matches the empty cell", "q": "tag:none",
-      "expect": { "ids": ["c"] } },
+      "expect": { "ids": ["c", "d"] } },
+    { "name": "the active meta matches the empty cell",
+      "doc": "SCHEMA puts an unstated row in `*active*' -- live work. The keyword half of the group needs the producer's sets, so locally the empty cell is the whole answer.",
+      "q": "state:*active*", "expect": { "ids": ["d"] } },
+    { "name": "the inactive meta has no empty-cell half",
+      "doc": "An entry nobody marked done is not done, so the two metas do not partition the column.",
+      "q": "state:*inactive*", "expect": { "ids": [] } },
+    { "name": "negating the active meta drops the empty cell",
+      "q": "-state:*active*", "expect": { "ids": ["a", "b", "c"] } },
+    { "name": "state:none is that same empty cell, asked for by name",
+      "doc": "Unchanged by the meta, and now a subset of it.",
+      "q": "state:none", "expect": { "ids": ["d"] } },
     { "name": "a key with nothing typed narrows nothing", "q": "state:",
-      "expect": { "ids": ["a", "b", "c"] } },
+      "expect": { "ids": ["a", "b", "c", "d"] } },
     { "name": "a date-shaped column matches by prefix", "q": "scheduled:2026-08",
       "expect": { "ids": ["a"] } },
     { "name": "and not in the middle", "q": "scheduled:08",
@@ -63,6 +76,6 @@
     { "name": "a bare hyphen negates the empty term, which matches everything",
       "q": "-", "expect": { "ids": [] } },
     { "name": "an empty query filters nothing", "q": "",
-      "expect": { "ids": ["a", "b", "c"] } }
+      "expect": { "ids": ["a", "b", "c", "d"] } }
   ]
 }

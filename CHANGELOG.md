@@ -6,6 +6,24 @@ the rails-to-cosmos ELPA archive publishes date-stamped snapshots.
 ## Unreleased
 
 ### Changed
+- **`state:*active*` matches the empty cell (SCHEMA.md + browser
+  renderer).** SCHEMA's badge meta-values gain a rule they were silent
+  on: `*active*` covers the unstated row as well as the producer's
+  active values — an entry nobody has stated is live work, and the
+  default view is what would otherwise hide it — while `*inactive*`
+  covers stated values alone. The two groups therefore do not partition
+  the column, and `-state:*active*` excludes the empty cell. `key:none`
+  is unchanged and is now a subset of `*active*`. In `tokenTest` this is
+  the one term of a producer meta a renderer can decide for itself:
+  which keywords are in a group needs the producer's sets, an empty cell
+  does not, so `state:*active*` locally answers the stateless rows
+  rather than nothing. `*inactive*` stays the literal it was. The
+  autocomplete still shows a meta dimmed and uncounted — these counts
+  are per cell value, and a fraction of what the producer will match is
+  no better a number than zero. `fixtures/parity/filter-query.json`
+  gains a stateless row and four cases (both metas, the negation, and
+  `state:none` beside them); `table-view.el` has no query grammar and is
+  untouched.
 - **Breaking — `sortable` is opt-in in `table-view.el` too.** SCHEMA.md
   has always read it that way and so has the browser renderer: a column
   declares `sortable` or it is not sorted on. This renderer took the

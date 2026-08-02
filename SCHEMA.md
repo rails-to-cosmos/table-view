@@ -195,7 +195,10 @@ on the column is how a producer says so, and a renderer guessing from cell
 shape must defer to it). Distinct keys and free-text
 tokens AND. Negations AND regardless. Field-predicate semantics, by column type: `badge` —
 whole-value match, case-insensitive; a producer may add meta-values (e.g.
-glance's `state:active` / `state:inactive` matching keyword groups);
+glance's `state:*active*` / `state:*inactive*` matching keyword groups —
+`*active*` matches the **empty cell** as well, an unstated row being live
+work, while `*inactive*` matches stated values alone, so the two groups do
+not partition the column and `-state:*active*` excludes the empty cell);
 `text`/`number` — case-insensitive substring; date-shaped text cells —
 prefix match (`scheduled:2026-08`). Three uniform rules across types:
 `key:none` matches the empty cell (any type; a literal cell value "none" is
