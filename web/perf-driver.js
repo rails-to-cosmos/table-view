@@ -848,6 +848,22 @@ async function metaValues() {
   P.box.querySelectorAll(".tv-ac-item")[0].dispatchEvent(new Ev("click"));
   check("accepting inserts it with its asterisks", P.b().value.trim(), "state:*active*");
 
+  // --- and the asterisks are reading notation, not typing burden
+  const metaAt = () => P.box.querySelectorAll(".tv-ac-item")
+    .findIndex((e) => e.classes.has("tv-ac-on"));
+  check("a meta answers to the word inside its stars", P.type("state:act"), ["*active*"]);
+  check("and to the whole of that word", P.type("state:active"), ["*active*"]);
+  check("the other one the same way", P.type("state:inactive"), ["*inactive*"]);
+  check("spelled in full it leads, so RET takes it", metaAt(), 0);
+  P.b().dispatchEvent(new Ev("keydown", { key: "Enter" }));
+  check("and what commits still wears the stars",
+        P.handle.getQuery(), "state:*inactive*");
+  check("a bare word reaches one through its column too",
+        P.type("active"), ["state:*active*"]);
+  check("chosen there as well", metaAt(), 0);
+  check("while a word inside no meta reaches none of them",
+        P.type("state:tive"), []);
+
   // --- and the local evaluator answers the one half it can
   //
   // SCHEMA puts the EMPTY cell in `*active*' -- a row nobody has stated is live
@@ -1891,10 +1907,14 @@ async function filterQuery() {
   check("Tab on a key suggestion completes to key:", b.value, "state:");
   check("and stays in the box for the value", (b.blurs || 0) - held, 0);
   check("and the list moves to the value stage", items(), STATES);
+  b.dispatchEvent(new Ev("keydown", { key: "Tab" }));
+  check("Tab accepts the value at row one, with a trailing space",
+        b.value, "state:" + STATES[0] + " ");
+  type("sta");
+  b.dispatchEvent(new Ev("keydown", { key: "Tab" }));
   b.dispatchEvent(new Ev("keydown", { key: "ArrowDown" }));
   b.dispatchEvent(new Ev("keydown", { key: "Tab" }));
-  check("Tab accepts the highlighted value, with a trailing space",
-        b.value, "state:NEXT ");
+  check("and an arrow moves which value that is", b.value, "state:" + STATES[1] + " ");
   check("and the list closes once the token is finished", items(), []);
 
   type("state:DONE tit");
@@ -2700,24 +2720,33 @@ async function virtualKeys() {
   type("d");
   check("a one-letter prefix still reaches values — only tier three waits",
         tier(2).length > 0, true);
-  type("sync");
-  check("nothing is preselected when only tags are offered — Enter commits the word",
-        [items().every((x) => !x.endsWith(":")),
-         box.querySelectorAll(".tv-ac-on").length], [true, 0]);
-  check("while a column completion does start highlighted",
+  // Row one is the choice whatever tier it came from — a guessed word as much
+  // as a column key. An open list always has an answer for RET.
+  const guesses = type("rev");
+  check("row one is chosen where every offer is a guessed word",
+        [guesses.length > 0, guesses.every((x) => !x.endsWith(":")),
+         box.querySelectorAll(".tv-ac-on").length], [true, true, 1]);
+  check("and where a column completion leads",
         (() => { type("sta"); return box.querySelectorAll(".tv-ac-on").length; })(), 1);
+  // A whole word nothing completes opens no list, so RET is the query's again.
+  check("a word nothing completes offers nothing to choose",
+        [type("sync").length, box.querySelectorAll(".tv-ac-on").length], [0, 0]);
+  check("and RET applies it as the free text it is", shown("sync") > 0, true);
 
   reset();
   b.value = "sy";
   b.dispatchEvent(new Ev("input"));
-  check("nothing starts highlighted when the first row is an offer",
-        box.querySelectorAll(".tv-ac-on").length, 0);
-  b.dispatchEvent(new Ev("keydown", { key: "ArrowDown" }));
-  check("an arrow steps into the offers", box.querySelectorAll(".tv-ac-on").length, 1);
+  check("a list that opens at all opens with its first row chosen",
+        box.querySelectorAll(".tv-ac-on").length, 1);
   const first = items()[0];
   b.dispatchEvent(new Ev("keydown", { key: "Tab" }));
   check("Tab on a key completion leaves the value to type", b.value, first);
   check("and a virtual key offers no value list", items(), []);
+  b.value = "sy";
+  b.dispatchEvent(new Ev("input"));
+  b.dispatchEvent(new Ev("keydown", { key: "ArrowDown" }));
+  check("an arrow steps on from row one rather than into the list",
+        box.querySelectorAll(".tv-ac-item").findIndex((e) => e.classes.has("tv-ac-on")), 1);
 
   // A tag name is a key like any other: its prefix completes to `tag:'.
   reset();
@@ -2731,7 +2760,6 @@ async function virtualKeys() {
   reset();
   b.value = "sys";
   b.dispatchEvent(new Ev("input"));
-  b.dispatchEvent(new Ev("keydown", { key: "ArrowDown" }));
   b.dispatchEvent(new Ev("keydown", { key: "Tab" }));
   check("Tab lands the key with the caret past the colon", b.value, "system:");
   b.value = "system:sy";
@@ -2769,6 +2797,11 @@ async function virtualKeys() {
     check("and each one, run, finds the rows it was counted from",
           (() => {
             cb.value = "contact:tanik";
+            // Typed rather than assigned: the box the previous case left open
+            // still holds a list over the OLD text, and RET is the list's key
+            // before it is the query's. A virtual key offers nothing, so the
+            // keystroke is also what puts that list away.
+            cb.dispatchEvent(new Ev("input"));
             cb.dispatchEvent(new Ev("keydown", { key: "Enter" }));
             return ct.getVisible().length;
           })(), 2);
@@ -2888,6 +2921,66 @@ async function virtualKeys() {
           [true, true]);
     check("keys before values",
           plain().indexOf("book:") < plain().indexOf("tag:book"), true);
+
+    // --- ROW ONE IS THE CHOICE, and the ordering is the whole of what RET means
+    const chosen = () => cbox.querySelectorAll(".tv-ac-item")
+      .findIndex((e) => e.classes.has("tv-ac-on"));
+    // Typed in full, the value leads: it is the one offer that needs no more
+    // typing, where the `book:' beside it asks for the same rows in a token
+    // still half written.
+    offer("book");
+    check("a word that SPELLS a tag leads with the value, ahead of the key",
+          plain().slice(0, 2), ["tag:book", "book:"]);
+    check("and that row is the chosen one", chosen(), 0);
+    cb.dispatchEvent(new Ev("keydown", { key: "Enter" }));
+    check("so RET commits it with no arrow at all",
+          [ct.getQuery(), cb.value], ["tag:book", ""]);
+    check("finding the rows the tag holds", ct.getVisible().length, 2);
+
+    // A prefix has nothing spelled in full to lead with, so row one is the
+    // first offer — and RET takes that, rather than the letters typed.
+    check("a prefix leads with the key, the tag being only opened", offer("boo")[0], "book:");
+    check("chosen there too", chosen(), 0);
+    cb.dispatchEvent(new Ev("keydown", { key: "Enter" }));
+    check("and RET takes it — a key completes and waits for its value",
+          cb.value, "book:");
+    offer("boo");
+    cb.dispatchEvent(new Ev("keydown", { key: "ArrowDown" }));
+    check("an arrow still walks on from row one", chosen(), 1);
+
+    // The literal is reached through the grammar rather than through a second
+    // meaning for RET: a quoted token is free text and asks for no suggestions.
+    check("a quoted word offers nothing to hijack RET", offer(`"boo"`).length, 0);
+    cb.dispatchEvent(new Ev("keydown", { key: "Enter" }));
+    check("so RET applies it as written",
+          [ct.getQuery(), ct.getVisible().length > 0], [`"boo"`, true]);
+    check("and a word nothing completes has no list either", offer("zzz").length, 0);
+    cb.dispatchEvent(new Ev("keydown", { key: "Enter" }));
+    check("so it too applies literally", [ct.getQuery(), ct.getVisible().length], ["zzz", 0]);
+
+    // The value stage ranks the same way, against a domain whose DECLARED
+    // order buries the exact match — row one is what RET takes, so the value
+    // typed in full has to be there whatever the column's own order says.
+    {
+      const deep = new El("div");
+      const dt = TableView.mount(deep, {
+        columns: [{ key: "title", header: "H", type: "text" },
+                  { key: "kind", header: "Kind", type: "text",
+                    values: ["course-notes", "coursework", "course"] }],
+        rows: [{ id: "1", cells: { title: "a", kind: "course-notes" } },
+               { id: "2", cells: { title: "b", kind: "course" } },
+               { id: "3", cells: { title: "c", kind: "coursework" } }],
+      });
+      const db = filterOf(deep);
+      db.value = "kind:course";
+      db.dispatchEvent(new Ev("input"));
+      check("the value typed in full leads the ones it merely opens",
+            deep.querySelectorAll(".tv-ac-label").map((e) => e.text),
+            ["course", "course-notes", "coursework"]);
+      db.dispatchEvent(new Ev("keydown", { key: "Enter" }));
+      check("so RET commits that one, not the first the column declared",
+            dt.getQuery(), "kind:course");
+    }
   }
 
   // --- `planned': the reserved key over the date columns
@@ -2938,23 +3031,22 @@ async function virtualKeys() {
       .findIndex((e) => e.classes.has("tv-ac-on"));
     const press = (key, ctrl) => P.press(key, { ctrlKey: ctrl });
     type("sy");
-    check("nothing is active to begin with", at(), -1);
+    check("row one is active to begin with", at(), 0);
     press("n", true);
-    check("C-n steps down the list", at(), 0);
+    check("C-n steps down the list", at(), 1);
     press("n", true);
-    check("and again", at(), 1);
+    check("and again", at(), 2);
     press("p", true);
-    check("C-p steps back up", at(), 0);
+    check("C-p steps back up", at(), 1);
     check("and they are taken from the page", press("n", true).defaultPrevented, true);
 
-    // From nothing, up wraps to the end of the list the way down starts at its
-    // head — a list is a ring, and reaching the last offer should not mean
-    // walking the whole of it.
+    // Up from row one wraps to the end — a list is a ring, and reaching the
+    // last offer should not mean walking the whole of it.
     type("sy");
     const many = box.querySelectorAll(".tv-ac-item").length;
     check("there is more than one offer to wrap between", many > 1, true);
     press("p", true);
-    check("C-p from nothing wraps to the last", at(), many - 1);
+    check("C-p from row one wraps to the last", at(), many - 1);
     type("sy");
     press("ArrowUp");
     check("and ArrowUp is that same motion", at(), many - 1);
@@ -3353,11 +3445,11 @@ async function virtualKeys() {
       pb.dispatchEvent(e);
       return e;
     };
-    check("a list opens in the palette with nothing chosen",
-          [pal.querySelectorAll(".tv-ac-item").length > 0, pAt()], [true, -1]);
-    check("C-n steps down it", [pPress("n", true).defaultPrevented, pAt()], [true, 0]);
-    check("and again", (pPress("n", true), pAt()), 1);
-    check("C-p steps back up", [pPress("p", true).defaultPrevented, pAt()], [true, 0]);
+    check("a list opens in the palette on its first row, as on the page",
+          [pal.querySelectorAll(".tv-ac-item").length > 0, pAt()], [true, 0]);
+    check("C-n steps down it", [pPress("n", true).defaultPrevented, pAt()], [true, 1]);
+    check("and again", (pPress("n", true), pAt()), 2);
+    check("C-p steps back up", [pPress("p", true).defaultPrevented, pAt()], [true, 1]);
     // Parity with the arrows from the same start, in the same place.
     pb.value = "sy";
     pb.dispatchEvent(new Ev("input"));
@@ -3551,26 +3643,27 @@ async function virtualKeys() {
           labels().sort(),
           ["daemon", "emacs", "glance", "ops", "read", "system", "web"]);
     check("each with the rows behind it", counts().every((n) => n > 0), true);
-    check("none of them chosen for the user", on(), 0);
+    check("with row one of them chosen, the way every list opens", on(), 1);
 
-    // From there: RET again is the presence predicate they typed.
+    // From there: RET again takes that row. A list with something to offer has
+    // an answer for RET, so the value is one keystroke rather than two.
+    const leading = labels()[0];
     b.dispatchEvent(new Ev("keydown", { key: "Enter" }));
     await painted();
-    check("a second RET commits the presence predicate, not a guessed value",
+    check("a second RET commits the value at row one",
           [st.querySelectorAll(".tv-chip").map((c) => c.text.replace("×", "")), asked],
-          [["tag:"], ["tag:"]]);
+          [["tag:" + leading], ["tag:" + leading]]);
     check("and hands the table over", b.blurs, 1);
 
-    // Or: arrow to a value, and RET finishes the whole thing.
+    // And RET on a value finishes the whole thing.
     asked.length = 0;
     b.focus();
     type("state:");
-    check("a value list opens with nothing chosen", on(), 0);
-    b.dispatchEvent(new Ev("keydown", { key: "ArrowDown" }));
+    check("a value list opens on its first row too", on(), 1);
     const picked = labels()[0];
     b.dispatchEvent(new Ev("keydown", { key: "Enter" }));
     await painted();
-    check("RET on a chosen value completes and goes",
+    check("RET on that value completes and goes",
           [st.querySelectorAll(".tv-chip").map((c) => c.text.replace("×", "")).pop(),
            b.value, st.querySelectorAll(".tv-ac-item").length],
           ["state:" + picked, "", 0]);
@@ -3581,7 +3674,6 @@ async function virtualKeys() {
     type("ta");
     b.dispatchEvent(new Ev("keydown", { key: "Tab" }));
     check("Tab on a key completes it and stays", [b.value, b.blurs], ["tag:", 2]);
-    b.dispatchEvent(new Ev("keydown", { key: "ArrowDown" }));
     const tagPick = labels()[0];
     b.dispatchEvent(new Ev("keydown", { key: "Tab" }));
     check("Tab on a value finishes the token and still stays",
@@ -3593,12 +3685,23 @@ async function virtualKeys() {
     b.value = "";
     b.dispatchEvent(new Ev("input"));
     type("TODO");
-    b.dispatchEvent(new Ev("keydown", { key: "ArrowDown" }));
     b.dispatchEvent(new Ev("keydown", { key: "Enter" }));
     await painted();
     check("and a finished token offered beside a bare word goes on RET",
           [st.querySelectorAll(".tv-chip").map((c) => c.text.replace("×", "")).pop(),
            b.value], ["state:TODO", ""]);
+
+    // The presence predicate is reached by putting the list away first, which
+    // is the one ladder Escape has always walked.
+    b.focus();
+    type("ta");
+    b.dispatchEvent(new Ev("keydown", { key: "Enter" }));      // `tag:', values listed
+    b.dispatchEvent(new Ev("keydown", { key: "Escape" }));     // the list, not the text
+    b.dispatchEvent(new Ev("keydown", { key: "Enter" }));
+    await painted();
+    check("Escape then RET commits the presence predicate as typed",
+          [st.querySelectorAll(".tv-chip").map((c) => c.text.replace("×", "")).pop(),
+           b.value], ["tag:", ""]);
   }
 
   // --- where the browser eats C-n, the list says so rather than going quiet
@@ -4573,6 +4676,7 @@ async function smoke() {
     asked.length = 0;
     rbox.value = "sys";
     rbox.dispatchEvent(new Ev("input"));          // debounce armed, not yet due
+    rbox.dispatchEvent(new Ev("keydown", { key: "Escape" }));   // the list, not the text
     rbox.dispatchEvent(new Ev("keydown", { key: "Enter" }));
     const rSel = () => remote.querySelector(".tv-table tbody tr.tv-sel");
     await painted();
@@ -4598,6 +4702,7 @@ async function smoke() {
 
     kbox.value = "system";
     kbox.dispatchEvent(new Ev("input"));           // debounce armed, not yet due
+    kbox.dispatchEvent(new Ev("keydown", { key: "Escape" }));   // the list, not the text
     kbox.dispatchEvent(new Ev("keydown", { key: "Enter" }));
     const narrowed = kt.getVisible();
     await painted();

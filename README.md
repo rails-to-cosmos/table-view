@@ -590,11 +590,16 @@ vocabulary, no clock — where the metas below need the producer.
 
 A **suggestion list** under the box completes it. A bare word offers, in order:
 
-1. the **keys** it opens — the view's columns, then the tags the rows imply
-   (`boo` → `book:`, with the count of rows holding it);
-2. the columns whose declared domain holds it as a **value** (`TODO` →
+1. the **value it already spells**, where some column's domain holds one (`book`
+   → `tag:book`) — the one offer that needs no more typing, so it leads even the
+   `book:` key beside it, which asks for the same rows in a token still half
+   written;
+2. the **keys** it opens — the view's columns, then the tags the rows imply
+   (`boo` → `book:`, with the count of rows holding it), a key it spells in full
+   ahead of the ones it only opens;
+3. the columns whose declared domain holds it as a **value** by prefix (`TOD` →
    `state:TODO`) — exact facts about the data;
-3. and, only when nothing exact was found, up to five **word completions**,
+4. and, only when nothing exact was found, up to five **word completions**,
    dimmed: whole title words starting with what was typed, paired with the tags
    their rows carry (`tan` → `contact:tanik`). Every one of them is a query that
    finds something, by construction — it was counted from the rows it came from.
@@ -602,7 +607,8 @@ A **suggestion list** under the box completes it. A bare word offers, in order:
 Exact beats fuzzy, and fuzzy never crowds. After `key:` comes that column's
 value domain: its declared `values` in their own order, then any **badge value
 they did not already name**, else the distinct cell values — each with the
-number of rows behind it. The two are merged rather than one shadowing the
+number of rows behind it, and the value typed in full at their head whatever
+that order says. The two are merged rather than one shadowing the
 other, so a column that declares meta-values keeps its concrete keywords in the
 list. A virtual key has no domain to offer: under a tag key what follows is
 ordinary text, and under `planned` it is a date prefix.
@@ -615,22 +621,35 @@ here would print 0 (no cell holds the literal string) beside an entry that in
 fact matches plenty. Accepting one inserts it verbatim, asterisks and all:
 `state:*active*`.
 
+**A meta completes star-free.** The asterisks are reading notation — the mark
+that says the producer decides this one — so **display and commit wear them and
+matching ignores them**: `state:act` and `state:active` both offer `*active*`,
+`state:*act` still does, and the bare word `active` surfaces `state:*active*`
+through the column that declares it. Typed in full, star-free or not, it leads
+the list, so RET commits `state:*active*` from four letters.
+
 The local evaluator matches such a token **literally**, which is to say it
 matches nothing. That is deliberate rather than a gap: a view that declares
 metas is one whose filtering belongs to the producer, and it is expected to
 pass `onFilter` so the query is answered where the meaning lives. glance does
 exactly this, so its users never reach the literal path. **Arrows** move, **Tab**/**Enter**
-accept, **Escape** dismisses, a click accepts without taking focus. Only a
-column name starts highlighted — a tag name is often the word you were actually
-searching for — so Enter still commits the word as typed.
+accept, **Escape** dismisses, a click accepts without taking focus.
+
+**Row one is always the choice.** A list with anything to offer opens with its
+first row highlighted, so RET takes it and the common case costs no arrow. The
+ordering above is therefore the whole of what RET means, and the consequence is
+worth stating plainly: **with suggestions showing, RET commits the top
+suggestion rather than the letters you typed.** The literal stays the grammar's
+to give — a **quoted** token is free text and asks for no suggestions at all
+(`"boo"`), **Escape** puts the list away so the next RET commits what is
+written, and a word nothing completes never opened a list to begin with.
 
 **Tab** completes and stays, at either stage. **Enter** is stage-aware:
 completing a *key* leaves the caret past the colon with that key's values
 already listed — `ta` → RET → `tag:` and the tags with their counts — because
 `tag:` is half a predicate; only a *finished* token sends Enter on to commit and
-hand the table over. Nothing at the value stage starts highlighted, so RET with
-`tag:` typed and no value chosen commits the presence predicate you wrote rather
-than whichever value sorted first. **C-n**/**C-p** move the list too,
+hand the table over. A second RET there takes the value at row one, so the bare
+presence predicate `tag:` is RET, Escape, RET. **C-n**/**C-p** move the list too,
 while it is open and the box has focus — the
 Emacs minibuffer and vim's insert-mode completion agree on those. Platform
 reality: Chrome-family browsers take C-n for a new window before the page sees
@@ -693,7 +712,7 @@ open:
 
 | state | Enter does |
 |-------|------------|
-| suggestion list open | accept the highlighted suggestion, and stay in the box |
+| suggestion list open | accept the highlighted suggestion — row one unless an arrow moved it — staying in the box for a key, going on to commit for a finished token |
 | list closed          | commit whatever is typed to a chip, deliver the query once, then select the first visible row and blur |
 
 Enter always ends with the table focused — in both local and producer-filtered

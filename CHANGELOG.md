@@ -34,6 +34,47 @@ the rails-to-cosmos ELPA archive publishes date-stamped snapshots.
   the toggle, so the two cannot drift.
 
 ### Changed
+- **A starred meta completes star-free** (browser renderer). The
+  asterisks of `*active*`/`*inactive*` are READING notation — the mark
+  that says the producer decides this one — so they are no longer
+  something to type: display and commit wear them and matching ignores
+  them. `state:act` and `state:active` both offer `*active*`, the
+  starred spelling `state:*act` still answers to itself, and the bare
+  word `active` surfaces `state:*active*` through the column that
+  declares it. Spelled in full either way it counts as exact, so it
+  leads the list and RET commits `state:*active*` from four letters.
+  One `starless` beside `META`, read by the two predicates the
+  completion matches through (`opensWith`, `spells`); the local
+  evaluator is untouched, still matching a meta literally, because what
+  a meta MEANS stays the producer's to say.
+- **The suggestion list always opens on row one** (browser renderer).
+  Selection was conditional — a column completion started highlighted
+  and everything else started with nothing chosen, so RET meant "accept"
+  or "commit the word as typed" depending on what the list happened to
+  hold. It is now one rule: a list with anything to offer opens with its
+  first row chosen, and RET takes that row. The consequence is stated
+  rather than hidden — **with suggestions showing, RET commits the top
+  suggestion and not the letters typed** — and the literal stays the
+  grammar's to give: a quoted token asks for no suggestions at all
+  (`"boo"`), Escape puts the list away so the next RET commits what is
+  written, and a word nothing completes never opened a list. The bare
+  presence predicate `tag:` is therefore RET, Escape, RET.
+  Ranking carries the whole weight now, so it was made honest at both
+  stages: what the word SPELLS IN FULL leads what it merely opens.
+  A bare word puts the value some column holds at the head — `book` is
+  `tag:book`, ahead of the `book:` key beside it, which asks for the
+  same rows in a token still half written — seeded before the key and
+  guess tiers so their twelve-row cap cannot crowd it out; a key the
+  word spells in full leads the keys it only opens; and after `key:` the
+  value typed in full heads the domain whatever order that column
+  declared, looked for past the twelve on offer. `acAt` is no longer
+  ever `-1`, so `moveAc`'s wrap-from-nothing branch and the `acAt >= 0`
+  guard on Tab/Enter are gone; `pick` leaves the item shape with them.
+  The driver's preselection, C-n/C-p and stage-aware-RET checks are
+  restated against row one (17 checks net, 1001 → 1018), and one of them
+  was vacuous: `sync` completes nothing in the fixture, so "nothing is
+  preselected when only tags are offered" was passing over an empty
+  list. `table-view.el` has no suggestion list and is untouched.
 - **A cell step off either end gives the column up** (browser renderer).
   `select(id, col)` clamped the index to the columns that exist, so a
   reader stepping right on the last column or left on the first stayed
