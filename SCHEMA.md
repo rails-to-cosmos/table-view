@@ -123,8 +123,9 @@ exactly that.
 row's subject holds a link a consumer can follow, which is a producer's
 knowledge rather than anything the cells spell. A renderer may mark the row and
 one that ignores it is conformant, by the unknown-fields rule. The browser
-renderer underlines the `title` column's cell, leaving its colour alone, and
-marks nothing at all in a view with no column of that key.
+renderer draws the `title` column's cell as a link — link colour and underline,
+the whole cell, the one treatment it gives an Org link inside a cell — and marks
+nothing at all in a view with no column of that key.
 
 ### Cell value
 

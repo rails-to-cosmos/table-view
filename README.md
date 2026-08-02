@@ -561,6 +561,17 @@ column's cells render a chip per value, split by the same splitter that builds
 that column's value domain. Presentation only: what is searched, sorted and
 measured is still the text you sent.
 
+**A link reads as a link, wherever one is drawn.** A cell holding Org markup
+draws each `[[target][desc]]` as an anchor, and a row sent with `linked: true`
+draws its whole `title` cell the same way — `--tv-link` and an underline, one
+declaration for both, so a title that is part markup and part plain words is one
+colour rather than two. The ink is the accent's own blue at a lightness that
+clears 4.5:1 on every ground a cell can wear: the zebra, a mark, a flag, the
+cursor, the column band over each of those, and the crosshair — a harder floor
+than the page, which is why it is a palette value rather than the accent. Ink
+and decoration and no ground, so it survives every row state at once; a view
+with no `title` column carries no row mark.
+
 ### The filter box
 
 Its placeholder teaches the grammar rather than naming the box —

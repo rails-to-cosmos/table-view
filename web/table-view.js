@@ -855,14 +855,32 @@
     // candidate darkened a marked or flagged row past 4.5:1 before it became
     // visible, the light mark and flag washes already sitting at the ink's cap.
     const COL = "#FFF3D0";
+    // The link identity, spelled here like the three above and, unlike them, in
+    // two weights: a wash can be one colour at two strengths, where INK cannot,
+    // the two themes having nothing in common to be read on. Both are the
+    // accent's own blue (hue 202, saturation held) moved in LIGHTNESS ALONE
+    // until it clears 4.5:1 on every ground a cell can wear rather than on the
+    // page alone — the four row washes, the column band over each of them, and
+    // the crosshair. Light is the accent one point darker, floor 4.69 on a
+    // flagged row; dark is ten points lighter, floor 4.63 on the crosshair,
+    // where the accent itself was at 3.70. Dark lands within a hundredth of
+    // --tv-muted on every ground, that ink being what the dark washes were cut
+    // to, so a link is exactly as legible as the table already guarantees. The
+    // accent stays where it is and keeps the chrome it inks — a hover, a
+    // sortable header, the pager — all of which sit on the page's own ground.
+    const LINK_LIGHT = "#30739B";
+    const LINK_DARK = "#7CC9F8";
     const css = `
 /* Both palettes are danneskjold-theme's, mapped role for role from
    /home/akatovda/sync/stuff/danneskjold-theme/danneskjold-theme.el — its
    default faces for dark, its light-* block for light. Three values are
    lightness-only adjustments where the theme's own colour missed a contrast
    floor in this context, the hue held: light muted #7F8C8D -> #667071 (3.5:1
-   -> 5.1:1 on white) and light accent #4CB5F5 -> #31769F (2.3:1 -> 5.0:1, it
-   is link text here). The selected row takes the theme's highlight face
+   -> 5.1:1 on white) and light accent #4CB5F5 -> #31769F (2.3:1 -> 5.0:1 on
+   white). --tv-link is that same operation on the accent itself, in both
+   themes and measured against the grounds a ROW can wear rather than against
+   the page (LINK_LIGHT and LINK_DARK above).
+   The selected row takes the theme's highlight face
    (#F0FFF0) rather than its golden: the cursor row is its own role and must
    not read as either the applied filter (frost, on the chips) or a state
    pill.
@@ -874,6 +892,7 @@
    against 1.80:1) — the quieter of the two. Every rule is 1px. */
 .tv-root{--tv-fg:#000000;--tv-muted:#667071;--tv-bg:#FFFFFF;--tv-alt:#F8F8FF;
   --tv-border:#E3E6EA;--tv-accent:#31769F;--tv-sel:#F0FFF0;--tv-hover:#FAFAFA;
+  --tv-link:${LINK_LIGHT};
   --tv-frost:${FROST};--tv-chip-wash:45%;--tv-chip-edge:95%;--tv-mark-wash:8%;
   --tv-flag:${FLAG};--tv-flag-wash:8%;
   --tv-col:${COL};--tv-col-wash:35%;--tv-cell-wash:60%;
@@ -881,14 +900,17 @@
   border:1px solid var(--tv-border);border-radius:8px;overflow:hidden;display:flex;flex-direction:column;max-height:100%}
 @media (prefers-color-scheme:dark){.tv-root{--tv-fg:#FFFFFF;--tv-muted:#A4C2EB;--tv-bg:#000000;
   --tv-alt:#21252B;--tv-border:#2a2d3d;--tv-accent:#4CB5F5;--tv-sel:#373D4F;
+  --tv-link:${LINK_DARK};
   --tv-hover:#1F1F1F;--tv-chip-wash:18%;--tv-chip-edge:34%;--tv-mark-wash:30%;--tv-flag-wash:30%;
   --tv-col-wash:8%;--tv-cell-wash:9%;}}
 :root[data-theme="dark"] .tv-root{--tv-fg:#FFFFFF;--tv-muted:#A4C2EB;--tv-bg:#000000;
   --tv-alt:#21252B;--tv-border:#2a2d3d;--tv-accent:#4CB5F5;--tv-sel:#373D4F;
+  --tv-link:${LINK_DARK};
   --tv-hover:#1F1F1F;--tv-chip-wash:18%;--tv-chip-edge:34%;--tv-mark-wash:30%;--tv-flag-wash:30%;
   --tv-col-wash:8%;--tv-cell-wash:9%;}
 :root[data-theme="light"] .tv-root{--tv-fg:#000000;--tv-muted:#667071;--tv-bg:#FFFFFF;--tv-alt:#F8F8FF;
   --tv-border:#E3E6EA;--tv-accent:#31769F;--tv-sel:#F0FFF0;--tv-hover:#FAFAFA;
+  --tv-link:${LINK_LIGHT};
   --tv-chip-wash:45%;--tv-chip-edge:95%;--tv-mark-wash:8%;--tv-flag-wash:8%;
   --tv-col-wash:35%;--tv-cell-wash:60%}
 .tv-bar{display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:1px solid var(--tv-border);flex-wrap:wrap}
@@ -1057,14 +1079,19 @@
 .tv-table th.tv-colsel{background:color-mix(in srgb,var(--tv-col) var(--tv-col-wash),var(--tv-bg))}
 .tv-table tbody td.tv-colsel{background:color-mix(in srgb,var(--tv-col) var(--tv-col-wash),transparent)}
 .tv-table tbody td.tv-cell-sel{background:color-mix(in srgb,var(--tv-col) var(--tv-cell-wash),transparent)}
-/* A row that leads somewhere, said on the one cell a reader reads the row by.
+/* WHAT A LINK LOOKS LIKE, spelled once for the two places one is drawn: the
+   anchor a cell's own Org markup produces, and the whole title cell of a row a
+   producer marked linked. One declaration, so a title that is half markup and
+   half plain words comes out ONE colour — it used to come out two, the markup
+   in the accent and the words in body ink under a cell-wide underline.
    The only state on this table written in TEXT rather than in a ground: the
-   four row washes and the two selection bands all write backgrounds, so an
-   underline contests none of them and reads through every combination — a
-   linked row under the cursor is still underlined. The ink does not move,
-   because the mark says there is somewhere to go rather than what state the
-   row is in, and a colour here would read as a second badge. */
-.tv-table tbody td.tv-linked{text-decoration:underline;text-underline-offset:2px}
+   four row washes and the two selection bands all write backgrounds, so this
+   contests none of them and reads through every combination — a linked row
+   under the cursor, with the column band across that very cell, is still a
+   link. Which is what --tv-link is measured on: every one of those grounds,
+   4.5:1 on all of them, rather than the page alone. */
+.tv-link,.tv-table tbody td.tv-linked{color:var(--tv-link);
+  text-decoration:underline;text-underline-offset:2px}
 .tv-table tbody tr{cursor:default}
 .tv-table tbody tr.tv-pad td{padding:0;border:0}
 /* The third role, and the quietest: no box at all. A filled pill is a state, a
@@ -1083,7 +1110,6 @@
 .tv-pill{display:inline-block;padding:0 8px;border-radius:999px;
   font-weight:600;color:var(--tv-ink,var(--tv-badge));
   background:color-mix(in srgb,var(--tv-badge) 15%,transparent)}
-.tv-link{color:var(--tv-accent);text-decoration:underline}
 .tv-arrow{margin-left:4px;opacity:.7}
 .tv-empty{padding:16px 12px;color:var(--tv-muted)}
 .tv-hint{padding:6px 12px;border-top:1px solid var(--tv-border);color:var(--tv-muted);font-size:12px}

@@ -130,14 +130,24 @@ the rails-to-cosmos ELPA archive publishes date-stamped snapshots.
   whose rows carry a pending action and no standing selection.
 - **`linked`, an optional Row field (SCHEMA.md + browser renderer).** A
   producer sends `linked: true` on a row that leads somewhere — it holds a
-  link a consumer can follow — and the browser renderer UNDERLINES that
-  row's `title` cell. Sparse: `true` or absent, never `false`, so a row
-  with nowhere to go is byte for byte the row it was before the field
-  existed. The mark is a `text-decoration` and the ink does not move,
-  which is what makes it orthogonal to every other row state: the zebra,
-  the mark, the flag, the cursor and the two selection bands all write
-  BACKGROUNDS, so a linked row under the cursor with a band across its
-  title still reads as linked. Chosen by column KEY rather than by
+  link a consumer can follow — and the browser renderer draws that row's
+  `title` cell AS A LINK: link colour and underline, over the whole cell.
+  Sparse: `true` or absent, never `false`, so a row with nowhere to go is
+  byte for byte the row it was before the field existed. It is ONE rule
+  with the anchors a cell's own Org markup produces, so a title that is
+  part markup and part plain words comes out one colour rather than two.
+  The ink is `--tv-link`, a palette value of its own: the accent's blue
+  moved in lightness alone (light `#30739B`, dark `#7CC9F8`) until it
+  clears 4.5:1 on every ground a cell can wear rather than on the page
+  alone — the zebra, a mark, a flag, the cursor, the column band over each
+  of those and the crosshair, eleven grounds a theme, worst 4.69 light and
+  4.63 dark. The accent was under the floor on dark's amber grounds (3.70
+  at the crosshair), which is what makes this a value rather than an
+  alias. Ink and decoration and no ground, which is what keeps it
+  orthogonal to every other row state: the zebra, the mark, the flag, the
+  cursor and the two selection bands all write BACKGROUNDS, so a linked
+  row under the cursor with a band across its title still reads as a
+  link. Chosen by column KEY rather than by
   position, and a view with no `title` column is marked nowhere — the
   flag says the row leads somewhere and there is no other cell that would
   be true of. `table-view.el` ignores it by the unknown-fields rule, with

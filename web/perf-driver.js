@@ -1614,8 +1614,9 @@ const LINK_VIEW = {
 /**
  * `linked': a producer's row flag, drawn on the title cell and nowhere else.
  * The whole feature is where the mark lands and what it is made of, so that is
- * what the checks are: the cell it picks, the views it declines to mark, and an
- * underline reading through the grounds every other row state writes.
+ * what the checks are: the cell it picks, the views it declines to mark, the
+ * one rule that inks a link wherever one is drawn, and that ink measured on
+ * every ground the other row states write.
  */
 async function linkedRows() {
   console.log("\n== linked rows");
@@ -1668,17 +1669,48 @@ async function linkedRows() {
           O.box.querySelectorAll("td.tv-linked").length, 0);
   }
 
-  // --- what it is made of: text, where every other row state is a ground
+  // --- what it is made of: one rule, spelling what a link looks like
   {
     const css = cssText();
-    const rule = /\.tv-table tbody td\.tv-linked\{([^}]*)\}/.exec(css);
-    const body = rule ? rule[1] : "";
-    check("the mark is a text decoration",
-          [!!rule, /text-decoration:underline/.test(body)], [true, true]);
-    // Ink UNCHANGED is the design: a colour would read as a second badge, and a
-    // ground would contest the four the row states already write.
-    check("and it writes neither a colour nor a ground",
-          [/(^|;)color:/.test(body), /background/.test(body)], [false, false]);
+    const bare = css.replace(/\/\*[\s\S]*?\*\//g, "");
+    const rule = /\.tv-link,\.tv-table tbody td\.tv-linked\{([^}]*)\}/.exec(bare);
+    const body = rule ? rule[1].replace(/\s+/g, "") : "";
+    // The anchor a cell's own markup produces and the whole cell of a linked
+    // row are the SAME declaration, which is what makes a half-markup title one
+    // colour: two rules agreeing today is what produced the two-tone cell.
+    check("the anchor and the linked cell are one rule, and it is the link treatment",
+          [!!rule, body],
+          [true, "color:var(--tv-link);text-decoration:underline;text-underline-offset:2px"]);
+    check("nothing else in the sheet says either name",
+          bare.split("}").filter((r) => /\.tv-link(ed)?\b/.test(r.split("{")[0] || "")).length,
+          1);
+    // A ground would contest the four the row states already write; the ink
+    // does not, which is what lets the colour be the whole cell's.
+    check("it writes ink and decoration, and no ground", /background/.test(body), false);
+    // The ink is the palette's, never the accent's: the accent is chrome ink
+    // and is measured on the page, where this is measured on the row grounds.
+    check("and the ink is --tv-link rather than the accent it came from",
+          /var\(--tv-accent\)/.test(body), false);
+
+    // The bug, at the DOM: a title that is half link markup and half plain
+    // words. The markup is an anchor and the words are bare text, so the cell
+    // is uniform only when the one rule inks both -- there is nothing else
+    // inside it to carry a colour of its own.
+    const M = driver({ title: "linked", columns: LINK_VIEW.columns,
+      rows: [{ id: "a", linked: true,
+               cells: { state: "TODO", title: "read [[http://x][the paper]] tonight" } }] });
+    const mixedCell = M.box.querySelector("tbody td.tv-linked");
+    check("a half-markup title is one anchor between two runs of bare text",
+          [mixedCell.childNodes.length, mixedCell.children.length,
+           mixedCell.children[0].classes.has("tv-link"), mixedCell.text],
+          [3, 1, true, "read the paper tonight"]);
+    // The other half of one treatment: a row the producer never flagged still
+    // draws its cell's own links as links, and takes no cell mark for it.
+    const U = driver({ title: "unlinked", columns: LINK_VIEW.columns,
+      rows: [{ id: "a", cells: { state: "TODO", title: "see [[http://x][x]]" } }] });
+    check("a row with no flag keeps its cell's own links and gains no mark",
+          [U.box.querySelectorAll("a.tv-link").length,
+           U.box.querySelectorAll("td.tv-linked").length], [1, 0]);
 
     const P = driver(LINK_VIEW, { marks: true });
     const h = P.handle;
@@ -1698,6 +1730,51 @@ async function linkedRows() {
     check("and the column band crossing that very cell leaves it standing",
           [cellOf("a").classes.has("tv-colsel"), cellOf("a").classes.has("tv-cell-sel")],
           [true, true]);
+  }
+
+  // --- the ink, on every ground a cell can wear
+  // A colour is only a decision once it is measured, and the grounds here are
+  // the ROW's rather than the page: the four row washes, the column band over
+  // each of them, and the crosshair. Read out of the sheet rather than
+  // re-spelled, so moving a wash moves what is asserted.
+  {
+    const base = paletteIn(".tv-root{");
+    for (const theme of ["light", "dark"]) {
+      const p = paletteIn(`:root[data-theme="${theme}"] .tv-root{`);
+      const ink = p.link || base.link;
+      const rows = { page: p.bg, zebra: p.alt,
+                     marked: mixed(p.bg, p.muted, pctOf(p["mark-wash"])),
+                     flagged: mixed(p.bg, p.flag || base.flag, pctOf(p["flag-wash"])),
+                     cursor: p.sel };
+      const grounds = {};
+      for (const [what, g] of Object.entries(rows)) {
+        grounds[what] = g;
+        grounds[what + " under the band"] = mixed(g, base.col, pctOf(p["col-wash"]));
+      }
+      grounds.crosshair = mixed(rows.cursor, base.col, pctOf(p["cell-wash"]));
+      const under = Object.entries(grounds)
+        .filter(([, g]) => ratio(ink, g) < 4.5).map(([what]) => what);
+      check(`${theme}: the link ink clears 4.5:1 on all ${Object.keys(grounds).length} of them`,
+            under, []);
+      // Hue held, lightness moved -- the operation the palette comment
+      // documents for the light accent, applied to the accent itself.
+      check(`${theme}: and it is the accent's own hue, one weight away`,
+            [Math.abs(hue(ink) - hue(p.accent)) <= 3, ink === p.accent], [true, false]);
+    }
+    // Why the ink is a value of its own: on dark the accent, which is what half
+    // a linked title used to wear, falls under the floor on the amber grounds,
+    // the crosshair being the palest of them.
+    const d = paletteIn(':root[data-theme="dark"] .tv-root{');
+    const cross = mixed(d.sel, base.col, pctOf(d["cell-wash"]));
+    check("the accent would not have cleared the crosshair on dark, and the link ink does",
+          [ratio(d.accent, cross) >= 4.5, ratio(d.link, cross) >= 4.5], [false, true]);
+    // The identity, spelled in the const block the frost, the flag and the
+    // column colour are spelled in -- and in TWO weights, where those are one:
+    // a wash can be one colour at two strengths, ink on two grounds cannot.
+    check("the ink is one value per theme, in all four palette blocks",
+          [base.link, paletteIn(':root[data-theme="light"] .tv-root{').link, d.link,
+           paletteIn("@media (prefers-color-scheme:dark){.tv-root{").link],
+          ["#30739B", "#30739B", "#7CC9F8", "#7CC9F8"]);
   }
 }
 
@@ -3504,13 +3581,14 @@ async function queryKeys() {
     for (const [name, p] of [["light", light], ["dark", dark]]) {
       const dimmed = mixed(p.fg, p.bg, 0.4);          // the .6 opacity, resolved
       check(`${name} palette is complete`,
-            [p.bg, p.fg, p.alt, p.muted, p.sel, p.accent].every(Boolean), true);
+            [p.bg, p.fg, p.alt, p.muted, p.sel, p.accent, p.link].every(Boolean), true);
       for (const [what, fgc, bgc, floor] of [
         ["body", p.fg, p.bg, 7], ["body on zebra", p.fg, p.alt, 7],
         ["muted", p.muted, p.bg, 4.5], ["muted on zebra", p.muted, p.alt, 4.5],
         ["selected row", p.fg, p.sel, 7], ["chip text", p.fg, p.alt, 4.5],
         ["dropdown active", p.fg, p.sel, 4.5], ["dimmed suggestion", dimmed, p.bg, 4.5],
-        ["accent as text", p.accent, p.bg, 4.5]])
+        ["accent as text", p.accent, p.bg, 4.5],
+        ["link as text", p.link, p.bg, 4.5], ["link on zebra", p.link, p.alt, 4.5]])
         check(`${name} ${what} clears ${floor}:1`, ratio(fgc, bgc) >= floor, true);
     }
     check("the adjusted light values kept their hue",
