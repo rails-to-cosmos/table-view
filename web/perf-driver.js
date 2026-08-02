@@ -1049,10 +1049,17 @@ async function rowMarks() {
         hint(), "10 rows · sort scheduled asc" + ACT);
   {
     const css = cssText();
-    check("the box glyph is drawn off the class, both states",
-          [css.indexOf('td.tv-box::before{content:"[ ]"}') !== -1,
-           css.indexOf('tr.tv-marked td.tv-box::before{content:"[X]"}') !== -1],
+    // Scoped to `.tv-marking', which only `marks' puts on the root: the gutter
+    // belongs to either row state and the box in it to a table that marks.
+    check("the box glyph is drawn off the class, both states, under the marking root",
+          [css.indexOf('.tv-marking .tv-table td.tv-box::before{content:"[ ]"}') !== -1,
+           css.indexOf('.tv-marking .tv-table tbody tr.tv-marked td.tv-box::before'
+                       + '{content:"[X]"}') !== -1],
           [true, true]);
+    check("and the root a marking mount wears is what turns them on",
+          [M.box.querySelector(".tv-root").classes.has("tv-marking"),
+           driver(4).box.querySelector(".tv-root").classes.has("tv-marking")],
+          [true, false]);
   }
 
   // --- toggling, and what it answers
@@ -1204,6 +1211,58 @@ async function rowMarks() {
     NF.handle.flagRow("a");
     NF.handle.setView(MARK_VIEW);
     check("setView drops them with the view they were about", NF.handle.flaggedCount(), 0);
+  }
+
+  // --- flags alone: the gutter without the checkbox
+  // `flags' defaults to `marks', which is the one option flags shipped under,
+  // so every mount above is byte for byte what it was. Asked for on its own it
+  // draws the flag ground and the edge cell the ground needs, and nothing of
+  // marking: no box to check, no click that checks one, no count on the line.
+  {
+    const A = driver(MARK_VIEW, { flags: true });
+    const h = A.handle;
+    const rowOfId = (id) => A.box.querySelectorAll("tbody tr[data-id]")
+      .find((tr) => tr.dataset.id === id);
+    const gutterHead = A.box.querySelector("th.tv-box");
+    check("flags:true alone leads every row with the gutter cell",
+          [A.box.querySelectorAll("tbody td.tv-box").length,
+           gutterHead ? gutterHead.text : "no gutter"], [MARK_VIEW.rows.length, ""]);
+    check("and the root does not wear the marking class, so no glyph is drawn in it",
+          A.box.querySelector(".tv-root").classes.has("tv-marking"), false);
+    h.flagRow("b");
+    await painted();
+    check("a flag washes its row, the state the mount asked for",
+          [rowOfId("b").classes.has("tv-flagged"), h.getFlagged()], [true, ["b"]]);
+    check("and the line counts it", A.box.querySelector(".tv-hint").textContent
+            .indexOf("1 flagged") === 0, true);
+    // The edge lives on the gutter cell, so a flag reads there whatever ground
+    // the row is on -- which is the whole reason the cell is drawn at all.
+    check("the edge rule is unscoped, the gutter being either state's",
+          cssText().indexOf(".tv-table tbody tr.tv-flagged td.tv-box{box-shadow:") !== -1,
+          true);
+    // Marking is off: the box is inert and the count it would lead with never
+    // appears, while the ids still go in and come back -- the option gates the
+    // DRAWING, as it always has.
+    A.box.querySelectorAll("tbody tr[data-id]")[0].children[0].click();
+    await painted();
+    check("a click on the gutter marks nothing, and selects the row like any cell",
+          [h.getMarked(), h.getSelection().id, h.getSelection().col], [[], "a", null]);
+    h.toggleMark("c");
+    await painted();
+    check("and nothing marks a row it does not draw",
+          [A.box.querySelectorAll("tr.tv-marked").length, h.markAll(),
+           A.box.querySelector(".tv-hint").textContent.indexOf("marked")],
+          [0, 0, -1]);
+    // The other half of the default: naming it false under `marks: true' takes
+    // the flag drawing off and leaves the marking alone.
+    const N = driver(MARK_VIEW, { marks: true, flags: false });
+    N.handle.flagRow("a");
+    N.handle.toggleMark("a");
+    await painted();
+    check("flags:false under marks:true draws the mark and not the flag",
+          [N.box.querySelectorAll("tr.tv-marked").length,
+           N.box.querySelectorAll("tr.tv-flagged").length,
+           N.handle.getFlagged()], [1, 0, ["a"]]);
   }
 
   // --- the precedence stack: one background slot, four things wanting it

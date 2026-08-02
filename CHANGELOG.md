@@ -6,6 +6,53 @@ the rails-to-cosmos ELPA archive publishes date-stamped snapshots.
 ## Unreleased
 
 ### Changed
+- **Marks and flags are ONE mechanism, instantiated twice (browser
+  renderer).** They were two sets with two of everything around them —
+  twin toggles, twin clears, and `getMarked`/`getFlagged` as nine-token
+  twins — so each answer had two homes to drift between. One id-keyed
+  row state now holds every operation (does a row wear it, toggle it,
+  take it off, put it on a whole set, take it off every row, list the
+  ids) and marks and flags are two instances of it, which is what makes
+  the listing order, the clear's independence and the survival matrix
+  true of both by construction rather than by two implementations
+  agreeing. They stay two SETS: a flag is a PENDING action where a mark
+  is a STANDING selection. The two asymmetries are kept and moved to
+  where they belong — the HANDLE offers `markAll` on marks alone and
+  `unflagRow` on flags alone, being what only that state is used for,
+  while the mechanism holds both. `isFlagged` loses the `marks &&`
+  conjunct it carried, which is what the new `flags` option needed. The
+  handle's surface is unchanged.
+- **Every row and cell class is derived ONCE (browser renderer).** The
+  window's HTML and the re-stamp that runs when a selection or a mark
+  moves each spelled the classes out for themselves, so a state could be
+  drawn one way when the row was built and another when it was
+  re-stamped. Both now read `[name, on]` pairs off one derivation: the
+  builder joins the names that are on, the stamper toggles each pair.
+  The stamper covers the stripe, the alignment and the link mark it used
+  to leave alone, and writes only what MOVED — `classList` is asked what
+  it holds before it is asked to change it — so re-deriving a window a
+  held movement key never altered writes nothing. The window remembers
+  the display order it was drawn from, which is how a `<tr>` gets back
+  to its row and its index without asking the state a second time.
+  Mount, filter, page-flip and select-burst benchmarks hold within
+  run-to-run noise. One visible byte: a `class` attribute no longer
+  carries a leading space.
+- **One sampler behind `multiColumn` and `dateColumn` (browser
+  renderer).** The two ran the same loop over up to 40 non-empty cells,
+  counting evidence for and evidence against and requiring at least two
+  for and none against, with both thresholds spelled twice. They are now
+  one `sampledShape(i, shapedBy, contraryTo)` and the thresholds are
+  named once. Same verdicts.
+- **`planned` is a cell SET (browser renderer).** A
+  filter key names cells by index — a column's own, or every date column
+  for `planned` — and one `valueTest` runs over them: `*empty*` asks
+  that they all be empty, any other value that any of them pass, each by
+  its own column's semantics. A key naming one cell is that rule with
+  one cell in it, so the reserved key stopped needing a branch of its
+  own. Term for term with glance's producer-side half. One consequence:
+  a date column a producer also declared `type: "badge"` is now read by
+  `planned` the way its own key reads it (whole value) rather than by
+  prefix, so the two keys agree where they used to differ.
 - **BREAKING: combination is one rule — TOKENS AND, ALTERNATIVES OR
   (SCHEMA.md + browser renderer).** Every token narrows, whether or not
   another token names its key. `tag:a tag:b` is a row carrying both, as
@@ -68,6 +115,19 @@ the rails-to-cosmos ELPA archive publishes date-stamped snapshots.
   reaching for.
 
 ### Added
+- **`flags`, a mount option of the flag ground's own (browser
+  renderer).** It DEFAULTS to `marks`, which is the one option flags
+  shipped under, so every existing mount draws byte for byte what it
+  drew. Named, it is its own answer: `flags: true` alone gives the
+  leading gutter and the flag's inset edge in it with **no checkbox** —
+  the box rules are scoped to a `tv-marking` root class that only
+  `marks` puts on — and the gutter click, being a mark toggle, selects
+  the row there like any other cell. `flags: false` under `marks: true`
+  takes the flag drawing off and leaves the marking. The gutter belongs
+  to either state, so either one asks for it, and either way the option
+  gates the DRAWING alone: the ids still go in and come back out of
+  `getFlagged()`, the way `marks` has always worked. For a consumer
+  whose rows carry a pending action and no standing selection.
 - **`linked`, an optional Row field (SCHEMA.md + browser renderer).** A
   producer sends `linked: true` on a row that leads somewhere — it holds a
   link a consumer can follow — and the browser renderer UNDERLINES that

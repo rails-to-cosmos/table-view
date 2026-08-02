@@ -433,19 +433,34 @@ those to `toggleMark`/`markAll`/`clearMarks` and the two renderers rhyme.
 `markAll()` takes the **filtered set**, every page of it — a filter is what the
 reader narrowed to, where a page is only how much of it fits at once.
 
-**Flags** ride the same `marks: true` opt-in, the leading box column being where
-either state is read. A flag is a *pending* action — the two-press `d` a
-consumer drives before confirming — where a mark is a *standing* selection, so
-they are separate id-keyed sets. A row can carry both; `clearMarks()` leaves
-flags alone and `clearFlags()` leaves marks alone, so a consumer wanting both
-gone asks for both. They survive what marks survive (a filter, a page, a sort,
-`setRows`, an upsert) and die where marks die (the row going away, or the view).
+**Flags** are the same mechanism instantiated a second time. A flag is a
+*pending* action — the two-press `d` a consumer drives before confirming — where
+a mark is a *standing* selection, so they are separate id-keyed sets and one
+mechanism answers everything about either: does a row wear it, toggle it, take
+it off, put it on a whole set, take it off every row, list the ids. A row can
+carry both; `clearMarks()` leaves flags alone and `clearFlags()` leaves marks
+alone, so a consumer wanting both gone asks for both. They survive what marks
+survive (a filter, a page, a sort, `setRows`, an upsert) and die where marks die
+(the row going away, or the view). The **handle** is where the two differ:
+`markAll()` is offered on marks alone and `unflagRow()` on flags alone, being
+what only that state is used for.
 A flagged row takes a red wash and, on the box cell, a red left edge —
 a second channel, because the background is one slot and the cursor wins it, so
 without the edge a flagged row under the cursor would stop saying it is
 flagged. Precedence on that one slot is cursor, then flag, then mark, then
 zebra. When either count is nonzero it leads the hint line, the pending one
 first: `2 flagged · 3 marked · 40 rows · sort …`.
+
+**`flags`** is the flag ground's own opt-in, and it **defaults to `marks`** —
+flags shipped under that one option, so a consumer that never names this gets
+the table it already had. Named, it is its own answer. `flags: true` alone draws
+the leading gutter and the flag's edge in it with **no checkbox**: the box is
+scoped to a `tv-marking` root class that only `marks` puts on, and the gutter
+click, being a mark toggle, selects the row there like any other cell. The
+gutter belongs to either state, so either one asks for it. `flags: false` under
+`marks: true` takes the flag drawing off and leaves the marking alone. Either
+way the option gates the **drawing**: the ids still go in and come back out of
+`getFlagged()`, exactly as `marks` has always worked.
 
 ### Paging
 
