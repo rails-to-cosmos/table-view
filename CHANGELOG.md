@@ -32,186 +32,6 @@ the rails-to-cosmos ELPA archive publishes date-stamped snapshots.
   ignores `sortable`: the opt-in gates what a READER may reach, not what
   the embedding page may ask for. `toggleSort` is now that function plus
   the toggle, so the two cannot drift.
-
-### Changed
-- **A starred meta completes star-free** (browser renderer). The
-  asterisks of `*active*`/`*inactive*` are READING notation — the mark
-  that says the producer decides this one — so they are no longer
-  something to type: display and commit wear them and matching ignores
-  them. `state:act` and `state:active` both offer `*active*`, the
-  starred spelling `state:*act` still answers to itself, and the bare
-  word `active` surfaces `state:*active*` through the column that
-  declares it. Spelled in full either way it counts as exact, so it
-  leads the list and RET commits `state:*active*` from four letters.
-  One `starless` beside `META`, read by the two predicates the
-  completion matches through (`opensWith`, `spells`); the local
-  evaluator is untouched, still matching a meta literally, because what
-  a meta MEANS stays the producer's to say.
-- **The suggestion list always opens on row one** (browser renderer).
-  Selection was conditional — a column completion started highlighted
-  and everything else started with nothing chosen, so RET meant "accept"
-  or "commit the word as typed" depending on what the list happened to
-  hold. It is now one rule: a list with anything to offer opens with its
-  first row chosen, and RET takes that row. The consequence is stated
-  rather than hidden — **with suggestions showing, RET commits the top
-  suggestion and not the letters typed** — and the literal stays the
-  grammar's to give: a quoted token asks for no suggestions at all
-  (`"boo"`), Escape puts the list away so the next RET commits what is
-  written, and a word nothing completes never opened a list. The bare
-  presence predicate `tag:` is therefore RET, Escape, RET.
-  Ranking carries the whole weight now, so it was made honest at both
-  stages: what the word SPELLS IN FULL leads what it merely opens.
-  A bare word puts the value some column holds at the head — `book` is
-  `tag:book`, ahead of the `book:` key beside it, which asks for the
-  same rows in a token still half written — seeded before the key and
-  guess tiers so their twelve-row cap cannot crowd it out; a key the
-  word spells in full leads the keys it only opens; and after `key:` the
-  value typed in full heads the domain whatever order that column
-  declared, looked for past the twelve on offer. `acAt` is no longer
-  ever `-1`, so `moveAc`'s wrap-from-nothing branch and the `acAt >= 0`
-  guard on Tab/Enter are gone; `pick` leaves the item shape with them.
-  The driver's preselection, C-n/C-p and stage-aware-RET checks are
-  restated against row one (17 checks net, 1001 → 1018), and one of them
-  was vacuous: `sync` completes nothing in the fixture, so "nothing is
-  preselected when only tags are offered" was passing over an empty
-  list. `table-view.el` has no suggestion list and is untouched.
-- **A cell step off either end gives the column up** (browser renderer).
-  `select(id, col)` clamped the index to the columns that exist, so a
-  reader stepping right on the last column or left on the first stayed
-  where they were. An index outside the table is now no column at all:
-  the band, the crosshair and `getSelection().col` go, and the row cursor
-  stays exactly where it is — the whole-row selection, which is the look
-  the table drew before cells were selectable. Cell movement is the
-  consumer's loop (read `getSelection().col`, add a step, hand it back to
-  `select`), so the index one past an end is the only spelling either end
-  has, and an edge that swallows the key answers nothing where walking
-  off it lands in a state the table already draws. Entry is untouched —
-  a row-only selection takes the column its consumer names — and
-  `select(id)` with no column is byte-for-byte what it was.
-  `select(id, 99)` answers like a step past the end, there being no such
-  cell either way. The handle grows nothing: `col` has always been `null`
-  for a whole-row selection and consumers already read it that way.
-  `table-view.el` has no cell selection and is untouched. The driver's
-  four clamp checks are replaced by thirteen: both exits, the band gone
-  from cell, column and header at each, the row cursor unmoved, re-entry
-  after an exit, and a middle-column step re-anchored so it reads the same
-  whatever the ends do.
-- **`state:*active*` matches the empty cell (SCHEMA.md + browser
-  renderer).** SCHEMA's badge meta-values gain a rule they were silent
-  on: `*active*` covers the unstated row as well as the producer's
-  active values — an entry nobody has stated is live work, and the
-  default view is what would otherwise hide it — while `*inactive*`
-  covers stated values alone. The two groups therefore do not partition
-  the column, and `-state:*active*` excludes the empty cell. `key:none`
-  is unchanged and is now a subset of `*active*`. In `tokenTest` this is
-  the one term of a producer meta a renderer can decide for itself:
-  which keywords are in a group needs the producer's sets, an empty cell
-  does not, so `state:*active*` locally answers the stateless rows
-  rather than nothing. `*inactive*` stays the literal it was. The
-  autocomplete still shows a meta dimmed and uncounted — these counts
-  are per cell value, and a fraction of what the producer will match is
-  no better a number than zero. `fixtures/parity/filter-query.json`
-  gains a stateless row and four cases (both metas, the negation, and
-  `state:none` beside them); `table-view.el` has no query grammar and is
-  untouched.
-- **Breaking — `sortable` is opt-in in `table-view.el` too.** SCHEMA.md
-  has always read it that way and so has the browser renderer: a column
-  declares `sortable` or it is not sorted on. This renderer took the
-  opposite default, sorting by any column that did not opt *out*, so one
-  view answered `^` differently in the two. `table-view--sortable-keys`
-  now requires the flag, which is the list `^` walks, the list it cycles
-  when point is off a column, and the list it refuses a named column
-  against. **A consumer relying on the default must now declare it** —
-  `(sortable . t)`, or `"sortable": true`, on every column `^` should
-  reach. The repo's own `examples/` are the enumeration and all eleven
-  were living off the default; seven teach `^` in their header comments
-  and were plainly broken by the flip — `minimal`, `org-links`,
-  `native`, `native-live` and `paginate` declared it on no column at
-  all, `multi-sort` invites `^` on "any column" while its badge column
-  had none, and `sort-methods`, the example *about* per-column sort
-  methods, reached three of its five columns by the default alone. The
-  other four (`bulk`, `delete`, `fill-function`, `upsert`) advertise the
-  key through the hint line rather than their prose. Every one now
-  declares what it demonstrates. A spec's own `sort` is untouched by
-  this: that says what the view opens as, while the flag says what the
-  user may reach — how the browser renderer has always read the pair. The old
-  test pinned the wrong side of the divergence —
-  `tv-test-sortable-defaults-true-opt-out-false` asserted that an
-  omitted flag meant sortable, so it pinned the bug rather than the
-  contract; it is replaced by `tv-test-sortable-is-opt-in` and by a
-  second test that carries the flag all the way to `^` refusing to
-  sort. The Rust side needed nothing: `tvx` is handed a sort chain and
-  executes it, and reads no sortability anywhere, so the differential
-  oracle covers exactly what it covered before.
-- **A cell selection draws its whole column, and every part of the
-  selection is a ground** (browser renderer). `select(id, col)` used to
-  outline the one `td` in the accent colour. It now washes the column it
-  names — `.tv-colsel` on every rendered cell of that column and on its
-  header, since a band stopping short of its header reads as broken — and
-  `.tv-cell-sel`, where that band crosses the cursor row, is one step more
-  of the same wash. Nothing in the selection draws an edge any more: three
-  backgrounds, and the suite sweeps every rule whose selector names one of
-  them for `border`, `outline` and `box-shadow`, counting the rules so a
-  rename cannot quietly empty the sweep. The flag's left edge on the box
-  cell is untouched, being the one edge the table does draw and a channel
-  no selection rule names. `select(id)` with no column is byte-for-byte
-  what it was: the band is written nowhere rather than merely undone, which
-  the suite pins by comparing those rows against a mount that never had a
-  column at all.
-- **`--tv-col`, the selected column's identity** (browser renderer), spelled
-  once for both themes the way `--tv-frost` and `--tv-flag` are, washed at
-  `--tv-col-wash` for the band and `--tv-cell-wash` for the crossing. It is
-  a pale amber (`#FFF3D0`) for two reasons, and the second is the binding
-  one. Amber is the one hue nothing else on the table occupies — frost at
-  215°, the flag at 6°, the light cursor at 120°, the mark's ink at 185°
-  and 215°. And at luminance .899 it sits level with the darkest ground a
-  row can wear, so washing it over a marked or a flagged row shifts the hue
-  without spending the contrast the tag ink needs. Every darker candidate,
-  the muted ink of the original sketch included, dragged that ink under
-  4.5:1 on a marked row well before it became visible at all: the light
-  mark and flag washes already sit at the ink's cap (4.62:1 and 4.61:1
-  against a 4.5 floor), so a wash that composites over one has almost
-  nothing to spend. The band goes on the cells and the row states stay on
-  the row, so the two never contest a background slot, and the band being
-  translucent is what leaves the stripe, the mark, the flag and the cursor
-  all still telling themselves apart inside it — measured rather than
-  assumed: each keeps more than half the step it has outside the band. Both
-  strengths are measured against the grounds each can land on, and those
-  differ, the band falling on the page, the stripe, a mark and a flag while
-  the crossing falls on the cursor row alone. Dark's crossing is the most
-  the ink allows — 9% leaves the tag ink at 4.61:1 there and one point more
-  puts it under the floor — while light has headroom and is set by what
-  reads, its band moving a ground between half and nine tenths as far as a
-  mark moves the page, a locator staying quieter than a state. The two
-  strengths are far apart (35% against 8%) for the reason the chip's are:
-  a pale colour needs much more of itself over white than over black.
-  `washIn` in the driver is now general over any colour-and-strength pair
-  rather than the flag's alone, and `apart` joins `ratio` beside it —
-  contrast answers "can this be read on that" and says almost nothing about
-  "can this band be seen", the light cursor row being 1.04:1 against the
-  page it sits on and perfectly plain to the eye.
-
-### Fixed
-- **A selection run no longer parks short of the row it chose** (browser
-  renderer). Moving the selection aims the viewport at a row and eases
-  there, and the target was worked out once, at the moment of the move,
-  from the geometry the last render had read. Two ways that target went
-  stale. A synchronous burst of `selectStep` sets every target before a
-  single frame runs, so the one that survived was derived from the
-  stalest geometry of the run and nothing followed to derive it again —
-  the viewport parked less than half way with no selected row drawn at
-  all. And a run at one move a frame ends on a frame whose aim is taken
-  before `renderRows` re-measures, so a header or row height that moved
-  during the run left the last row about 16px under the fold.
-  The ease now keeps the AIM — the row, the direction it was reached
-  from, and the origin — and re-derives the target every frame, with the
-  geometry re-read inside the frame loop rather than only where a row is
-  drawn (`renderRows` turns back at the door when the window has not
-  moved, so an ease could otherwise run to its end without ever
-  re-measuring). Both cases now land the last row whole with the
-  selection rendered; `web/perf-driver.js` pins them.
-
-### Added
 - **A drill-down crumb strip on the handle** (browser renderer).
   `pushCrumb({label, query})`, `popCrumb()`, `setCrumbs(list)` and
   `getCrumbs()` keep the path a reader took to get here, drawn as muted
@@ -577,8 +397,6 @@ the rails-to-cosmos ELPA archive publishes date-stamped snapshots.
   bubbling into a consumer's keymap. (The stage-aware refinement for a
   half-typed `key:` and the palette's one-step-further ladder are the
   entries above; this is the shape they refine.)
-
-### Added
 - Browser renderer: **two presentations under `pageSize`**, so that
   selection-driven page crossing is smooth while explicit paging stays
   crisp. *Paged* is the existing slice, with the window running inside one
@@ -635,20 +453,163 @@ the rails-to-cosmos ELPA archive publishes date-stamped snapshots.
   — the actions still dispatch — and the default is to show them, so a
   consumer that says nothing sees the line it always saw.
 
-### Removed
-- The **outline guides** experiment and SCHEMA's row `depth` field, both
-  added earlier in this same unreleased cycle and neither ever shipped:
-  the `tree: true` mount option, the guide drawing and its degradations,
-  the `depth` row field with its section, and the 28 driver checks that
-  covered them. The consumer they were built for moved to serving
-  first-level rows only, which needs no nesting hint at all, and a
-  contract field with no producer behind it and one renderer ignoring it
-  is a cost with nothing on the other side. Nothing depended on it —
-  `getVisible`, `selectStep` and the pager are untouched, and a view that
-  never sent `depth` rendered identically before and after, which is why
-  this is a removal rather than a deprecation.
-
 ### Changed
+- **A starred meta completes star-free** (browser renderer). The
+  asterisks of `*active*`/`*inactive*` are READING notation — the mark
+  that says the producer decides this one — so they are no longer
+  something to type: display and commit wear them and matching ignores
+  them. `state:act` and `state:active` both offer `*active*`, the
+  starred spelling `state:*act` still answers to itself, and the bare
+  word `active` surfaces `state:*active*` through the column that
+  declares it. Spelled in full either way it counts as exact, so it
+  leads the list and RET commits `state:*active*` from four letters.
+  One `starless` beside `META`, read by the two predicates the
+  completion matches through (`opensWith`, `spells`); the local
+  evaluator is untouched, still matching a meta literally, because what
+  a meta MEANS stays the producer's to say.
+- **The suggestion list always opens on row one** (browser renderer).
+  Selection was conditional — a column completion started highlighted
+  and everything else started with nothing chosen, so RET meant "accept"
+  or "commit the word as typed" depending on what the list happened to
+  hold. It is now one rule: a list with anything to offer opens with its
+  first row chosen, and RET takes that row. The consequence is stated
+  rather than hidden — **with suggestions showing, RET commits the top
+  suggestion and not the letters typed** — and the literal stays the
+  grammar's to give: a quoted token asks for no suggestions at all
+  (`"boo"`), Escape puts the list away so the next RET commits what is
+  written, and a word nothing completes never opened a list. The bare
+  presence predicate `tag:` is therefore RET, Escape, RET.
+  Ranking carries the whole weight now, so it was made honest at both
+  stages: what the word SPELLS IN FULL leads what it merely opens.
+  A bare word puts the value some column holds at the head — `book` is
+  `tag:book`, ahead of the `book:` key beside it, which asks for the
+  same rows in a token still half written — seeded before the key and
+  guess tiers so their twelve-row cap cannot crowd it out; a key the
+  word spells in full leads the keys it only opens; and after `key:` the
+  value typed in full heads the domain whatever order that column
+  declared, looked for past the twelve on offer. `acAt` is no longer
+  ever `-1`, so `moveAc`'s wrap-from-nothing branch and the `acAt >= 0`
+  guard on Tab/Enter are gone; `pick` leaves the item shape with them.
+  The driver's preselection, C-n/C-p and stage-aware-RET checks are
+  restated against row one (17 checks net, 1001 → 1018), and one of them
+  was vacuous: `sync` completes nothing in the fixture, so "nothing is
+  preselected when only tags are offered" was passing over an empty
+  list. `table-view.el` has no suggestion list and is untouched.
+- **A cell step off either end gives the column up** (browser renderer).
+  `select(id, col)` clamped the index to the columns that exist, so a
+  reader stepping right on the last column or left on the first stayed
+  where they were. An index outside the table is now no column at all:
+  the band, the crosshair and `getSelection().col` go, and the row cursor
+  stays exactly where it is — the whole-row selection, which is the look
+  the table drew before cells were selectable. Cell movement is the
+  consumer's loop (read `getSelection().col`, add a step, hand it back to
+  `select`), so the index one past an end is the only spelling either end
+  has, and an edge that swallows the key answers nothing where walking
+  off it lands in a state the table already draws. Entry is untouched —
+  a row-only selection takes the column its consumer names — and
+  `select(id)` with no column is byte-for-byte what it was.
+  `select(id, 99)` answers like a step past the end, there being no such
+  cell either way. The handle grows nothing: `col` has always been `null`
+  for a whole-row selection and consumers already read it that way.
+  `table-view.el` has no cell selection and is untouched. The driver's
+  four clamp checks are replaced by thirteen: both exits, the band gone
+  from cell, column and header at each, the row cursor unmoved, re-entry
+  after an exit, and a middle-column step re-anchored so it reads the same
+  whatever the ends do.
+- **`state:*active*` matches the empty cell (SCHEMA.md + browser
+  renderer).** SCHEMA's badge meta-values gain a rule they were silent
+  on: `*active*` covers the unstated row as well as the producer's
+  active values — an entry nobody has stated is live work, and the
+  default view is what would otherwise hide it — while `*inactive*`
+  covers stated values alone. The two groups therefore do not partition
+  the column, and `-state:*active*` excludes the empty cell. `key:none`
+  is unchanged and is now a subset of `*active*`. In `tokenTest` this is
+  the one term of a producer meta a renderer can decide for itself:
+  which keywords are in a group needs the producer's sets, an empty cell
+  does not, so `state:*active*` locally answers the stateless rows
+  rather than nothing. `*inactive*` stays the literal it was. The
+  autocomplete still shows a meta dimmed and uncounted — these counts
+  are per cell value, and a fraction of what the producer will match is
+  no better a number than zero. `fixtures/parity/filter-query.json`
+  gains a stateless row and four cases (both metas, the negation, and
+  `state:none` beside them); `table-view.el` has no query grammar and is
+  untouched.
+- **Breaking — `sortable` is opt-in in `table-view.el` too.** SCHEMA.md
+  has always read it that way and so has the browser renderer: a column
+  declares `sortable` or it is not sorted on. This renderer took the
+  opposite default, sorting by any column that did not opt *out*, so one
+  view answered `^` differently in the two. `table-view--sortable-keys`
+  now requires the flag, which is the list `^` walks, the list it cycles
+  when point is off a column, and the list it refuses a named column
+  against. **A consumer relying on the default must now declare it** —
+  `(sortable . t)`, or `"sortable": true`, on every column `^` should
+  reach. The repo's own `examples/` are the enumeration and all eleven
+  were living off the default; seven teach `^` in their header comments
+  and were plainly broken by the flip — `minimal`, `org-links`,
+  `native`, `native-live` and `paginate` declared it on no column at
+  all, `multi-sort` invites `^` on "any column" while its badge column
+  had none, and `sort-methods`, the example *about* per-column sort
+  methods, reached three of its five columns by the default alone. The
+  other four (`bulk`, `delete`, `fill-function`, `upsert`) advertise the
+  key through the hint line rather than their prose. Every one now
+  declares what it demonstrates. A spec's own `sort` is untouched by
+  this: that says what the view opens as, while the flag says what the
+  user may reach — how the browser renderer has always read the pair. The old
+  test pinned the wrong side of the divergence —
+  `tv-test-sortable-defaults-true-opt-out-false` asserted that an
+  omitted flag meant sortable, so it pinned the bug rather than the
+  contract; it is replaced by `tv-test-sortable-is-opt-in` and by a
+  second test that carries the flag all the way to `^` refusing to
+  sort. The Rust side needed nothing: `tvx` is handed a sort chain and
+  executes it, and reads no sortability anywhere, so the differential
+  oracle covers exactly what it covered before.
+- **A cell selection draws its whole column, and every part of the
+  selection is a ground** (browser renderer). `select(id, col)` used to
+  outline the one `td` in the accent colour. It now washes the column it
+  names — `.tv-colsel` on every rendered cell of that column and on its
+  header, since a band stopping short of its header reads as broken — and
+  `.tv-cell-sel`, where that band crosses the cursor row, is one step more
+  of the same wash. Nothing in the selection draws an edge any more: three
+  backgrounds, and the suite sweeps every rule whose selector names one of
+  them for `border`, `outline` and `box-shadow`, counting the rules so a
+  rename cannot quietly empty the sweep. The flag's left edge on the box
+  cell is untouched, being the one edge the table does draw and a channel
+  no selection rule names. `select(id)` with no column is byte-for-byte
+  what it was: the band is written nowhere rather than merely undone, which
+  the suite pins by comparing those rows against a mount that never had a
+  column at all.
+- **`--tv-col`, the selected column's identity** (browser renderer), spelled
+  once for both themes the way `--tv-frost` and `--tv-flag` are, washed at
+  `--tv-col-wash` for the band and `--tv-cell-wash` for the crossing. It is
+  a pale amber (`#FFF3D0`) for two reasons, and the second is the binding
+  one. Amber is the one hue nothing else on the table occupies — frost at
+  215°, the flag at 6°, the light cursor at 120°, the mark's ink at 185°
+  and 215°. And at luminance .899 it sits level with the darkest ground a
+  row can wear, so washing it over a marked or a flagged row shifts the hue
+  without spending the contrast the tag ink needs. Every darker candidate,
+  the muted ink of the original sketch included, dragged that ink under
+  4.5:1 on a marked row well before it became visible at all: the light
+  mark and flag washes already sit at the ink's cap (4.62:1 and 4.61:1
+  against a 4.5 floor), so a wash that composites over one has almost
+  nothing to spend. The band goes on the cells and the row states stay on
+  the row, so the two never contest a background slot, and the band being
+  translucent is what leaves the stripe, the mark, the flag and the cursor
+  all still telling themselves apart inside it — measured rather than
+  assumed: each keeps more than half the step it has outside the band. Both
+  strengths are measured against the grounds each can land on, and those
+  differ, the band falling on the page, the stripe, a mark and a flag while
+  the crossing falls on the cursor row alone. Dark's crossing is the most
+  the ink allows — 9% leaves the tag ink at 4.61:1 there and one point more
+  puts it under the floor — while light has headroom and is set by what
+  reads, its band moving a ground between half and nine tenths as far as a
+  mark moves the page, a locator staying quieter than a state. The two
+  strengths are far apart (35% against 8%) for the reason the chip's are:
+  a pale colour needs much more of itself over white than over black.
+  `washIn` in the driver is now general over any colour-and-strength pair
+  rather than the flag's alone, and `apart` joins `ratio` beside it —
+  contrast answers "can this be read on that" and says almost nothing about
+  "can this band be seen", the light cursor row being 1.04:1 against the
+  page it sits on and perfectly plain to the eye.
 - **Browser renderer: applied-filter chips are a frost wash, not a solid
   golden slab.** The role's colour moves from the theme's selection
   golden (`#FFD600` with black ink) to its **frost** (`#D0E1F9`,
@@ -739,7 +700,38 @@ the rails-to-cosmos ELPA archive publishes date-stamped snapshots.
   re-render (the legend's line count varies); the O(1) mark-gutter hint
   refresh still touches only the status line.
 
+### Removed
+- The **outline guides** experiment and SCHEMA's row `depth` field, both
+  added earlier in this same unreleased cycle and neither ever shipped:
+  the `tree: true` mount option, the guide drawing and its degradations,
+  the `depth` row field with its section, and the 28 driver checks that
+  covered them. The consumer they were built for moved to serving
+  first-level rows only, which needs no nesting hint at all, and a
+  contract field with no producer behind it and one renderer ignoring it
+  is a cost with nothing on the other side. Nothing depended on it —
+  `getVisible`, `selectStep` and the pager are untouched, and a view that
+  never sent `depth` rendered identically before and after, which is why
+  this is a removal rather than a deprecation.
+
 ### Fixed
+- **A selection run no longer parks short of the row it chose** (browser
+  renderer). Moving the selection aims the viewport at a row and eases
+  there, and the target was worked out once, at the moment of the move,
+  from the geometry the last render had read. Two ways that target went
+  stale. A synchronous burst of `selectStep` sets every target before a
+  single frame runs, so the one that survived was derived from the
+  stalest geometry of the run and nothing followed to derive it again —
+  the viewport parked less than half way with no selected row drawn at
+  all. And a run at one move a frame ends on a frame whose aim is taken
+  before `renderRows` re-measures, so a header or row height that moved
+  during the run left the last row about 16px under the fold.
+  The ease now keeps the AIM — the row, the direction it was reached
+  from, and the origin — and re-derives the target every frame, with the
+  geometry re-read inside the frame loop rather than only where a row is
+  drawn (`renderRows` turns back at the door when the window has not
+  moved, so an ease could otherwise run to its end without ever
+  re-measuring). Both cases now land the last row whole with the
+  selection rendered; `web/perf-driver.js` pins them.
 - Browser renderer: the filter box no longer loses focus and caret on a
   re-render — the chrome is built once at mount and only the row window,
   hint, arrows and chips are rewritten.
