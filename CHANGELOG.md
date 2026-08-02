@@ -6,6 +6,27 @@ the rails-to-cosmos ELPA archive publishes date-stamped snapshots.
 ## Unreleased
 
 ### Changed
+- **A cell step off either end gives the column up** (browser renderer).
+  `select(id, col)` clamped the index to the columns that exist, so a
+  reader stepping right on the last column or left on the first stayed
+  where they were. An index outside the table is now no column at all:
+  the band, the crosshair and `getSelection().col` go, and the row cursor
+  stays exactly where it is — the whole-row selection, which is the look
+  the table drew before cells were selectable. Cell movement is the
+  consumer's loop (read `getSelection().col`, add a step, hand it back to
+  `select`), so the index one past an end is the only spelling either end
+  has, and an edge that swallows the key answers nothing where walking
+  off it lands in a state the table already draws. Entry is untouched —
+  a row-only selection takes the column its consumer names — and
+  `select(id)` with no column is byte-for-byte what it was.
+  `select(id, 99)` answers like a step past the end, there being no such
+  cell either way. The handle grows nothing: `col` has always been `null`
+  for a whole-row selection and consumers already read it that way.
+  `table-view.el` has no cell selection and is untouched. The driver's
+  four clamp checks are replaced by thirteen: both exits, the band gone
+  from cell, column and header at each, the row cursor unmoved, re-entry
+  after an exit, and a middle-column step re-anchored so it reads the same
+  whatever the ends do.
 - **`state:*active*` matches the empty cell (SCHEMA.md + browser
   renderer).** SCHEMA's badge meta-values gain a rule they were silent
   on: `*active*` covers the unstated row as well as the producer's

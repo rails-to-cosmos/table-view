@@ -73,11 +73,14 @@
  * - Selection is a row and, optionally, one cell of it: `select(id, col)' washes
  *   the whole column (`.tv-colsel' on every rendered td of it and on its th) and
  *   stamps `.tv-cell-sel' where that band crosses the cursor row, which is the
- *   crosshair; `getSelection()' reports both. The column is clamped to the ones
- *   that exist, never wrapped, and `select(id)' with no column is the whole-row
- *   selection this had before, with no band anywhere. Every class is re-derived
- *   from the same state on every render, so they survive a scroll, an upsert and
- *   a `setRows' that still carries the id.
+ *   crosshair; `getSelection()' reports both. A column index outside the table
+ *   is no column at all: cell movement is the consumer's loop — read the
+ *   column, add a step, hand it back — so the index one past either end is how
+ *   a reader walks OFF the cells, and the answer there is the whole-row
+ *   selection rather than a cursor stalled against a wall. `select(id)' with no
+ *   column is that same selection, with no band anywhere. Every class is
+ *   re-derived from the same state on every render, so they survive a scroll,
+ *   an upsert and a `setRows' that still carries the id.
  * - The whole selection is grounds — no outline, border or shadow on any of the
  *   three. The bands sit on the cells, where the table paints them above the
  *   rows, and the body's is translucent, so the zebra, a mark, a flag and the
@@ -1861,16 +1864,18 @@
     }
 
     /**
-     * COL clamped to a real column index, or null for a whole-row selection.
-     * Clamped rather than wrapped: walking off the last column stays there,
-     * which is what a table does.
+     * COL as a real column index, or null for a whole-row selection — which is
+     * what a column outside the table is. A consumer steps the selection by
+     * reading the column and handing back one more, so the index past an end is
+     * a reader walking off the cells, and the answer there is the row they are
+     * still on: an edge that swallows the key says nothing, and the row-only
+     * selection is a look the table already draws.
      * @param {number|null|undefined} col  @returns {number|null}
      */
-    function clampCol(col) {
+    function cellCol(col) {
       if (col === null || col === undefined) return null;
-      const n = columns().length;
-      if (!n) return null;
-      return Math.max(0, Math.min(n - 1, Math.trunc(col)));
+      const at = Math.trunc(col);
+      return at >= 0 && at < columns().length ? at : null;
     }
 
     /**
@@ -1883,7 +1888,7 @@
      */
     function setSelected(id, col) {
       state.selected = id ?? null;
-      state.selCol = id === null || id === undefined ? null : clampCol(col);
+      state.selCol = id === null || id === undefined ? null : cellCol(col);
       selAt = indexOfSelected();
       stampSelection();
     }
@@ -2064,8 +2069,10 @@
      * is how a consumer moves the selection. False when no visible row has that
      * id — a filtered-out row does not steal the selection.
      *
-     * COL selects one cell of that row, clamped to the columns that exist;
-     * omitted, the selection is the whole row, which is what it always was.
+     * COL selects one cell of that row; a COL outside the columns that exist
+     * selects none of them, so a consumer stepping past either end lands on the
+     * whole-row selection. Omitted, it is that same selection, which is what it
+     * always was.
      *
      * This scrolls, keeping a margin under the cursor. A click does not: the
      * row is under the pointer already, and yanking the viewport out from
@@ -2080,7 +2087,7 @@
       if (i === -1) return false;
       const was = selAt;
       state.selected = id;
-      state.selCol = clampCol(col);
+      state.selCol = cellCol(col);
       selAt = i;
       paintSelection(was);
       return true;

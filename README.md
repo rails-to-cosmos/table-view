@@ -513,11 +513,12 @@ index (clamped), so movement carries on from where the eye is.
 the third column — `.tv-colsel` on every rendered cell of it and on its header —
 and stamps `.tv-cell-sel` where that band crosses the cursor row, which is the
 crosshair; `select(id)` selects the whole row with no band anywhere, which is
-what it always did. The column is clamped to the ones that exist, never wrapped,
-and every mark is re-derived on every render, so they survive a scroll, an upsert
-and a `setRows` that still carries the id. `getSelection()` reports `{id, col}`
-— read it, add a step, hand it back to `select` — which is how a consumer binds
-cell movement to keys.
+what it always did. `getSelection()` reports `{id, col}` — read it, add a step,
+hand it back to `select` — which is how a consumer binds cell movement to keys,
+and a column index outside the table is **no column**, so that loop walks off
+either end into the whole-row selection instead of stalling on the edge. Every
+mark is re-derived on every render, so they survive a scroll, an upsert and a
+`setRows` that still carries the id.
 
 The whole selection is grounds: no outline, border or shadow on any of the
 three. The bands wash `--tv-col`, a pale amber that is the one hue nothing else

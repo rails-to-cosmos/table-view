@@ -1680,15 +1680,50 @@ async function cellsChipsPills() {
   check("the crosshair carries both classes: one td, one background slot, the cell winning",
         [cellSel()[0].classes.has("tv-colsel"), cellSel()[0] === rowOf(id).children[2]],
         [true, true]);
-  t.select(id, 99);
+  // --- walking off the ends. Cell movement is the consumer's loop — read the
+  //     column, add a step, hand it back — so the index one past an end is what
+  //     a reader's forward key produces on the last column. `step' is that loop
+  //     as a consumer writes it, the entry rule (a row-only selection enters at
+  //     the first column, whichever way asked) included.
+  const step = (d) => {
+    const at = t.getSelection().col;
+    return t.select(id, at === null ? 0 : at + d);
+  };
+  t.select(id, nCols - 1);
   await painted();
-  check("a column past the end clamps rather than wrapping", colOfSel(), nCols - 1);
-  check("and the band clamps with it, header included",
-        [bandAt(), headAt()], [nCols - 1, nCols - 1]);
-  t.select(id, -5);
+  check("the cursor is on the last column, band and all",
+        [t.getSelection().col, bandAt()], [nCols - 1, nCols - 1]);
+  check("stepping forward off it selects no column, and says so before it paints",
+        [step(1), t.getSelection()], [true, { id, col: null }]);
   await painted();
-  check("and so does one before the start", colOfSel(), 0);
-  check("the band too", [bandAt(), headAt()], [0, 0]);
+  check("leaving no band anywhere — crossing, column or header",
+        [cellSel().length, bandCells().length, bandHead().length], [0, 0, 0]);
+  check("and the row cursor exactly where it was: this is the whole-row selection",
+        [t.getSelection().id, rowOf(id).classes.has("tv-sel")], [id, true]);
+  check("the next step is an entry, landing on the first column",
+        [step(1), t.getSelection().col], [true, 0]);
+  await painted();
+  check("with the band drawn where the entry named it", [bandAt(), headAt()], [0, 0]);
+  check("stepping back off the first column exits the same way",
+        [step(-1), t.getSelection().col], [true, null]);
+  await painted();
+  check("with nothing banded at that end either",
+        [cellSel().length, bandCells().length, bandHead().length], [0, 0, 0]);
+  check("and re-entry from there is the first column too",
+        [step(-1), t.getSelection().col], [true, 0]);
+  // Re-anchored rather than carried on from the exits above: a step in the
+  // middle is the case the ends were carved out of, and it has to read the same
+  // whatever the ends do.
+  t.select(id, 0);
+  check("a step between the ends is one column, as it always was",
+        [step(1), step(1), t.getSelection().col], [true, true, 2]);
+  check("back the same", [step(-1), t.getSelection().col], [true, 1]);
+  // A column named far outside the table is the same answer as one stepped
+  // there: no such cell, so no cell selection.
+  check("a column past the end is no column rather than the last one",
+        [t.select(id, 99), t.getSelection().col], [true, null]);
+  check("nor is one before the start",
+        [t.select(id, -5), t.getSelection().col], [true, null]);
   t.select(id, 2);
   await painted();
 
