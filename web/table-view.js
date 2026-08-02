@@ -23,6 +23,9 @@
  *
  *   tv.getQuery();        // the query as last delivered
  *   tv.stripLastToken();  // drop the typed text, else the last chip -> bool
+ *   tv.pushCrumb({label, query});   // drilling in: leave a crumb behind
+ *   tv.popCrumb();        // walking out: {label, query} or null — the consumer applies it
+ *   tv.setCrumbs(list); tv.getCrumbs();
  *   tv.openFilter(); tv.closeFilter();   // summon and dismiss the filter
  *   tv.selectStep(+1);    // move a row, turning the page at either end -> bool
  *   tv.nextPage(); tv.previousPage();    // turn a page -> bool
@@ -257,6 +260,21 @@
  *   tokens something follows, so a word is never chipped out from under the
  *   caret. Backspace on an empty box takes the last chip off, a click takes any
  *   chip off, and `onFilter' is handed the whole query joined.
+ * - A drill-down leaves CRUMBS, and the strip is all the renderer does about
+ *   it: `pushCrumb'/`popCrumb'/`setCrumbs'/`getCrumbs' keep a trail of
+ *   `{label, query}', drawn as muted chips LEFT of the live ones in the same
+ *   row. `popCrumb' pops and RETURNS — it never applies — because whoever owns
+ *   the fetching owns what a query means; a consumer pushes as it drills in and
+ *   applies the popped query itself. Past four the oldest fold into one `… +N'
+ *   counter that takes a slot of its own, so the strip's width is fixed. Handle
+ *   state like a mark: it outlives `setRows' and every filter, and `setView'
+ *   drops it with the world it described. A crumb carries no `data-i', which is
+ *   what makes it inert to the click that takes a live chip off.
+ * - `chipLabel: (token) => string|null' aliases what a LIVE chip shows. The
+ *   query is unchanged — `getQuery', `onFilter' and the token a click removes
+ *   are all still the text as written — so a chip may lie prettily while the
+ *   grammar does not. Anything but a non-empty string leaves the token raw, and
+ *   crumbs never reach it: a label is already a label.
  * - Enter with the suggestion list open accepts a suggestion and stays. With
  *   the list closed it commits whatever is typed to a chip — cancelling the
  *   pending debounce, so the query is delivered exactly once — then selects the
@@ -303,6 +321,10 @@
  * @typedef {{ op: "insert", index: number, row: Row }
  *        | { op: "delete", index: number }
  *        | { op: "reset", rows: Row[] }} Op
+ * @typedef {{ label: string, query: string }} Crumb
+ *          One step of a drill-down trail: what to show, and the query that
+ *          gets back to it. The renderer draws the label and never reads the
+ *          query — applying one is the consumer's, who owns the fetching.
  * @typedef {{ onAction?: (command: string, id: string, row: Row) => void,
  *             onLink?: (target: string, row: Row | null) => void,
  *             onFilter?: (q: string) => void,
@@ -312,7 +334,8 @@
  *             actionHints?: boolean,
  *             flagHelp?: string,
  *             pageSize?: number,
- *             initialQuery?: string }} MountOptions
+ *             initialQuery?: string,
+ *             chipLabel?: (token: string) => string|null }} MountOptions
  * @typedef {{ el: HTMLElement,
  *             setView: (v: View) => void,
  *             setRows: (rows: Row[]) => void,
@@ -324,6 +347,10 @@
  *             select: (id: string, col?: number) => boolean,
  *             getSelection: () => { id: string|null, col: number|null },
  *             getQuery: () => string,
+ *             setCrumbs: (list: Crumb[]) => void,
+ *             getCrumbs: () => Crumb[],
+ *             pushCrumb: (c: Crumb) => number,
+ *             popCrumb: () => Crumb|null,
  *             stripLastToken: () => boolean,
  *             openFilter: () => void,
  *             closeFilter: () => void,
@@ -679,6 +706,7 @@
   const PRESS_SLOP = 10;       // px of drift that makes it a scroll instead
   const EASE = 0.3;            // fraction of the remaining scroll covered per frame
   const SNAP_PX = 0.5;         // closer than this and the ease is over
+  const CRUMB_MAX = 4;         // crumb chips drawn before the oldest collapse
 
   /** Run CB when nothing else is pending (or soon, where there is no idle). */
   const idle = (cb) =>
@@ -785,6 +813,26 @@
   border-radius:999px;font-size:12px;cursor:pointer;color:var(--tv-fg);
   border:1px solid var(--tv-border);background:var(--tv-alt)}
 .tv-chip:hover{border-color:var(--tv-accent);color:var(--tv-accent)}
+/* A crumb: where the reader came FROM. It keeps the chip's shape, so the strip
+   reads as one row, and gives up everything that makes a chip actionable — the
+   muted ink instead of the foreground, the page's own ground instead of the
+   chip panel's, a dashed hairline, no remove mark and no hover. The dash is a
+   second channel, the way the flagged row's left edge is: two washes alone
+   would leave a colour to carry the whole difference. The right padding goes
+   back to the left's — the remove mark is what a live chip is lopsided for.
+   The edge is respelled as the plain hairline because the palette's chip rule
+   tints one with frost, which is the APPLIED filter's identity and no part of
+   what a crumb says.
+
+   The ink is the floor that binds, as everywhere else here. --tv-muted is the
+   tag ink and the ground is --tv-bg, which is what a transparent chip is drawn
+   on in every mode, so it clears 4.5:1 in both themes (light 5.1, dark 11.5)
+   while sitting quieter than a live chip's ink does on its own ground (19.9
+   and 15.4). Spelled with the row it lives in so it outranks the palette's own
+   chip rule, the one other place a chip's ground is set. */
+.tv-chips .tv-chip-muted{color:var(--tv-muted);background:transparent;
+  border-color:var(--tv-border);border-style:dashed;cursor:default;padding-right:8px}
+.tv-chips .tv-chip-muted:hover{border-color:var(--tv-border);color:var(--tv-muted)}
 .tv-chip-x{font-style:normal;opacity:.55;padding:0 3px}
 .tv-chip:hover .tv-chip-x{opacity:1}
 /* The suggestion list hangs under the box, over the table. .tv-root clips with
@@ -958,6 +1006,13 @@
       return at === -1 ? `<b class="tv-key">${esc(t)}</b>`
         : `<b class="tv-key">${esc(t.slice(0, at))}</b> ${esc(t.slice(at + 1).trim())}`;
     }).filter(Boolean).join(" · ");
+    /**
+     * How a live chip should read, when the token itself is not what a reader
+     * wants shown — `(token) => string|null', anything but a non-empty string
+     * leaving the token raw. Display only: the query is never touched.
+     * @type {((token: string) => string|null)|null}
+     */
+    const chipLabel = typeof o.chipLabel === "function" ? o.chipLabel : null;
     /** How many chrome cells lead a row; what a column index has to skip. */
     const chrome = marks ? 1 : 0;
     /** The marked ids. @type {Set<string>} */
@@ -2486,6 +2541,15 @@
     /** @type {string[]} */
     let chips = [];
 
+    /**
+     * The trail a drill-down left: where the reader came FROM, oldest first.
+     * Handle state, the way a mark is — the consumer owns the drilling and this
+     * owns the strip — so it survives `setRows' and every filter, and `setView'
+     * takes it with the world it described.
+     * @type {Crumb[]}
+     */
+    let crumbs = [];
+
     /** The query as it stands: every chip, then whatever is in the box. */
     function effectiveQuery() {
       const typed = input.value.trim();
@@ -2494,13 +2558,53 @@
       return typed ? front + " " + typed : front;
     }
 
+    /** C as this keeps a crumb, or null when it is not one. @param {*} c */
+    function crumbOf(c) {
+      return c && typeof c === "object"
+        ? { label: String(c.label ?? ""), query: String(c.query ?? "") } : null;
+    }
+
+    /**
+     * How a live chip reads. A `chipLabel' formatter may alias the token to
+     * something a reader would rather see; the QUERY is untouched, so what
+     * `getQuery' answers, what `onFilter' is handed and what a click takes off
+     * are all still the token as written. Crumbs never reach this — a crumb's
+     * label IS its label, and running a token formatter over one would be
+     * asking a query question about a word that is not a query.
+     * @param {string} tok
+     */
+    function chipText(tok) {
+      if (!chipLabel) return tok;
+      const alias = chipLabel(tok);
+      return typeof alias === "string" && alias ? alias : tok;
+    }
+
+    /**
+     * The crumbs as the strip draws them, leftmost first. Past CRUMB_MAX the
+     * oldest collapse into one `… +N' counter, and the counter takes a slot of
+     * its own — so the strip is never wider than CRUMB_MAX chips however deep
+     * the drilling went, and the fifth crumb is what folds the first two away.
+     * @returns {string[]}
+     */
+    function crumbStrip() {
+      if (crumbs.length <= CRUMB_MAX) return crumbs.map((c) => c.label);
+      const kept = crumbs.slice(crumbs.length - (CRUMB_MAX - 1));
+      return ["… +" + (crumbs.length - kept.length)].concat(kept.map((c) => c.label));
+    }
+
+    // Crumbs lead, live chips follow: the trail is what was left behind and the
+    // chips are what is in force, so the row reads left to right as the reader
+    // walked it. A crumb carries no `data-i' — history is not a token that can
+    // be taken off — which is what the click delegation reads it by.
     function renderChips() {
       let html = "";
+      for (const text of crumbStrip())
+        html += `<span class="tv-chip tv-chip-muted">${esc(text)}</span>`;
       for (let i = 0; i < chips.length; i++)
-        html += `<span class="tv-chip" data-i="${i}" title="remove">${esc(chips[i])}`
+        html += `<span class="tv-chip" data-i="${i}" title="remove">${esc(chipText(chips[i]))}`
               + `<i class="tv-chip-x">×</i></span>`;
       chipsEl.innerHTML = html;
-      chipsEl.style.display = chips.length ? "" : "none";
+      chipsEl.style.display = (crumbs.length || chips.length) ? "" : "none";
     }
 
     /**
@@ -3095,7 +3199,10 @@
     chipsEl.addEventListener("click", (e) => {
       const t = hit(e);
       const chip = t && /** @type {HTMLElement|null} */ (t.closest(".tv-chip"));
-      if (!chip) return;
+      // A crumb wears the chip's shape and carries no index, so it lands here
+      // and has nothing to drop. Without the guard the index reads NaN and
+      // `splice' takes it for zero, which is the FIRST live chip.
+      if (!chip || chip.dataset.i === undefined) return;
       dropChip(Number(chip.dataset.i));
     });
 
@@ -3183,6 +3290,7 @@
         state.filter = "";
         marked.clear();          // a different view; these were about the last one
         flagged.clear();
+        crumbs = [];             // and the trail was a path through it
         chips = [];
         input.value = "";
         renderChips();
@@ -3296,6 +3404,47 @@
        * @returns {string}
        */
       getQuery() { return lastQuery; },
+      /**
+       * Replace the crumb trail, oldest first. Anything that is not an object
+       * is dropped; a missing `label' or `query' reads as "".
+       * @param {Crumb[]} list
+       */
+      setCrumbs(list) {
+        crumbs = [];
+        for (const c of list || []) {
+          const one = crumbOf(c);
+          if (one) crumbs.push(one);
+        }
+        renderChips();
+      },
+      /**
+       * The trail as it stands, oldest first — copies, so a consumer reading
+       * it cannot move the strip by editing what it was handed.
+       * @returns {Crumb[]}
+       */
+      getCrumbs() { return crumbs.map((c) => ({ label: c.label, query: c.query })); },
+      /**
+       * Push one crumb on the end. What a consumer does as it drills IN.
+       * @param {Crumb} c  @returns {number} how deep the trail is now
+       */
+      pushCrumb(c) {
+        const one = crumbOf(c);
+        if (one) { crumbs.push(one); renderChips(); }
+        return crumbs.length;
+      },
+      /**
+       * Take the last crumb off and hand it back, or null on an empty trail.
+       * It is popped and NOT applied: whoever owns the fetching owns what a
+       * query means, so a consumer walking out re-applies the `query' itself.
+       * @returns {Crumb|null}
+       */
+      popCrumb() {
+        if (!crumbs.length) return null;
+        const gone = crumbs[crumbs.length - 1];
+        crumbs.pop();
+        renderChips();
+        return gone;
+      },
       stripLastToken,
       openFilter,
       closeFilter,

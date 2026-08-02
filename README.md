@@ -336,6 +336,9 @@ hands the query to the producer, and whatever `setRows` delivers is what shows.
 | `openFilter()`     | summon the filter — raises the palette, or focuses the resident box |
 | `closeFilter()`    | dismiss it and give the keyboard back to the table            |
 | `stripLastToken()` | drop the typed text, else the last chip, and reapply; false if nothing was left |
+| `pushCrumb(c)`     | leave a `{label, query}` crumb behind; returns how deep the trail is now |
+| `popCrumb()`       | take the last crumb off and hand it back — `{label, query}`, or `null` on an empty trail. It applies nothing |
+| `setCrumbs(list)` / `getCrumbs()` | replace the trail; read it back as copies |
 | `toggleMark(id)`   | mark that row, or unmark it; returns the state it landed in   |
 | `markAll()`        | mark the whole filtered set, every page of it; returns the marked count |
 | `flagRow(id)`      | flag that row, or unflag it; returns the state it landed in    |
@@ -698,6 +701,61 @@ time: it closes the list if one is open, else drops what is half-typed, else
 blurs. Both keys stop at the input rather than bubbling into a consumer's own
 keymap, and nothing else moves focus or the selection: a debounce firing on its
 own leaves both where the typist left them.
+
+Pass **`chipLabel`** a `(token) => string|null` formatter to alias what an
+applied chip *shows*: `state:*active*` can read `active`, a long id can read a
+name. The **query is untouched** — `getQuery()`, what `onFilter` is handed, and
+the token a click or `stripLastToken()` removes are all the text as written — so
+a chip may lie prettily while the grammar does not. Anything but a non-empty
+string leaves the token raw, which is how one formatter aliases the two tokens
+it knows and passes the rest through.
+
+### Drill-down crumbs
+
+A **crumb trail** is the path a reader took to get here: `pushCrumb({label,
+query})` on the way in, `popCrumb()` on the way out. The trail renders as muted
+chips to the **left** of the live filter chips, in the same row — each showing
+its `label`, never its query — so one strip reads left to right as the reader
+walked it: where they came from, then what is in force now.
+
+```js
+// drilling in
+tv.pushCrumb({ label: currentName, query: tv.getQuery() });
+apply(narrower);                    // your fetch, your query
+
+// walking out — DEL on an empty query, say
+const back = tv.popCrumb();
+if (back) apply(back.query);        // still yours
+```
+
+**`popCrumb` pops and returns; it never applies.** Whoever owns the fetching
+owns what a query means — a producer-filtered view answers it over the wire, a
+local one narrows in place, and a consumer may want to restore a sort or a
+selection alongside it. So the renderer hands the crumb back and stays out of
+it. `setCrumbs`/`getCrumbs` are the same trail whole, for a consumer restoring
+one after a remount; `getCrumbs()` answers with copies, so editing what you read
+does not move the strip.
+
+Past **four** crumbs the oldest fold into a single `… +N` counter, leftmost.
+The counter takes a chip of its own, so the fifth crumb is what folds the first
+two away and the strip is never wider than four chips however deep the drilling
+went. Popping back over the boundary brings the labels out again.
+
+Crumbs are handle state, the way marks are: they survive `setRows`, an upsert, a
+delete, a re-sort and every filter change, and `setView` drops them with the
+world they described. They are **inert** — a crumb carries no remove mark and no
+`data-i`, so the click that takes a live chip off passes it by, which suits a
+keyboard-first consumer binding a key to `popCrumb` (v1 has no click).
+
+A crumb wears the chip's shape and gives up everything that makes a chip
+actionable: `--tv-muted` ink instead of the foreground, the page's own ground
+instead of the chip panel's, and a dashed hairline — a second channel, so a
+colour is not carrying the whole difference. The edge is the plain
+`--tv-border`, respelled because the palette tints a chip's with frost, and
+frost is the *applied filter's* identity. The ink is the floor that binds, as
+with every wash here: `--tv-muted` clears 4.5:1 on `--tv-bg` in both themes
+(5.1 light, 11.5 dark) while reading quieter than a live chip's ink does on its
+own ground.
 
 ## Development
 

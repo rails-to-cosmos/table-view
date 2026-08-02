@@ -227,6 +227,14 @@ interactive column reorder/add/remove, help toggles, and **computed columns**
 (cells derived by a renderer-side function). Producers emit data; renderers
 decide interaction.
 
+The **drill-down crumb strip** and **chip labels** belong to that list too. A
+crumb trail is a consumer's path through the data, held on a renderer's handle
+and drawn beside the filter chips; the query in each crumb is the consumer's
+own and the renderer only hands it back. A chip label aliases what an applied
+token *shows* and leaves the query it stands for exactly as written. Both are
+display; the query grammar above is the same with or without them, and a
+producer sees no difference.
+
 ## Example — a glance headline view
 
 ```json

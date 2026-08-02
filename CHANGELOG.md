@@ -143,6 +143,45 @@ the rails-to-cosmos ELPA archive publishes date-stamped snapshots.
   selection rendered; `web/perf-driver.js` pins them.
 
 ### Added
+- **A drill-down crumb strip on the handle** (browser renderer).
+  `pushCrumb({label, query})`, `popCrumb()`, `setCrumbs(list)` and
+  `getCrumbs()` keep the path a reader took to get here, drawn as muted
+  chips to the **left** of the live filter chips in the same row — each
+  showing its `label`, never its query — so one strip reads left to
+  right as the reader walked it. **`popCrumb` pops and RETURNS; it never
+  applies.** Whoever owns the fetching owns what a query means: a
+  producer-filtered view answers it over the wire, a local one narrows
+  in place, and a consumer may want a sort or a selection restored
+  alongside it, so the renderer hands the crumb back and stays out of
+  it. Past four crumbs the oldest fold into one `… +N` counter,
+  leftmost; the counter takes a chip of its own, so the fifth crumb
+  folds the first two away and the strip is never wider than four chips
+  however deep the drilling went. Handle state the way a mark is: it
+  survives `setRows`, an upsert, a delete, a re-sort and every filter
+  change, and `setView` drops it with the world it described. A crumb is
+  inert — no remove mark, no `data-i` — which is also the guard on the
+  chip click, where a crumb wearing the chip's shape would otherwise
+  read as index `NaN` and take the FIRST live chip off. Its look gives up
+  everything that makes a chip actionable: `--tv-muted` ink instead of
+  the foreground, the page's own ground instead of the chip panel's, and
+  a dashed hairline as the second channel, so a colour is not carrying
+  the whole difference. The ink is the floor that binds, as with every
+  wash here — `--tv-muted` clears 4.5:1 on `--tv-bg` in both themes (5.1
+  light, 11.5 dark) while reading quieter than a live chip's ink on its
+  own ground (19.9 and 15.4). No grammar moved: SCHEMA.md gains a line
+  putting the strip beside row marking as renderer-local, and
+  `table-view.el` is untouched.
+- **`chipLabel`: a live chip may show something other than its token**
+  (browser renderer). A `(token) => string|null` mount option aliases
+  what an applied chip displays — `state:*active*` reading `active`, an
+  id reading a name — while the **query is untouched**: `getQuery()`,
+  what `onFilter` is handed, and the token a click or `stripLastToken()`
+  removes are all the text as written. A chip may lie prettily; the
+  grammar does not. Anything but a non-empty string leaves the token
+  raw, so one formatter aliases the two tokens it knows and passes the
+  rest through. Crumbs never reach it — a crumb's label is already a
+  label, and running a token formatter over one would ask a query
+  question about a word that is not a query.
 - **Parity vectors: one manifest, two harnesses** ([`fixtures/parity/`](fixtures/parity/)).
   Nothing executed the same contract case on both renderers, so a
   divergence could sit quietly in two green suites — which is how the

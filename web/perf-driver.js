@@ -52,7 +52,7 @@ function probe(box, handle) {
     // left open — an open list would take the keys below for itself.
     el.value = "";
     el.dispatchEvent(new Ev("input"));
-    for (let i = 0; i < 40 && box.querySelectorAll(".tv-chip").length; i++)
+    for (let i = 0; i < 40 && box.querySelectorAll(".tv-chip[data-i]").length; i++)
       el.dispatchEvent(new Ev("keydown", { key: "Backspace" }));
   };
   const press = (key, init) => {
@@ -76,10 +76,15 @@ function probe(box, handle) {
   };
   const items = () => box.querySelectorAll(".tv-ac-label").map((e) => e.text);
   const counts = () => box.querySelectorAll(".tv-ac-n").map((e) => Number(e.text));
-  const chipsOf = () => box.querySelectorAll(".tv-chip").map((c) => c.text.replace("×", ""));
+  // The live chips are the ones carrying an index — which is also the property
+  // that makes them removable, and what tells them from a crumb wearing the
+  // same shape beside them.
+  const chipsOf = () => box.querySelectorAll(".tv-chip[data-i]").map((c) => c.text.replace("×", ""));
+  const crumbsOf = () => box.querySelectorAll(".tv-chip-muted").map((c) => c.text);
   /** Commit a query without clearing what is already applied. */
   const commit = (q) => { b().value = q; press("Enter"); };
-  return { box, handle, b, reset, press, commit, type, shown, items, counts, chipsOf };
+  return { box, handle, b, reset, press, commit, type, shown, items, counts,
+           chipsOf, crumbsOf };
 }
 
 /**
@@ -1372,6 +1377,235 @@ async function rowMarks() {
       // body text on this ground can only be further from it.
       check(theme + ": the muted ink the wash is made of still clears AA on it",
             ratio(p.muted, ground) >= 4.5, true);
+    }
+  }
+}
+
+/**
+ * The crumb trail and the chip alias: two things a consumer drives that the
+ * renderer only draws. Neither touches the grammar — a crumb's query is never
+ * read here and an aliased chip is still its token — so everything below is
+ * about the strip, what survives, and who owns applying.
+ */
+async function crumbTrail() {
+  console.log("\n== crumbs and chip labels");
+  const crumb = (n) => ({ label: "L" + n, query: "q" + n });
+
+  // --- the strip: crumbs lead, live chips follow
+  {
+    const C = driver(MARK_VIEW);
+    const h = C.handle;
+    check("no crumbs, no strip — the row is collapsed as it always was",
+          [C.crumbsOf(), C.box.querySelector(".tv-chips").style.display], [[], "none"]);
+    check("pushCrumb answers how deep the trail is now",
+          [h.pushCrumb(crumb(1)), h.pushCrumb(crumb(2))], [1, 2]);
+    check("and the row shows them, oldest first", C.crumbsOf(), ["L1", "L2"]);
+    // The labels off the crumbs and the queries off the WHOLE row, so an empty
+    // strip cannot answer "no query here" by having nothing in it at all.
+    check("a crumb shows its LABEL and never its query",
+          [C.crumbsOf().join("|"), C.box.querySelector(".tv-chips").text.indexOf("q")],
+          ["L1|L2", -1]);
+    check("and the strip is on show with no live chip in it",
+          [C.box.querySelector(".tv-chips").style.display, C.chipsOf()], ["", []]);
+
+    C.commit("alpha");
+    check("a committed token joins as a live chip", C.chipsOf(), ["alpha"]);
+    // Source order in the one row IS the reading order, so the crumbs have to
+    // be written before the chips rather than merely styled differently.
+    check("crumbs render LEFT of the live chips, in one row",
+          C.box.querySelector(".tv-chips").children
+            .map((e) => e.classes.has("tv-chip-muted") ? "crumb" : "chip"),
+          ["crumb", "crumb", "chip"]);
+
+    // --- a crumb is inert: the click that takes a chip off must pass it by
+    const first = C.box.querySelector(".tv-chip-muted");
+    if (first) first.click();
+    check("clicking a crumb removes nothing — the crumb stands, and so does the chip",
+          [C.crumbsOf(), C.chipsOf(), h.getQuery()], [["L1", "L2"], ["alpha"], "alpha"]);
+    check("and it carries no index, which is what a live chip is removed by",
+          [!!first && first.attrs.has("data-i"),
+           C.box.querySelector(".tv-chip[data-i]").attrs.get("data-i")], [false, "0"]);
+  }
+
+  // --- pop hands the crumb back and applies nothing
+  {
+    const C = driver(MARK_VIEW, { onFilter: () => {} });
+    const h = C.handle;
+    check("an empty trail pops null", h.popCrumb(), null);
+    h.setCrumbs([crumb(1), crumb(2)]);
+    check("setCrumbs replaces the trail whole", [h.getCrumbs(), C.crumbsOf()],
+          [[crumb(1), crumb(2)], ["L1", "L2"]]);
+    const got = h.popCrumb();
+    check("popCrumb returns the last crumb and takes it off",
+          [got, h.getCrumbs(), C.crumbsOf()], [crumb(2), [crumb(1)], ["L1"]]);
+    // The point of the whole shape: applying is the consumer's, because the
+    // consumer owns the fetching. The renderer must not have run the query.
+    check("and applies nothing — the query is where it was",
+          [h.getQuery(), C.chipsOf()], ["", []]);
+    check("popping the last one empties the strip again",
+          [h.popCrumb(), h.getCrumbs(), C.box.querySelector(".tv-chips").style.display],
+          [crumb(1), [], "none"]);
+    check("and then answers null, as it did before there were any", h.popCrumb(), null);
+
+    // getCrumbs hands out copies: editing what was read must not move the strip.
+    h.setCrumbs([crumb(1)]);
+    const read = h.getCrumbs();
+    read[0].label = "tampered";
+    read.push(crumb(9));
+    check("getCrumbs answers with copies", [h.getCrumbs(), C.crumbsOf()],
+          [[crumb(1)], ["L1"]]);
+    // A crumb is an object carrying the two fields; everything else is dropped.
+    h.setCrumbs([crumb(1), null, "L", { label: "bare" }]);
+    check("a non-object is dropped and a missing field reads empty",
+          h.getCrumbs(), [crumb(1), { label: "bare", query: "" }]);
+    h.setCrumbs([]);
+    check("and an empty list clears the trail", h.getCrumbs(), []);
+  }
+
+  // --- overflow: the counter takes a slot, so the strip has a fixed width
+  {
+    const C = driver(MARK_VIEW);
+    const h = C.handle;
+    for (let i = 1; i <= 4; i++) h.pushCrumb(crumb(i));
+    check("four crumbs are four chips, every one of them a label",
+          C.crumbsOf(), ["L1", "L2", "L3", "L4"]);
+    h.pushCrumb(crumb(5));
+    // The counter needs a chip of its own, so crossing the boundary folds TWO
+    // crumbs away rather than one — which is what keeps the width fixed.
+    check("the fifth collapses the oldest two into one counter, leftmost",
+          C.crumbsOf(), ["… +2", "L3", "L4", "L5"]);
+    h.pushCrumb(crumb(6));
+    check("and each one after it only raises the count",
+          C.crumbsOf(), ["… +3", "L4", "L5", "L6"]);
+    check("the strip never draws more than four chips, however deep it went",
+          [h.getCrumbs().length, C.crumbsOf().length], [6, 4]);
+    check("popping back over the boundary brings the labels out again",
+          [h.popCrumb().label, h.popCrumb().label, C.crumbsOf()],
+          ["L6", "L5", ["L1", "L2", "L3", "L4"]]);
+  }
+
+  // --- what a crumb survives. It is the consumer's trail, so nothing the rows
+  //     do moves it; a new VIEW is a new world and takes it.
+  {
+    const C = driver(MARK_VIEW, { marks: true });
+    const h = C.handle;
+    h.setCrumbs([crumb(1), crumb(2)]);
+    h.toggleMark("a");
+    h.flagRow("b");
+    h.select("c");
+    await painted();
+
+    h.setRows(MARK_VIEW.rows.slice());
+    check("setRows leaves the trail standing", C.crumbsOf(), ["L1", "L2"]);
+    h.upsertRow({ id: "a", cells: { state: "WAIT", title: "alpha again" } });
+    h.deleteRow("f");
+    check("an upsert and a delete leave it too", C.crumbsOf(), ["L1", "L2"]);
+    // The three id-keyed sets are a different question and the trail touches
+    // none of them, in either direction. Asserted before the filter runs: what
+    // a filter does to a selection is a rule of its own (the cursor keeps its
+    // PLACE, not its id) and is pinned where that rule lives.
+    check("marks, flags and the selection are untouched by any of it",
+          [h.getMarked(), h.getFlagged(), h.getSelection().id], [["a"], ["b"], "c"]);
+    C.commit("alpha");
+    check("and so does a filter change, which is the one it exists beside",
+          [C.crumbsOf(), C.chipsOf()], [["L1", "L2"], ["alpha"]]);
+    C.reset();
+    check("clearing the filter leaves it standing as well", C.crumbsOf(), ["L1", "L2"]);
+    check("with the marks and flags still where they were",
+          [h.getMarked(), h.getFlagged()], [["a"], ["b"]]);
+    h.setView(MARK_VIEW);
+    check("setView clears the trail with the world it described",
+          [h.getCrumbs(), C.crumbsOf(),
+           C.box.querySelector(".tv-chips").style.display], [[], [], "none"]);
+  }
+
+  // --- chipLabel: the chip lies prettily, the grammar does not
+  {
+    const asked = [];
+    const alias = { "state:DONE": "done", review: "reviewed" };
+    const A = driver(40, { onFilter: (q) => asked.push(q),
+                           chipLabel: (tok) => alias[tok] || null });
+    const h = A.handle;
+    A.commit('state:DONE review "two words"');
+    check("a mapped token renders its label", A.chipsOf(), ["done", "reviewed", '"two words"']);
+    // The whole point: display moved and nothing else did.
+    check("while the query the producer was handed is the tokens as written",
+          [h.getQuery(), asked], ['state:DONE review "two words"',
+                                  ['state:DONE review "two words"']]);
+    check("null from the formatter leaves the token raw",
+          A.chipsOf()[2], '"two words"');
+    // A chip still comes off by its own index, whatever it is showing.
+    A.box.querySelectorAll(".tv-chip[data-i]")[1].click();
+    check("and an aliased chip takes the token behind it off, its label with it",
+          [A.chipsOf(), h.getQuery()], [["done", '"two words"'], 'state:DONE "two words"']);
+    check("stripLastToken walks the tokens the labels stand for",
+          [h.stripLastToken(), h.getQuery()], [true, "state:DONE"]);
+    // Restoration is the remount idiom, so it is the other way a chip is born:
+    // the alias has to reach a query that arrives already committed.
+    const R = driver(40, { chipLabel: (tok) => alias[tok] || null,
+                           initialQuery: "state:DONE review" });
+    check("initialQuery's restored chips are aliased too, the query untouched",
+          [R.chipsOf(), R.handle.getQuery()], [["done", "reviewed"], "state:DONE review"]);
+
+    // A formatter that answers with something that is not a label is no
+    // formatter for that token: the raw text is always the fallback.
+    const junk = driver(40, { chipLabel: () => "" });
+    junk.commit("review");
+    check("an empty string is not a label either", junk.chipsOf(), ["review"]);
+    const wrong = driver(40, { chipLabel: () => /** @type {*} */ (7) });
+    wrong.commit("review");
+    check("nor is anything that is not a string", wrong.chipsOf(), ["review"]);
+    const none = driver(40);
+    none.commit("review");
+    check("and with no formatter the chip is the token, as it always was",
+          none.chipsOf(), ["review"]);
+
+    // Crumbs are not tokens and must never reach the formatter.
+    const seen = [];
+    const K = driver(MARK_VIEW, { chipLabel: (tok) => (seen.push(tok), "ALIAS") });
+    K.handle.setCrumbs([{ label: "state:DONE", query: "state:DONE" }]);
+    check("a crumb's label is a label: the token formatter never sees it",
+          [K.crumbsOf(), seen], [["state:DONE"], []]);
+    K.commit("review");
+    check("while the live chip beside it is aliased",
+          [K.crumbsOf(), K.chipsOf(), seen], [["state:DONE"], ["ALIAS"], ["review"]]);
+  }
+
+  // --- the muted identity, measured. A crumb has to read as past rather than
+  //     applied, and still be readable — the floor every wash here answers to.
+  {
+    const css = cssText();
+    check("the crumb rule exists, spelled with the row so it outranks the palette's",
+          css.indexOf(".tv-chips .tv-chip-muted{") !== -1, true);
+    check("and sits after the frost rule it has to beat at equal specificity",
+          css.indexOf(".tv-chips .tv-chip-muted{") > css.indexOf(".tv-pal .tv-chip{"), true);
+    const rule = css.slice(css.indexOf(".tv-chips .tv-chip-muted{"));
+    const decl = rule.slice(rule.indexOf("{") + 1, rule.indexOf("}"));
+    check("it gives up the chip's ground and takes the muted ink",
+          [/background:transparent/.test(decl), /color:var\(--tv-muted\)/.test(decl)],
+          [true, true]);
+    // A colour alone would carry the whole difference; the dash is the second
+    // channel, the way the flagged row's left edge is.
+    check("with a second channel that is not a colour at all",
+          /border-style:dashed/.test(decl), true);
+    // The palette's chip rule tints an edge with frost, and frost is the
+    // APPLIED filter's identity — a crumb takes the plain hairline back.
+    check("and a plain hairline, never the applied filter's frost",
+          [/border-color:var\(--tv-border\)/.test(decl), /frost/.test(decl)],
+          [true, false]);
+    check("and no hover, a crumb being nothing to act on",
+          /\.tv-chips \.tv-chip-muted:hover\{border-color:var\(--tv-border\)/.test(css), true);
+    for (const theme of ["light", "dark"]) {
+      const p = paletteIn(`:root[data-theme="${theme}"] .tv-root{`);
+      // Transparent, so what a crumb is drawn on is the page itself.
+      check(theme + ": the crumb ink clears the text floor on the page it sits on",
+            ratio(p.muted, p.bg) >= 4.5, true);
+      // Distinct from a live chip on BOTH axes — ink and ground — and quieter
+      // on the one that carries the reading.
+      const live = chipIn(/** @type {"light"|"dark"} */ (theme));
+      check(theme + ": and is a quieter reading than a live chip's, on a different ground",
+            [ratio(p.muted, p.bg) < ratio(p.fg, live.wash), p.muted !== p.fg,
+             p.bg !== live.wash], [true, true, true]);
     }
   }
 }
@@ -4351,6 +4585,7 @@ async function smoke() {
   await sortOrder();
   await metaValues();
   await rowMarks();
+  await crumbTrail();
   await parityVectors();
 
   console.log("\n== the window");
