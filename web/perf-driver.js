@@ -2182,6 +2182,88 @@ async function sortTokens() {
     check("and the marks are what makes it wider than the bare word",
           [el[0].text, el[1].text], ["Dept▲¹", "Score▲²"]);
   }
+
+  // --- the strip tells ORDERING from NARROWING. The class is the PARSE: a chip
+  //     says it orders exactly where the chain is built out of its token.
+  {
+    /** Whether each live chip says it orders, in strip order. */
+    const orders = () => P.box.querySelectorAll(".tv-chip[data-i]")
+      .map((c) => c.classes.has("tv-chip-sort"));
+    check("a predicate and an ordering are two chips, and one of them orders",
+          (P.shown("dept:Eng sort:score:desc"), [P.chipsOf(), orders()]),
+          [["dept:Eng", "sort:score:desc"], [false, true]]);
+    check("the empty chain states an order like every other sort token",
+          (P.shown("sort:*none*"), orders()), [true]);
+    check("`sortable' gates the gesture, so a column that opts out orders too",
+          (P.shown("sort:name:desc"), orders()), [true]);
+    // Every refusal `sortKeyOf' has, one chip each. The renderer drops the key,
+    // so such a token orders nothing and narrows nothing; the strip shows what
+    // was typed rather than promising an order no rows are in.
+    check("and every refusal keeps the ordinary chip",
+          (P.shown("-sort:score sort:nope sort:score:sideways sort:score|dept sort:"),
+           [P.chipsOf(), orders()]),
+          [["-sort:score", "sort:nope", "sort:score:sideways", "sort:score|dept", "sort:"],
+           [false, false, false, false, false]]);
+    // A crumb is a LABEL. One that happens to spell a sort token is still where
+    // the reader came FROM, so the ordering's colour may not reach it.
+    P.shown("sort:score");
+    P.handle.pushCrumb({ label: "sort:score", query: "sort:score" });
+    check("a crumb spelling one is a crumb, and no ordering leaks into it",
+          [P.crumbsOf(),
+           P.box.querySelectorAll(".tv-chip-muted").map((c) => c.classes.has("tv-chip-sort")),
+           orders()],
+          [["sort:score"], [false], [true]]);
+    P.handle.setCrumbs([]);
+  }
+
+  // --- and the ordering's identity, measured. The GROUND carries the whole of
+  //     it: the silhouette, the ink, the × and the hover are the chip's own.
+  {
+    const css = cssText();
+    const rule = ".tv-pal .tv-chip-sort";
+    check("the sort chip's rule is spelled where the filter chip's is, after it",
+          [css.indexOf(rule + "{") > css.indexOf(".tv-pal .tv-chip{"),
+           css.indexOf(rule + "{") < css.indexOf(".tv-chips .tv-chip-muted{")],
+          [true, true]);
+    const sort = boxOf([rule]), frost = boxOf([".tv-pal .tv-chip"]);
+    check("it washes the column band's own colour where the filter chip washes frost",
+          [/var\(--tv-col\)/.test(sort.background), /var\(--tv-frost\)/.test(frost.background)],
+          [true, true]);
+    check("at a strength of its own, over the strength every chip's edge takes",
+          [/var\(--tv-sort-wash\)/.test(sort.background),
+           /var\(--tv-chip-edge\)/.test(sort["border-color"])], [true, true]);
+    check("and respells nothing else, the ground being the whole difference",
+          Object.keys(sort).sort(), ["background", "border-color"]);
+    check("so the filter chip stands as it stood — frost for ink, ground and edge",
+          [Object.keys(frost).sort(), /var\(--tv-chip-wash\)/.test(frost.background),
+           /var\(--tv-frost\)/.test(frost["border-color"])],
+          [["background", "border-color", "color"], true, true]);
+    for (const name of ["light", "dark"]) {
+      const theme = /** @type {"light"|"dark"} */ (name);
+      const s = washIn(theme, "col", "sort-wash"), f = chipIn(theme);
+      const p = paletteIn(`:root[data-theme="${name}"] .tv-root{`);
+      check(name + ": the chip ink clears the text floor on the sort wash",
+            ratio(p.fg, s.wash) >= 4.5, true);
+      check(name + ": and so does the hover ink, that being what the chip offers",
+            ratio(p.accent, s.wash) >= 4.5, true);
+      // Hue is the identity; weight would have made one chip the louder.
+      check(name + ": the two identities are told apart by HUE",
+            Math.abs(hue(s.wash) - hue(f.wash)) >= 60, true);
+      check(name + ": and not by weight — each sits as far from the page as the other",
+            Math.abs(apart(s.ground, s.wash) / apart(f.ground, f.wash) - 1) <= 0.1, true);
+    }
+    // A strength is declared in FOUR blocks — base, the media query and the two
+    // stamped themes — so half an edit is a page painting one wash when the
+    // system picks the theme and another when the switch does. Read pairwise:
+    // a literal here would be a second copy of the palette to keep in step.
+    const at = [".tv-root{", ':root[data-theme="light"] .tv-root{',
+                "@media (prefers-color-scheme:dark){.tv-root{",
+                ':root[data-theme="dark"] .tv-root{']
+      .map((r) => paletteIn(r)["sort-wash"]);
+    check("and it is one value per theme, in all four palette blocks",
+          [at.every(Boolean), at[0] === at[1], at[2] === at[3], at[0] !== at[2]],
+          [true, true, true, true]);
+  }
 }
 
 /**

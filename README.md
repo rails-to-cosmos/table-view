@@ -591,13 +591,15 @@ mark is re-derived on every render, so they survive a scroll, an upsert and a
 
 The whole selection is grounds: no outline, border or shadow on any of the
 three. The bands wash `--tv-col`, a pale amber that is the one hue nothing else
-here uses and light enough that laying it over a marked or flagged row shifts
-the hue without spending the contrast the tag ink needs. They sit on the cells,
-where the table paints them above the rows, so the stripe, a mark, a flag and
-the cursor all still read through the column they cross; the crossing takes one
-step more of the same wash, on the same background slot, the cell's rule
-following the column's. Each strength is the most the ink allows on the grounds
-it lands on, which is why the two themes are far apart.
+on the table uses — the sort chip in the strip above borrows it deliberately,
+being about a column too — and light enough that laying it over a marked or
+flagged row shifts the hue without spending the contrast the tag ink needs.
+They sit on the cells, where the table paints them above the rows, so the
+stripe, a mark, a flag and the cursor all still read through the column they
+cross; the crossing takes one step more of the same wash, on the same
+background slot, the cell's rule following the column's. Each strength is the
+most the ink allows on the grounds it lands on, which is why the two themes are
+far apart.
 
 **Actions have no buttons.** They render on the hint line as `KEY label` pairs,
 the way `table-view.el` prints its legend: the keys are the interface, and a
@@ -817,7 +819,18 @@ than laid on it, with the ordinary `--tv-fg` for ink. Frost is the applied
 filter's colour and nothing else's, so no two of the three roles read as one
 thing. Swapping it is a one-line edit: `FROST` in `injectStyle`, which every
 palette mixes from. The reasoning behind the colour and the two strengths is in
-the CHANGELOG, under "chips are a frost wash". `initialQuery`, `getQuery()` and `stripLastToken()` behave exactly
+the CHANGELOG, under "chips are a frost wash".
+
+A chip that states the **order** wears `--tv-col` instead — the column band's
+own amber, `sort:` being the one token that speaks about a column. The ground
+carries the whole difference: one silhouette, one ink, one `×`, one hover, and
+the two washes sit the same distance from the page, so ordering and narrowing
+are told apart by hue rather than by weight. Only a token the renderer accepts
+as a sort key wears it; a negation, an unknown column or a direction that is
+neither word is dropped from the chain, orders nothing and keeps the ordinary
+chip. A crumb takes neither identity and stays muted.
+
+`initialQuery`, `getQuery()` and `stripLastToken()` behave exactly
 as they do elsewhere — the chips are the same state, only styled. The overlay
 sits at `z-index` 90/91, leaving 100 and up for a consumer's own modal.
 

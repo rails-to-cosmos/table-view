@@ -1033,24 +1033,24 @@
   --tv-link:${LINK_LIGHT};
   --tv-frost:${FROST};--tv-chip-wash:45%;--tv-chip-edge:95%;--tv-mark-wash:8%;
   --tv-flag:${FLAG};--tv-flag-wash:8%;
-  --tv-col:${COL};--tv-col-wash:35%;--tv-cell-wash:60%;
+  --tv-col:${COL};--tv-col-wash:35%;--tv-cell-wash:60%;--tv-sort-wash:52%;
   color:var(--tv-fg);background:var(--tv-bg);font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
   border:1px solid var(--tv-border);border-radius:8px;overflow:hidden;display:flex;flex-direction:column;max-height:100%}
 @media (prefers-color-scheme:dark){.tv-root{--tv-fg:#FFFFFF;--tv-muted:#A4C2EB;--tv-bg:#000000;
   --tv-alt:#21252B;--tv-border:#2a2d3d;--tv-accent:#4CB5F5;--tv-sel:#373D4F;
   --tv-link:${LINK_DARK};
   --tv-hover:#1F1F1F;--tv-chip-wash:18%;--tv-chip-edge:34%;--tv-mark-wash:30%;--tv-flag-wash:30%;
-  --tv-col-wash:8%;--tv-cell-wash:9%;}}
+  --tv-col-wash:8%;--tv-cell-wash:9%;--tv-sort-wash:18%;}}
 :root[data-theme="dark"] .tv-root{--tv-fg:#FFFFFF;--tv-muted:#A4C2EB;--tv-bg:#000000;
   --tv-alt:#21252B;--tv-border:#2a2d3d;--tv-accent:#4CB5F5;--tv-sel:#373D4F;
   --tv-link:${LINK_DARK};
   --tv-hover:#1F1F1F;--tv-chip-wash:18%;--tv-chip-edge:34%;--tv-mark-wash:30%;--tv-flag-wash:30%;
-  --tv-col-wash:8%;--tv-cell-wash:9%;}
+  --tv-col-wash:8%;--tv-cell-wash:9%;--tv-sort-wash:18%;}
 :root[data-theme="light"] .tv-root{--tv-fg:#000000;--tv-muted:#667071;--tv-bg:#FFFFFF;--tv-alt:#F8F8FF;
   --tv-border:#E3E6EA;--tv-accent:#31769F;--tv-sel:#F0FFF0;--tv-hover:#FAFAFA;
   --tv-link:${LINK_LIGHT};
   --tv-chip-wash:45%;--tv-chip-edge:95%;--tv-mark-wash:8%;--tv-flag-wash:8%;
-  --tv-col-wash:35%;--tv-cell-wash:60%}
+  --tv-col-wash:35%;--tv-cell-wash:60%;--tv-sort-wash:52%}
 .tv-bar{display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:1px solid var(--tv-border);flex-wrap:wrap}
 .tv-title{font-weight:600;font-size:14px;margin-right:auto}
 .tv-filter{font:inherit;padding:4px 8px;border:1px solid var(--tv-border);border-radius:6px;
@@ -1085,6 +1085,23 @@
 .tv-pal .tv-chip{color:var(--tv-fg);
   background:color-mix(in srgb,var(--tv-frost) var(--tv-chip-wash),transparent);
   border-color:color-mix(in srgb,var(--tv-frost) var(--tv-chip-edge),transparent)}
+/* An ORDERING's identity, washed the way the applied filter's is: the column
+   band's own amber, which already means COLUMN everywhere else here — the
+   crosshair, the selected band — and a sort token is about a column. The GROUND
+   carries the whole difference: one silhouette, the same ink, the same × and
+   the same hover, so ordering and narrowing are told apart by hue.
+
+   The two washes are the same WEIGHT, sitting within a step of each other in
+   distance from the page they are drawn on (light 24.7 against frost's 24.9,
+   dark 73.6 against 71.2), so neither chip reads as the louder. Amber is the
+   paler hue (luminance .899 against frost's .741), and the light theme's 52
+   against the chip's 45 is what that costs; over black the two travel alike, so
+   dark asks for the chip's own 18. The edge takes the chip's strength in either
+   theme, a hairline carrying no information. Only a token this renderer ACCEPTS
+   as sort wears it — "ordersRows" is that test. */
+.tv-pal .tv-chip-sort{
+  background:color-mix(in srgb,var(--tv-col) var(--tv-sort-wash),transparent);
+  border-color:color-mix(in srgb,var(--tv-col) var(--tv-chip-edge),transparent)}
 .tv-pal .tv-chip:not(.tv-chip-muted):hover{border-color:var(--tv-accent);color:var(--tv-accent)}
 .tv-chips{display:flex;flex-wrap:wrap;gap:5px;align-items:center}
 /* One silhouette, spelled once, for every chip in the strip: a live filter
@@ -1716,6 +1733,9 @@
     function columns() { return state.view.columns || []; }
     function actions() { return state.view.actions || []; }
     function colByKey(k) { return columns().find((c) => c.key === k); }
+    /** The columns a sort key may name: every one the view carries, `sortable'
+     *  gating the reader's gesture rather than the token. @param {string} k */
+    const namesColumn = (k) => !!colByKey(k);
 
     // ---- order: filter, sort, widths ---------------------------------------
 
@@ -1824,7 +1844,7 @@
      * @param {string} q  @returns {SortKey[]}
      */
     function chainFor(q) {
-      const named = sortsIn(q, queryKeys(), (k) => !!colByKey(k));
+      const named = sortsIn(q, queryKeys(), namesColumn);
       return named === null ? stated : named;
     }
 
@@ -3254,12 +3274,18 @@
     // twice, out of a second store that could describe an order the rows were
     // not in. Only a live chip carries `data-i', which is what the click
     // delegation reads the removable one by; history is no token to take off.
+    //
+    // A live chip that ORDERS says so in its class, and the class is what wears
+    // the column band's hue: the strip tells ordering from narrowing at a
+    // glance. A crumb is a LABEL rather than a token, so it takes no ordering
+    // class however it is spelled.
     function renderChips() {
       let html = "";
       for (const text of crumbStrip())
         html += `<span class="tv-chip tv-chip-muted">${esc(text)}</span>`;
       for (let i = 0; i < chips.length; i++)
-        html += `<span class="tv-chip" data-i="${i}" title="remove">${esc(chipText(chips[i]))}`
+        html += `<span class="tv-chip${ordersRows(chips[i]) ? " tv-chip-sort" : ""}"`
+              + ` data-i="${i}" title="remove">${esc(chipText(chips[i]))}`
               + `<i class="tv-chip-x">×</i></span>`;
       chipsEl.innerHTML = html;
       chipsEl.style.display = (crumbs.length || chips.length) ? "" : "none";
@@ -3285,6 +3311,25 @@
       if (!t || t.key !== SORT_KEY || t.negated) return tok;
       const at = t.value.indexOf(":");
       return `${SORT_KEY}:${at === -1 ? t.value : t.value.slice(0, at)}`;
+    }
+
+    /**
+     * Whether TOK states an order this renderer READS: a sort key that resolves
+     * to a column, or `*none*', the empty chain. Those are the tokens `chainFor'
+     * builds the order out of, and the ones the strip may colour as an ordering.
+     *
+     * A refusal — a negation, an alternation, an unknown column, a direction
+     * that is neither word — is dropped from the chain, and no sort token is a
+     * predicate, so it orders no rows and narrows none. It keeps the ordinary
+     * chip: the strip promises an order where there is one, and shows what was
+     * typed where there is not. `sortable' gates the reader's GESTURE rather
+     * than the token, so a column that opts out still orders and still wears it.
+     * @param {string} tok  @returns {boolean}
+     */
+    function ordersRows(tok) {
+      const t = parseQuery(tok, queryKeys())[0];
+      if (!t || t.key !== SORT_KEY || t.negated) return false;
+      return t.value.toLowerCase() === NONE_META || !!sortKeyOf(t, namesColumn);
     }
 
     /**

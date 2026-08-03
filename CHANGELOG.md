@@ -94,6 +94,32 @@ the rails-to-cosmos ELPA archive publishes date-stamped snapshots.
   the rows were not in, which is the one thing the strip may not do. A
   negated one stays as spelled, being a refusal the reader typed and one
   the producer is owed verbatim.
+- **A sort chip wears the COLUMN's hue (browser renderer).** The strip
+  drew ordering and narrowing as one chip, so a query carrying both said
+  nothing about which of its terms moved the rows. A live chip this
+  renderer orders by now wears `--tv-col` — the pale amber the column
+  band and the crosshair already carry, `sort:` being the one token that
+  speaks about a column — while an applied filter keeps its frost. The
+  GROUND carries the whole of it: one silhouette, one ink, one `×`, one
+  hover, and the two washes sit the same distance from the page they are
+  drawn on (light 24.7 against frost's 24.9, dark 73.6 against 71.2), so
+  the identities differ by hue and neither chip reads as the louder.
+  Amber is the paler hue (luminance .899 against .741), which is what
+  the light theme's own strength pays for — `--tv-sort-wash`, 52%
+  against the chip's 45; over black the two travel alike, so the dark
+  theme asks for the chip's own 18. The edge takes the chip's strength
+  in either theme, a hairline carrying no information. Chip ink clears
+  19.96:1 light and 13.97:1 dark on the wash, and the accent a hover
+  lands clears 4.5:1 in both.
+  Only a token the renderer ACCEPTS as sort wears the class —
+  `sort:COL`, `sort:COL:desc` and `sort:*none*`, a column that opts out
+  of `sortable` among them, that gating the reader's gesture rather than
+  the token. Every refusal (a negation, an alternation, an unknown
+  column, a direction that is neither word) is dropped from the chain
+  and narrows nothing either, so it orders no rows and keeps the
+  ordinary chip: the strip promises an order where there is one and
+  shows what was typed where there is not. A crumb is a label rather
+  than a token and takes neither identity, staying muted as it was.
 - **`sort` chains, spelled out (SCHEMA.md).** The array form was one
   line; it now says what a chain means — every key run in order, the
   first that separates two rows deciding, ties keeping arrival order
