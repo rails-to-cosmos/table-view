@@ -598,6 +598,54 @@ the rails-to-cosmos ELPA archive publishes date-stamped snapshots.
   consumer that says nothing sees the line it always saw.
 
 ### Changed
+- **THE `title` COLUMN FILLS AND EVERY OTHER COLUMN IS ITS OWN CONTENT
+  (browser renderer).** The table was `table-layout:auto` with a `width`
+  hint per column, so the window's slack was handed to every column in
+  proportion: the gutter, the state column and the date columns all grew
+  with the window while the one column whose text actually runs long —
+  the headline — stayed as narrow as the rest. A priority column of
+  `[#A]` badges measured about twice its badge.
+  The layout is now `table-layout:fixed` whenever the view carries a
+  `title` column, which makes the `<col>` widths authoritative and leaves
+  the ONE column carrying no width — the title's — to take every pixel
+  the others leave. Two rules decide the others:
+  **the cells decide the width, and a header never widens a column.** A
+  column is exactly
+  as wide as its own widest cell (plus a badge's pill and, where the
+  column is in the sort chain, its mark). A header longer than that
+  ellipsizes into it rather than pushing it open — which is what makes a
+  badge column read as tight as its badges — and what an ellipsis eats
+  is the WORD: the header is now two boxes, `.tv-hn` flexing and
+  `.tv-arrow` declining to, so a squeezed header still says which way it
+  is sorted and where it sits in the chain. A column holding no cell at
+  all has no content measure, so there the header is the only measure
+  there is.
+  **A sized column is capped at 40 characters** and ellipsizes past it,
+  which bounds the pathological cell (a long tag run) that would
+  otherwise eat the title's share. The number is measured rather than
+  chosen: over a 12,674-headline Org corpus the widest non-title cell is
+  exactly 40 characters — one compact timestamp range, with the tag runs
+  topping out at 33 — so the cap is the tightest ceiling that clips
+  nothing in it.
+  The **gutter** joins the same rule: `[X]` is three characters and 24px
+  is the cell padding both sides, so `.tv-fill col.tv-gut` is
+  `calc(3ch + 24px)` and nothing over it. It moves to the `<col>` because
+  a cell's `width` is not what fixed layout reads, and the coarse-pointer
+  44px target is restated there as a width for the same reason — the
+  `min-width` on the cell is inert under fixed layout.
+  The **table keeps a `min-width`** of the sized columns plus a
+  40-character floor for the title (or the title's own content, where
+  that is narrower, so a table of short titles costs no scrollbar). That
+  is where a window too narrow for them begins to scroll sideways, which
+  is what `overflow:auto` on the scroller already did.
+  Nothing measures the container: every number written is characters and
+  the one padding constant, so the remainder is arithmetic the browser
+  redoes on a resize for nothing and there is no observer to keep in step
+  with it. A view carrying **no `title` column** has nothing to fill with
+  and keeps the auto layout, widths as hints, headers paid for — exactly
+  what it always had; `title` is the same convention `linked` reads. The
+  crosshair bands, the row washes, the sort marks and the linked
+  underline are all grounds and ink, so none of them moves.
 - **A header click PROMOTES rather than replaces (browser renderer).**
   It is the pointer's spelling of `^` and is now one command with it, so
   a click no longer throws away a chain the keyboard just built. Clicking

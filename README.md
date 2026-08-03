@@ -402,6 +402,43 @@ replacing the chain, ignoring `sortable` and touching no query — it restates
 what a query naming no sort key falls back to. `sortPromote` is the reader's and
 is gated by `sortable`, exactly as a header click is. `setSort([])` is the clear.
 
+### Column widths
+
+**The `title` column fills; every other column is exactly its own content.**
+A view carrying a column keyed `title` — the same convention `linked` reads —
+is laid out `table-layout:fixed`, every other column declares a width, and the
+title declares none, so it takes every pixel the others leave.
+
+What the others are worth is decided by **the cells**; a header never widens a
+column. A column is as wide as its own widest cell, plus a badge's pill and, where the
+column is in the sort chain, its mark. A header longer than that ellipsizes
+into it rather than pushing the column open — which is what makes a column of
+`[#A]` badges read as tight as its badges rather than as wide as the word
+*Priority*. What the ellipsis eats is the **word**: a header is two boxes, the
+word flexing and the mark declining to, so a squeezed header still says which
+way it is sorted and where it sits in the chain. A column holding no cell at
+all has no content measure, so there the header is the only measure there is.
+
+A sized column is **capped at 40 characters** and ellipsizes past it, which
+bounds the pathological cell — a long tag run — that would otherwise eat the
+title's share. The number is measured: across a 12,674-headline Org corpus the
+widest non-title cell is exactly 40 characters, so the cap is the tightest
+ceiling that clips nothing in it. The cap cannot reach the title, which has no
+width to cap.
+
+The leading gutter is the same rule at its narrowest: `[X]` is three
+characters and 24px is the cell padding, and it is nothing over that.
+
+The table keeps a **`min-width`** of the sized columns plus a 40-character
+floor for the title (or the title's own content, where that is narrower). That
+is where a window too narrow for them starts scrolling sideways instead of
+crushing the title. Nothing measures the container — every number is characters
+and the one padding constant — so a resize is the browser's arithmetic to redo
+and there is no observer to keep in step with it.
+
+A view with **no `title` column** has nothing to fill with: it keeps the auto
+layout, widths as hints, and headers paid for in the width, exactly as before.
+
 ### Theme and layering
 
 Theme is a handshake and the page leads: set `data-theme="dark"` or `"light"`

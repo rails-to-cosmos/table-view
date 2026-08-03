@@ -211,6 +211,18 @@
  *   window). Column widths come from the widest cell in the filtered set, in
  *   `ch` — the renderer's font is monospace — so they hold still while
  *   scrolling.
+ * - THE `title' COLUMN FILLS AND THE REST ARE MINIMAL. Every other column is
+ *   exactly as wide as its own widest cell and no wider, capped at 40
+ *   characters with an ellipsis past it; the leading gutter is exactly `[X]'
+ *   plus the cell padding; and the title column carries no width at all, so
+ *   under the `table-layout:fixed' this turns on it takes every pixel the
+ *   others leave. Nothing measures the container — the numbers are all `ch`
+ *   and the browser does the remainder on a resize — and the table's
+ *   `min-width' is the sized columns plus a 40-character floor for the title,
+ *   which is where a window too narrow for them begins to scroll sideways. A
+ *   view carrying no `title' column has nothing to fill with and keeps the auto
+ *   layout it always had, widths as hints. `title' is the same convention
+ *   `linked' reads.
  * - Row and header events are delegated from the scroll container, attached
  *   once. `tr.click()` still selects a rendered row.
  * - Filter input is debounced 120ms; the row window renders on a rAF. With an
@@ -956,6 +968,18 @@
   const ROW_H = 30;            // row height until a rendered row can be measured
   const CELL_PAD = 24;         // a cell's horizontal padding, both sides
   const PILL_CH = 2;           // a badge pill's ground, in characters
+  const BOX_CH = 3;            // the gutter's glyph, `[X]', in characters
+  // The two numbers the fill policy rests on, measured against a 12,674-headline
+  // Org corpus. COL_MAX is the ceiling a sized column may not pass: the widest
+  // non-title cell in that corpus is exactly 40 characters (one compact
+  // timestamp range; the tag runs top out at 33), so the cap costs the corpus
+  // nothing and bounds the pathological cell that would otherwise eat the
+  // title's share. TITLE_MIN is the fill column's floor, taken by the table's
+  // `min-width' rather than by the column, so a window too narrow for it
+  // SCROLLS instead of crushing the title to nothing; 40 characters shows 83%
+  // of that corpus's titles whole.
+  const COL_MAX_CH = 40;       // ceiling on a sized column, in characters
+  const TITLE_MIN_CH = 40;     // the fill column's floor, in characters
   const DEBOUNCE = 120;        // ms of quiet before a filter keystroke re-renders
   const SETTLE = 200;          // ms of quiet before the rows are taken to have settled
   const LONG_PRESS = 500;      // ms of a still finger before it means the row action
@@ -1157,6 +1181,45 @@
 .tv-ac-on{background:var(--tv-sel);color:var(--tv-fg);font-weight:600}
 .tv-scroll{overflow:auto;position:relative}
 .tv-table{border-collapse:collapse;width:100%}
+/* THE TITLE COLUMN FILLS; EVERY OTHER COLUMN IS EXACTLY ITS CONTENT.
+   table-layout:fixed is what makes that real. Under auto a col width is a hint
+   and the browser hands the window's slack to every column in proportion, so
+   the gutter and the date columns grew with the window while the one column
+   whose text runs long stayed as narrow as the rest. Fixed makes the col
+   widths authoritative and leaves the ONE column carrying no width — the
+   title's — to take what the others left; it is also what lets text-overflow
+   reach a cell at all. The table keeps a min-width, written by applyWidths, so
+   a window narrower than the sized columns plus the title's floor scrolls
+   sideways, which is what overflow:auto on the scroller already did. A view
+   with no title column has nothing to fill with and keeps the auto layout. */
+.tv-table.tv-fill{table-layout:fixed}
+/* A capped column, and a title narrower than its own text, end in an ellipsis
+   rather than spilling under the column beside them. The gutter stays out of
+   it: its glyph is exactly its width, so a rounding hair would eat the ]. */
+.tv-fill th:not(.tv-box),.tv-fill td:not(.tv-box){overflow:hidden;text-overflow:ellipsis}
+/* A header never widens its column: the cells set the width and a longer
+   header is squeezed into it. What gets squeezed is the
+   WORD — the pair is a flex row, the word shrinks to an ellipsis (min-width:0
+   is what lets a flex item go under its own text) and the mark declines to
+   shrink at all, so a sorted column always still says which way it is sorted
+   and where it sits in the chain. The row is a span inside the cell rather
+   than the cell itself because display:flex on a table-cell stops it being
+   one. Nothing here fires without .tv-fill: with no column to fill, the header
+   is paid for in the width and there is nothing to squeeze. */
+.tv-fill th .tv-hd{display:flex;align-items:baseline;min-width:0}
+.tv-fill th .tv-hn{overflow:hidden;text-overflow:ellipsis;min-width:0}
+.tv-fill th .tv-arrow{flex:none}
+/* A flex row does not take the cell's text-align, so the one alignment a
+   column can declare is restated as the row's own. The CELLS are untouched —
+   nothing made them flex — so this is the header catching up with them. */
+.tv-fill th.tv-right .tv-hd{justify-content:flex-end}
+/* The gutter's own measure and nothing over it: [X] is three characters, and
+   24px is the cell padding both sides. The slack it used to carry was the auto
+   layout's share of the window, which the fixed layout above no longer hands
+   it. Written on the col because a cell's width is not what fixed layout
+   reads, and for the same reason the coarse-pointer target below has to be
+   restated here as a width — the min-width on the cell is inert under it. */
+.tv-fill col.tv-gut{width:calc(3ch + 24px)}
 .tv-table th,.tv-table td{padding:5px 12px;text-align:left;white-space:nowrap;
   border-bottom:1px solid var(--tv-border)}
 .tv-table th{position:sticky;top:0;background:var(--tv-bg);font-weight:600;color:var(--tv-muted);
@@ -1287,6 +1350,7 @@
 @media (pointer:coarse){
   .tv-table th,.tv-table td{padding:12px}
   .tv-table td.tv-box{min-width:44px}
+  .tv-fill col.tv-gut{width:max(calc(3ch + 24px),44px)}
   .tv-ac-item{padding:12px 12px}
   .tv-chip{padding:13px 8px 13px 12px}
   .tv-chips .tv-chip-muted{padding-right:12px}
@@ -2129,50 +2193,95 @@
     function matches(r) { return !orderTest || orderTest(r); }
 
     /**
-     * Column widths in characters: the widest cell in the filtered set, and the
-     * header (plus its sort arrow). @returns {number[]}
+     * Column widths in characters. Under the FILL POLICY the CELLS decide and a
+     * header widens nothing: a column of `[#A]' badges reads exactly as wide as
+     * `[#A]', and a header too long for that ellipsizes into it rather than
+     * pushing it open — which is the whole of what makes a badge column read
+     * tight. A column holding no cell at all has no content measure, so there
+     * the header is the only measure there is. Without a `title' column to fill,
+     * the header is content like any other and the width is what it always was:
+     * the widest cell, or the header and its mark.
+     * @returns {number[]}
      */
     function colWidths() {
       if (widths) return widths;
-      const cols = columns(), chain = sortChain();
-      // Every mark a header wears is paid for here, or the column it widens
-      // clips the word underneath it — the mark itself plus the space in front
-      // of it, measured off the very text `renderArrows' draws.
-      const w = cols.map((c) => {
-        const at = chain.findIndex(({ key }) => key.column === c.key);
-        return String(c.header || c.key).length
-          + (at === -1 ? 0 : sortMark(chain, at).length + 1);
-      });
+      const cols = columns(), chain = sortChain(), fill = titleColumn() !== -1;
+      /** The widest CELL each column holds, in characters; 0 where it holds none. */
+      const cell = cols.map(() => 0);
       for (const r of ordered()) {
         const len = rowText(r).len;
-        for (let i = 0; i < w.length; i++) if (len[i] > w[i]) w[i] = len[i];
+        for (let i = 0; i < cell.length; i++) if (len[i] > cell[i]) cell[i] = len[i];
       }
-      // A badge cell draws a pill around its text, whose padding the cached
-      // length knows nothing about.
-      for (let i = 0; i < cols.length; i++) if (cols[i].type === "badge") w[i] += PILL_CH;
-      // A tag cell needs no allowance: `:a:b:' and `a · b' are the same length,
-      // `:a:' is longer than `a', and the smaller type shrinks it further — the
-      // rendering never outgrows the raw text the widths were measured from.
-      widths = w;
-      return w;
+      widths = cols.map((c, i) => {
+        const at = chain.findIndex(({ key }) => key.column === c.key);
+        // Every mark a header wears is paid for here, or the column it widens
+        // clips the word underneath it — the mark itself plus the space in front
+        // of it, measured off the very text `renderArrows' draws. Under the fill
+        // policy it is paid for OUTSIDE the cells' measure, and the header's own
+        // box is what shrinks, so a squeezed header loses its word and keeps its
+        // mark (`.tv-hn' flexes, `.tv-arrow' declines to).
+        const mark = at === -1 ? 0 : sortMark(chain, at).length + 1;
+        const head = String(c.header || c.key).length;
+        // A badge cell draws a pill around its text, whose padding the cached
+        // length knows nothing about. A tag cell needs no allowance: `:a:b:' and
+        // `a · b' are the same length, `:a:' is longer than `a', and the smaller
+        // type shrinks it further — the rendering never outgrows the raw text
+        // the widths were measured from.
+        const pill = c.type === "badge" ? PILL_CH : 0;
+        return fill ? (cell[i] ? cell[i] + pill : head) + mark
+                    : Math.max(head + mark, cell[i]) + pill;
+      });
+      return widths;
     }
 
     /** Widen the cached widths for ROW (an upsert can only add text). */
     function growWidths(r) {
       if (!widths) return;
-      const len = rowText(r).len;
-      for (let i = 0; i < widths.length; i++) if (len[i] > widths[i]) widths[i] = len[i];
+      const len = rowText(r).len, cols = columns();
+      for (let i = 0; i < widths.length; i++) {
+        // The pill the measured pass allows for, allowed for again: a cell that
+        // arrives longer than every cell that was measured brings its ground
+        // with it. The mark rides outside the cells' measure and is not owed.
+        const n = len[i] + (len[i] && cols[i].type === "badge" ? PILL_CH : 0);
+        if (n > widths[i]) widths[i] = n;
+      }
     }
 
+    /**
+     * Write the measured widths onto the columns under the FILL POLICY: the
+     * `title' column takes every pixel the others leave and each other column is
+     * exactly as wide as its own widest cell, capped at `COL_MAX_CH'. The title
+     * gets no width at all — under the fixed layout the class turns on, the one
+     * column without one absorbs the remainder — so what is written here is the
+     * OTHERS, and the title's share is arithmetic the browser does on a resize
+     * for nothing. Only the table's `min-width' knows the title exists: it is
+     * the sized columns plus the title's floor, which is where a narrow window
+     * starts scrolling sideways instead of crushing the title.
+     *
+     * `ch' is exact in the monospace face the renderer sets, so every number
+     * here is resolution-independent and no measurement of the container is
+     * taken. A view carrying no `title' column keeps the widths as hints under
+     * the auto layout it always had.
+     */
     function applyWidths() {
-      const w = colWidths();
+      const w = colWidths(), at = titleColumn(), fill = at !== -1;
+      if (table.classList.contains("tv-fill") !== fill)
+        table.classList.toggle("tv-fill", fill);
+      // The floor and the gutter, in characters and in cells of padding. The
+      // gutter is counted at its fine-pointer measure; the coarse block's 44px
+      // floor is inert at this face and a few pixels short of the sum at a much
+      // smaller one, which moves only where the sideways scroll begins.
+      let ch = fill ? Math.min(w[at], TITLE_MIN_CH) : 0;
+      let cells = fill ? 1 : 0;
+      if (fill && chrome) { ch += BOX_CH; cells++; }
       for (let i = 0; i < colEls.length; i++) {
-        // `ch' is exact in the monospace face the renderer sets; a consumer that
-        // overrides it with a proportional font gets a hint, and the table's own
-        // min-content width still wins.
-        const px = `calc(${w[i]}ch + ${CELL_PAD}px)`;
+        const n = fill ? Math.min(w[i], COL_MAX_CH) : w[i];
+        const px = fill && i === at ? "" : `calc(${n}ch + ${CELL_PAD}px)`;
+        if (fill && i !== at) { ch += n; cells++; }
         if (colEls[i].style.width !== px) colEls[i].style.width = px;
       }
+      const min = fill ? `calc(${ch}ch + ${cells * CELL_PAD}px)` : "";
+      if (table.style.minWidth !== min) table.style.minWidth = min;
     }
 
     // ---- rendering ---------------------------------------------------------
@@ -2187,7 +2296,9 @@
       // and `arrowEls', which stay one entry per column the view declared, so
       // widths and sort arrows keep indexing what they always did.
       if (chrome) {
-        colgroup.appendChild(document.createElement("col"));
+        const gut = document.createElement("col");
+        gut.className = "tv-gut";   // pinned to the glyph's measure by the sheet
+        colgroup.appendChild(gut);
         const box = document.createElement("th");
         box.className = "tv-box";      // blank: the count is the hint line's
         headRow.appendChild(box);
@@ -2201,10 +2312,23 @@
         th.className = (c.sortable === true ? "tv-sortable" : "")
           + (c.align === "right" ? " tv-right" : "");
         th.dataset.key = c.key;
-        th.textContent = String(c.header || c.key);
+        // The word and its mark are two boxes, so a header wider than the cells
+        // under it loses the WORD and keeps the mark: under the fill policy the
+        // cells set the width and this pair is a flex row, the word shrinking to
+        // an ellipsis and the mark declining to shrink at all. Without a fill
+        // column the pair is inert — the header is paid for in the width there,
+        // so nothing is ever squeezed — and the text a reader copies out of the
+        // header is what it always was.
+        const hd = document.createElement("span");
+        hd.className = "tv-hd";
+        const label = document.createElement("span");
+        label.className = "tv-hn";
+        label.textContent = String(c.header || c.key);
         const arrow = document.createElement("span");
         arrow.className = "tv-arrow";
-        th.appendChild(arrow);
+        hd.appendChild(label);
+        hd.appendChild(arrow);
+        th.appendChild(hd);
         headRow.appendChild(th);
         arrowEls.push(arrow);
       }

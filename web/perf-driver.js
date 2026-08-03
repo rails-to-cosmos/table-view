@@ -1833,6 +1833,232 @@ async function rowMarks() {
   }
 }
 
+/**
+ * A glance-shaped view for the width policy: a badge column whose header is
+ * WIDER than every cell under it (the case the policy turns on), a title to
+ * fill, and a tags column carrying the long cell.
+ * @param {string} title  the title cell both rows share
+ * @param {string} [tag]  the second row's tags cell, which is the widest
+ */
+const widthView = (title, tag = ":ops:system:") => ({
+  title: "widths",
+  columns: [
+    { key: "state", header: "State", type: "badge", sortable: true,
+      badges: [{ value: "TODO", color: "#e0af68" }] },
+    // Org's own decoration, which is what the cell spells; the header is the
+    // long word the column must NOT be measured by.
+    { key: "priority", header: "Priority", type: "badge", sortable: true,
+      badges: [{ value: "[#A]", color: "#f7768e" }] },
+    { key: "title", header: "Title", type: "text" },
+    { key: "tag", header: "Tags", type: "text" },
+  ],
+  rows: [{ id: "a", cells: { state: "TODO", priority: "[#A]", title, tag: ":web:" } },
+         { id: "b", cells: { state: "TODO", priority: "[#B]", title: "b", tag } }],
+});
+
+/**
+ * THE WIDTH POLICY: the title column fills and every other column is exactly
+ * its own content. The three halves are the measure (what a column is worth in
+ * characters), the application (which column is left without a width, and the
+ * table's floor under it) and the sheet that resolves the two — so the checks
+ * are the numbers, the strings written onto the colgroup, and the rules that
+ * turn a leftover into a remainder and an overrun into an ellipsis.
+ */
+async function columnWidths() {
+  console.log("\n== column widths");
+
+  /** The width each column declares, in colgroup order, gutter included. */
+  const declared = (box) =>
+    box.querySelectorAll(".tv-table colgroup col").map((c) => c.style.width || "");
+  /** ... as bare character counts, the padding stripped. */
+  const chOf = (box) => declared(box).map((w) => {
+    const m = /^calc\((\d+)ch \+ (\d+)px\)$/.exec(w);
+    return m ? Number(m[1]) : w === "" ? null : w;
+  });
+
+  // --- the title fills and nothing else does
+  {
+    // 45 characters, so the title's own content is past the 40 the floor stops
+    // at; the tags cell is the widest of the rest at 12.
+    const F = driver(widthView("a headline that runs on for a good while long"));
+    check("the title column is the ONE column with no width of its own",
+          chOf(F.box), [6, 6, null, 12]);
+    // Which is only a remainder because the layout is fixed: under auto a col
+    // width is a hint and the browser hands the slack to every column, which is
+    // the whole of what made these columns twice their cells.
+    check("and the table says so — fixed layout, and the class that turns it on",
+          [F.box.querySelector(".tv-table").classes.has("tv-fill"),
+           cssText().indexOf(".tv-table.tv-fill{table-layout:fixed}") !== -1],
+          [true, true]);
+
+    // THE BAR. `Priority' is eight characters and `[#A]' is four; the column is
+    // the cell's four plus the pill's ground and NOT the header's eight. A
+    // header that measured would put this column at twice its badge.
+    check("a badge column is measured by its BADGE and never by its header",
+          [chOf(F.box)[1], "Priority".length, "[#A]".length], [6, 8, 4]);
+    check("the state column beside it reads the same rule",
+          [chOf(F.box)[0], "TODO".length], [6, 4]);
+
+    // The floor belongs to the TABLE: the title still declares nothing, and
+    // what stops a narrow window crushing it is where the sideways scroll
+    // begins. 40 + 6 + 6 + 12 characters over four cells of padding.
+    check("the table's min-width is the sized columns plus the title's floor",
+          F.box.querySelector(".tv-table").style.minWidth, "calc(64ch + 96px)");
+  }
+
+  // --- the floor is a ceiling on the floor: a short title costs no scrollbar
+  {
+    const S = driver(widthView("short"));
+    check("a title narrower than the floor lowers it to its own content",
+          [chOf(S.box), S.box.querySelector(".tv-table").style.minWidth],
+          [[6, 6, null, 12], "calc(29ch + 96px)"]);
+  }
+
+  // --- the cap, and what it does instead of wrapping
+  {
+    const LONG = ":a:tag:run:nobody:should:have:written:but:someone:did:anyway:";
+    const C = driver(widthView("short", LONG));
+    check("a pathological cell is capped rather than paid for",
+          [chOf(C.box)[3], LONG.length], [40, 61]);
+    // The cap is a CEILING, so it cannot reach the column that has no width to
+    // cap: a 200-character title fills, it does not ellipsize at 40.
+    const T = driver(widthView("x".repeat(200)));
+    check("and the cap never reaches the fill column", chOf(T.box)[2], null);
+    // Capped means ELLIPSIZED, which needs both halves: one line, and an end.
+    // The gutter is out of it — its glyph is exactly its width.
+    check("a capped cell ends in an ellipsis on one line",
+          [/\.tv-table th,\.tv-table td\{padding:5px 12px;text-align:left;white-space:nowrap/
+             .test(cssText()),
+           cssText().indexOf(".tv-fill th:not(.tv-box),.tv-fill td:not(.tv-box)"
+                             + "{overflow:hidden;text-overflow:ellipsis}") !== -1],
+          [true, true]);
+  }
+
+  // --- the gutter: the glyph's own measure and no slack
+  {
+    const G = driver(widthView("short"), { marks: true });
+    const css = cssText();
+    check("the gutter leads the colgroup and is the sheet's to size",
+          [G.box.querySelectorAll(".tv-table colgroup col")[0].classes.has("tv-gut"),
+           declared(G.box)[0]],
+          [true, ""]);
+    // Three characters because the glyph is three characters, and 24px because
+    // that is the cell padding both sides. Tied to the glyph here rather than
+    // asserted as a number twice: a wider box would have to change both.
+    check("and the sheet pins it to [X] plus the cell's padding",
+          [css.indexOf(".tv-fill col.tv-gut{width:calc(3ch + 24px)}") !== -1,
+           css.indexOf('tr.tv-marked td.tv-box::before{content:"[X]"}') !== -1,
+           "[X]".length],
+          [true, true, 3]);
+    // Fixed layout reads a col's width and not a cell's, so the coarse-pointer
+    // target has to be restated as one or the touch rule goes quietly inert.
+    check("the coarse-pointer target survives the fixed layout, as a width",
+          css.indexOf(".tv-fill col.tv-gut{width:max(calc(3ch + 24px),44px)}") !== -1, true);
+    // And it is counted in the floor, or the table's min-width is a gutter short
+    // of the columns standing in it: 3 characters and a fifth cell of padding.
+    check("the gutter is counted in the table's floor",
+          G.box.querySelector(".tv-table").style.minWidth, "calc(32ch + 120px)");
+  }
+
+  // --- a header wider than its cells: the WORD is what gets squeezed
+  {
+    const K = driver(widthView("short"));
+    K.handle.setSort({ column: "priority", ascending: true });
+    await painted();
+    // The mark is paid for OUTSIDE the cells' measure — 6 for the badge and 2
+    // for the arrow and its space — where the header's own 8 buys nothing.
+    check("a sorted column pays for its mark and still not for its header",
+          [chOf(K.box)[1], "Priority".length + 2], [8, 10]);
+    const th = K.box.querySelectorAll(".tv-table thead th")[1];
+    check("the header is two boxes, the word and the mark",
+          [th.querySelectorAll(".tv-hd .tv-hn").length,
+           th.querySelectorAll(".tv-hd .tv-arrow").length, th.text],
+          [1, 1, "Priority▲"]);
+    // Which is what decides WHICH of them an ellipsis eats. The word flexes and
+    // the mark refuses to, so a squeezed header still says how it is sorted.
+    const css = cssText();
+    check("the word shrinks and the mark does not",
+          [css.indexOf(".tv-fill th .tv-hn{overflow:hidden;text-overflow:ellipsis;"
+                       + "min-width:0}") !== -1,
+           css.indexOf(".tv-fill th .tv-arrow{flex:none}") !== -1],
+          [true, true]);
+    // A flex row does not take the cell's text-align, so the one alignment a
+    // column may declare has to be restated as the row's own or a `right'
+    // header quietly goes left while its cells stay put.
+    const A = driver({
+      title: "aligned",
+      columns: [{ key: "title", header: "Title", type: "text" },
+                { key: "effort", header: "Effort", type: "number", align: "right" }],
+      rows: [{ id: "a", cells: { title: "t", effort: 3 } }],
+    });
+    check("and a right-aligned header stays right-aligned in the row",
+          [A.box.querySelectorAll(".tv-table thead th")[1].classes.has("tv-right"),
+           cssText().indexOf(".tv-fill th.tv-right .tv-hd{justify-content:flex-end}") !== -1],
+          [true, true]);
+  }
+
+  // --- no title column: the convention's fallback, which is what it always was
+  {
+    const N = driver({
+      title: "no title column",
+      columns: [{ key: "state", header: "State", type: "text", sortable: true },
+                { key: "note", header: "A rather long header", type: "text" }],
+      rows: [{ id: "a", cells: { state: "TODO", note: "n" } }],
+    });
+    const tbl = N.box.querySelector(".tv-table");
+    check("with nothing to fill, every column keeps a width and the header pays",
+          [chOf(N.box), tbl.classes.has("tv-fill"), tbl.style.minWidth || ""],
+          [[5, 20], false, ""]);
+    // The same view with the key renamed is the whole of the difference.
+    const Y = driver({
+      title: "a title column",
+      columns: [{ key: "state", header: "State", type: "text", sortable: true },
+                { key: "title", header: "A rather long header", type: "text" }],
+      rows: [{ id: "a", cells: { state: "TODO", title: "n" } }],
+    });
+    check("and `title' is the whole of what turns the policy on",
+          [chOf(Y.box), Y.box.querySelector(".tv-table").classes.has("tv-fill")],
+          [[4, null], true]);
+    // Turning it OFF is the path that has something to clear: the class, the
+    // table's floor, and the width the filling column never declared.
+    Y.handle.setView({
+      title: "renamed away",
+      columns: [{ key: "state", header: "State", type: "text" },
+                { key: "note", header: "A rather long header", type: "text" }],
+      rows: [{ id: "a", cells: { state: "TODO", note: "n" } }],
+    });
+    await painted();
+    const swapped = Y.box.querySelector(".tv-table");
+    check("a setView that drops the title column puts the table back",
+          [chOf(Y.box), swapped.classes.has("tv-fill"), swapped.style.minWidth],
+          [[5, 20], false, ""]);
+  }
+
+  // --- a resize needs no re-measure; a content change needs one
+  {
+    const R = driver(widthView("short"));
+    // Every number written is characters and the one padding constant, so not
+    // one of them is a function of the container: the remainder is arithmetic
+    // the browser redoes on a resize for nothing, and there is no observer here
+    // to keep in step with it.
+    check("no declared width is a measurement of the container",
+          declared(R.box).every((w) => w === "" || /^calc\(\d+ch \+ 24px\)$/.test(w)),
+          true);
+    check("and the scroller is what a window too narrow for the floor gets",
+          cssText().indexOf(".tv-scroll{overflow:auto;position:relative}") !== -1, true);
+    // What DOES re-measure is the content moving under them.
+    R.handle.setRows([{ id: "a", cells: { state: "TODO", priority: "[#A]",
+                                          title: "short", tag: ":a:" } }]);
+    await painted();
+    check("a row change re-measures", chOf(R.box), [6, 6, null, 3]);
+    R.handle.upsertRow({ id: "b", cells: { state: "WAITING", priority: "[#B]",
+                                           title: "short", tag: ":a:" } });
+    await painted();
+    check("and an upsert widens what it outgrew, its pill with it",
+          chOf(R.box)[0], "WAITING".length + 2);
+  }
+}
+
 /** Two rows under a title column, one of which leads somewhere. */
 const LINK_VIEW = {
   title: "linked",
@@ -5720,6 +5946,7 @@ async function smoke() {
   await decoratedCells();
   await rowMarks();
   await linkedRows();
+  await columnWidths();
   await crumbTrail();
   await parityVectors();
 

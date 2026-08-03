@@ -62,6 +62,14 @@ sort position, and a `values` list holding metas alone orders nothing.
   *Experimental*: the field is new and the guessing fallback is what most
   producers still rely on.
 
+**The key `title` is a convention**, and the one place a key name means
+something past cell lookup. A renderer may treat that column as the row's
+subject: the browser renderer draws a `linked` row's link on it (below) and
+gives it the table's leftover width, sizing every other column to its own cells
+and ellipsizing a header too long for one. Layout is a renderer concern and no
+part of this contract — a producer that wants a column to fill names it
+`title`, and one that names none is conformant.
+
 ### Badge object
 
 | field   | type   | meaning                                   |
