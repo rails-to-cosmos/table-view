@@ -1024,6 +1024,21 @@ the rails-to-cosmos ELPA archive publishes date-stamped snapshots.
   this is a removal rather than a deprecation.
 
 ### Fixed
+- **A priority reads through its brackets here too (browser renderer +
+  SCHEMA.md).** Org spells a priority `[#A]` and glance now draws the
+  cell that way, folding the decoration off BOTH sides of a `priority:`
+  predicate so `priority:A` and `priority:[#A]` are one query at the
+  producer. This renderer matched a badge cell whole, decoration and all,
+  so the same query answered nothing on a page filtering locally — one
+  grammar, two answers, which is the one thing the shared syntax exists
+  to prevent. A whole-value match now reads through the brackets on
+  either side, and completion reaches the cell's own spelling from either
+  (`priority:a` and `priority:[#a` both offer `[#A]`, and what commits
+  still wears the decoration) — the starred metas' rule from the cell's
+  side rather than the vocabulary's. Five parity vectors and twelve
+  driver checks. Both spellings of the value are worked out once per
+  query, so the fold is a second string compare in the row loop rather
+  than a regex.
 - **A page's last row no longer parks under the hint bar (browser
   renderer).** The hint is the scroller's next sibling, so its top IS
   the fold, and the viewport's clamp modelled the content it had to stop

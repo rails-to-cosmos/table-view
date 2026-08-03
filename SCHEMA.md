@@ -255,7 +255,11 @@ one is always the operator and a literal bar is free text's alone.
 
 Field-predicate semantics, by column type: `badge` — whole-value match,
 case-insensitive; `text`/`number` — case-insensitive substring; date-shaped text
-cells — prefix match (`scheduled:2026-08`).
+cells — prefix match (`scheduled:2026-08`). A whole-value match reads through
+org's priority decoration on both sides — `[#A]` is what the cell wears and `A`
+is what a reader means by it — so `priority:A` and `priority:[#A]` are one
+query, the starred metas' rule from the cell's side rather than the
+vocabulary's.
 
 A column is **multi-valued** when its cells hold delimited value lists (org
 tags); `multi: true` is how a producer says so and a renderer guessing from cell
@@ -359,8 +363,9 @@ distinct cell values — plus the metas that key answers, `*empty*` among them.
 After `sort:`, the columns a reader may order by — `sortable`'s list, since
 completing is the reader's gesture — each offered again with its other direction
 once named in full, and `*none*` beside them, which no column gates.
-A renderer may match a meta through its stars (`arch` reaching `*archive*`),
-which is completion alone: what commits and what a query means keep them. A `|`
+A renderer may match a meta through its stars (`arch` reaching `*archive*`) and
+a decorated value through its brackets (`a` reaching `[#A]`), which is
+completion alone: what commits and what a query means keep the notation. A `|`
 **re-opens** that value domain — the prefix is what follows the last bar and the
 offer lands after it, so an alternation is completed one alternative at a time
 and the committed token stays one token.

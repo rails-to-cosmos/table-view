@@ -291,6 +291,12 @@
  *   bare word, and the starred spelling still answers to itself. Display and
  *   commit wear the stars; only the completion's matching ignores them, and
  *   what a query MEANS reads them, so `state:active' is the literal `active'.
+ * - AND A DECORATED CELL READS THROUGH ITS BRACKETS. Org draws a priority
+ *   `[#A]' and means `A', so completion reaches that cell's own spelling from
+ *   either (`a' offers `priority:[#A]', which still commits decorated) and a
+ *   whole-value predicate answers both: `priority:A' and `priority:[#A]' are
+ *   one query. The stars' rule from the cell's side rather than the
+ *   vocabulary's, and the matching half is the producer's too.
  * - `palette: true' makes the filter a thing you summon. The page keeps the
  *   chip row and nothing else — an unfiltered table carries no filter chrome at
  *   all — and `openFilter()' raises a centred overlay holding the control, the
@@ -743,10 +749,28 @@
    * answers to itself.
    */
   const starless = (v) => (META.test(v) ? v.slice(1, -1) : v);
-  /** Does the lowercased value LOWER open with P, stars either way? */
-  const opensWith = (lower, p) => lower.startsWith(p) || starless(lower).startsWith(p);
-  /** Is LOWER what P spells, stars either way? */
-  const spells = (lower, p) => lower === p || starless(lower) === p;
+
+  /** Org's priority decoration, which a cell WEARS rather than means: `[#A]'. */
+  const DECORATED = /^\[#(.*)\]$/;
+
+  /**
+   * V with that decoration off. DISPLAY WEARS THE DECORATION, MATCHING READS
+   * THROUGH IT — the stars' rule from the other side: `[#A]' is what the table
+   * shows and `A' is what a reader means by it, so a whole-value predicate
+   * answers both spellings (`cellTest') and completion reaches the cell's from
+   * either (`opensWith').
+   */
+  const undecorated = (v) => {
+    const m = DECORATED.exec(v);
+    return m ? m[1] : v;
+  };
+
+  /** V with its reading notation off, whichever of the two it wears. */
+  const meant = (v) => undecorated(starless(v));
+  /** Does the lowercased value LOWER open with P, notation either way? */
+  const opensWith = (lower, p) => lower.startsWith(p) || meant(lower).startsWith(p);
+  /** Is LOWER what P spells, notation either way? */
+  const spells = (lower, p) => lower === p || meant(lower) === p;
 
   /**
    * The one PRODUCER meta this renderer can partly answer: SCHEMA puts the EMPTY
@@ -1952,10 +1976,16 @@
       // answered here; the keyword half is what drops out, leaving an answer
       // the producer's own can only widen. `*inactive*' has no such term, an
       // empty cell not being done, and stays the literal it was.
-      if (col && col.type === "badge")
-        return v === ACTIVE_META
-          ? (r) => rowText(r).cells[i] === ""
-          : (r) => rowText(r).cells[i] === v;
+      if (col && col.type === "badge") {
+        if (v === ACTIVE_META) return (r) => rowText(r).cells[i] === "";
+        // A whole-value match reads through org's priority decoration, both
+        // ways: the cell is drawn `[#A]' and `A' is what a reader means, so
+        // `priority:A' and `priority:[#A]' are one query here and at the
+        // producer. BOTH SPELLINGS OF THE VALUE are worked out once, so the
+        // fold is a second string compare in the row loop rather than a regex.
+        const want = undecorated(v), worn = `[#${want}]`;
+        return (r) => { const c = rowText(r).cells[i]; return c === want || c === worn; };
+      }
       if (dateColumn(i)) return (r) => rowText(r).cells[i].startsWith(v);
       return (r) => rowText(r).cells[i].includes(v);
     }

@@ -64,6 +64,22 @@
         { "id": "t3", "cells": { "title": "dated, untagged", "tag": "",
                                  "scheduled": "2026-08-02" } }
       ]
+    },
+    "decorated": {
+      "title": "a cell wearing org's priority decoration",
+      "columns": [
+        { "key": "priority", "header": "Pri", "type": "badge",
+          "badges": [
+            { "value": "[#A]", "color": "#e74c3c" },
+            { "value": "[#B]", "color": "#ffcc00" }
+          ] },
+        { "key": "title", "header": "Headline" }
+      ],
+      "rows": [
+        { "id": "hi", "cells": { "priority": "[#A]", "title": "the urgent one" } },
+        { "id": "mid", "cells": { "priority": "[#B]", "title": "the next one" } },
+        { "id": "flat", "cells": { "priority": "", "title": "nobody ranked this" } }
+      ]
     }
   },
   "view": {
@@ -255,6 +271,23 @@
       "q": "tag:*web* tag:*archive*", "expect": { "ids": ["arch"] } },
     { "name": "and either of them is the one token, metas alternating like values",
       "view": { "$ref": "metas" },
-      "q": "tag:*web*|*archive*", "expect": { "ids": ["arch", "word"] } }
+      "q": "tag:*web*|*archive*", "expect": { "ids": ["arch", "word"] } },
+
+    { "name": "a whole-value match reads through the decoration a cell wears",
+      "doc": "Org draws a priority `[#A]' and a reader means `A'. Display wears the decoration and matching reads through it -- the stars' rule from the cell's side -- so the two spellings are one query on both halves of the wire.",
+      "view": { "$ref": "decorated" },
+      "q": "priority:A", "expect": { "ids": ["hi"] } },
+    { "name": "and the cell's own spelling asks the same thing",
+      "view": { "$ref": "decorated" },
+      "q": "priority:[#A]", "expect": { "ids": ["hi"] } },
+    { "name": "half a decoration is no decoration, so it folds nothing",
+      "view": { "$ref": "decorated" },
+      "q": "priority:[#", "expect": { "ids": [] } },
+    { "name": "and what is read through the brackets is still matched whole",
+      "view": { "$ref": "decorated" },
+      "q": "priority:AB", "expect": { "ids": [] } },
+    { "name": "the empty meta reads the cell as ever, decorated column or not",
+      "view": { "$ref": "decorated" },
+      "q": "priority:*empty*", "expect": { "ids": ["flat"] } }
   ]
 }

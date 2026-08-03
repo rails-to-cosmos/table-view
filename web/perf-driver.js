@@ -1170,6 +1170,59 @@ async function starredMetas() {
         sorted(), ["arch", "word", "near", "bare"]);
 }
 
+/**
+ * Org's priority decoration: a cell drawn `[#A]' and meant as `A'. Display
+ * wears it and matching reads through it — the stars' rule from the cell's side
+ * rather than the vocabulary's — so completion reaches the cell's own spelling
+ * from either. What the parity vectors pin is the MATCHING; what belongs here is
+ * the offering, and that what a completion COMMITS still answers.
+ */
+async function decoratedCells() {
+  console.log("\n== the priority decoration");
+  const cols = [
+    { key: "priority", header: "Pri", type: "badge", sortable: true,
+      badges: [{ value: "[#A]", color: "#e74c3c" }, { value: "[#B]", color: "#ffcc00" }] },
+    { key: "title", header: "Headline", type: "text" },
+  ];
+  const rows = [
+    { id: "hi", cells: { priority: "[#A]", title: "the urgent one" } },
+    { id: "mid", cells: { priority: "[#B]", title: "the next one" } },
+    { id: "flat", cells: { priority: "", title: "nobody ranked this" } },
+  ];
+  const P = driver({ title: "priorities", columns: cols, rows });
+  const ids = (q) => { P.shown(q); return P.handle.getVisible().map((r) => r.id); };
+  const leads = () => P.box.querySelectorAll(".tv-ac-item")
+    .findIndex((e) => e.classes.has("tv-ac-on"));
+
+  // --- the domain is the cell's own spelling; the decoration is not vocabulary
+  check("the column offers the values as the cells wear them",
+        P.type("priority:"), domain("[#A]", "[#B]"));
+  check("and each carries the rows behind it", P.counts(), [1, 1]);
+
+  // --- reached bracket-free, the way a meta is reached star-free
+  check("the letter alone reaches the value it decorates", P.type("priority:a"), ["[#A]"]);
+  check("spelled in full it leads, so RET takes it", leads(), 0);
+  check("and the cell's own spelling still answers to itself",
+        P.type("priority:[#a"), ["[#A]"]);
+  check("a bare word reaches it through the column too",
+        P.type("a").indexOf("priority:[#A]") !== -1, true);
+
+  // --- and what commits wears the decoration, and matches
+  P.type("priority:a");
+  P.b().dispatchEvent(new Ev("keydown", { key: "Enter" }));
+  check("accepting inserts the decorated spelling",
+        P.handle.getQuery().trim(), "priority:[#A]");
+  check("which is the query the letter would have asked",
+        [P.handle.getVisible().map((r) => r.id), ids("priority:A")], [["hi"], ["hi"]]);
+
+  // --- the fold is the whole decoration's, and the match is still whole-value
+  check("half a decoration folds nothing", ids("priority:[#"), []);
+  check("and neither side is a substring of the other", ids("priority:AB"), []);
+  check("the empty meta reads the cell as ever", ids("priority:*empty*"), ["flat"]);
+  check("and a negation is the rows the letter left",
+        ids("-priority:A"), ["mid", "flat"]);
+}
+
 /** Six rows with two columns, which is enough to page, filter and sort over. */
 const MARK_VIEW = {
   title: "marks",
@@ -5582,6 +5635,7 @@ async function smoke() {
   await sortTokens();
   await metaValues();
   await starredMetas();
+  await decoratedCells();
   await rowMarks();
   await linkedRows();
   await crumbTrail();

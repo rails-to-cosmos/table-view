@@ -753,6 +753,14 @@ full, star-free or not, it leads the list, so RET commits `state:*active*` from
 four letters. What a query **means** reads the stars, so `state:active` filters
 for the literal `active`.
 
+**And a decorated cell reads through its brackets.** Org draws a priority `[#A]`
+and means `A`, so the same rule runs from the cell's side: `priority:a` and
+`priority:[#a` both offer `[#A]`, the bare word `a` surfaces it through its
+column, and what commits wears the decoration. Matching folds it too, and on
+both halves of the wire — `priority:A` and `priority:[#A]` are one query
+([`SCHEMA.md`](SCHEMA.md), Filter query) — where the producer metas above are
+the renderer's to match literally.
+
 The local evaluator matches a **producer** meta literally, which is to say it
 matches nothing. That is deliberate rather than a gap: a view that declares such
 metas is one whose filtering belongs to the producer, and it is expected to pass
