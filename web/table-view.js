@@ -282,7 +282,9 @@
  *   where `tag:boo' is a substring of the cell); anything else is a PRODUCER
  *   meta over a set only the producer can enumerate (`state:*active*'), matched
  *   literally here, which narrows. The first two need no producer, so both
- *   halves of the wire answer them alike.
+ *   halves of the wire answer them alike. `sort:*none*' is the family's one
+ *   member on a key that is no predicate: the EMPTY chain, which reads no cell
+ *   and answers no column.
  * - A STARRED META COMPLETES STAR-FREE. The asterisks are reading notation —
  *   the mark that says this value has semantics — so completion matches through
  *   them: `act' and `active' both reach `*active*', at the value stage and as a
@@ -783,6 +785,21 @@
   const SORT_DIRS = { "": true, asc: true, desc: false };
 
   /**
+   * The meta that spells the EMPTY CHAIN. `sort:*none*' NAMES a sort key, so it
+   * replaces the view's declared `sort' the way any other sort token does — with
+   * nothing, leaving the rows in the order they arrived. It is what a reader has
+   * instead of a token to take off, the declared order being invisible until
+   * they diverge from it.
+   *
+   * It admits no companions: `sort:*none* sort:title' is a query a producer
+   * refuses, and a renderer, having nobody to refuse to, drops the `*none*' and
+   * lets the companions stand. The producer is the stricter of the two, which is
+   * every other sort refusal's asymmetry, and it costs no rows either way — a
+   * sort token narrows nothing in any polarity.
+   */
+  const NONE_META = "*none*";
+
+  /**
    * TOKEN as a sort key, or null where nothing orderable is spelled. KNOWN is
    * the columns a key may name.
    *
@@ -805,25 +822,38 @@
   }
 
   /**
-   * The chain Q names, highest priority first, or [] when it names none. KNOWN
-   * is the columns a key may name.
+   * The chain Q names, highest priority first: [] where it names the EMPTY one
+   * and null where it names no chain at all. That difference is the whole
+   * question of whether a declared `sort' still stands — a reader asking for no
+   * order and a reader saying nothing about order are different readers.
+   * KNOWN is the columns a key may name.
    *
    * Written order is precedence and repeats compose, so `sort:deadline
-   * sort:title' opens on deadline with title behind it. A column named twice is
-   * the producer error SCHEMA's chain rule already names: the later spelling is
-   * dropped here, so what this answers can always be handed to `applyChain'.
+   * sort:title' opens on deadline with title behind it. A column named twice
+   * keeps its FIRST spelling and the later one is dropped — the chain's own rule
+   * (a chain never names a column twice) read over the tokens that spell it — so
+   * what this answers can always be handed to `applyChain'.
+   *
+   * `*none*' is the empty chain and takes no companions: a key that resolves
+   * outranks it, so `sort:*none* sort:title' is title. Every other refusal — a
+   * negation, an alternation, an unknown column, a direction that is neither
+   * word — drops its own key and says nothing about the chain, which is why a
+   * query holding those alone leaves the declared order standing.
    * @param {string} q  @param {string[]} keys  @param {(k: string) => boolean} known
-   * @returns {SortKey[]}
+   * @returns {SortKey[]|null}
    */
   function sortsIn(q, keys, known) {
     /** @type {SortKey[]} */
     const chain = [];
+    let none = false;
     for (const tok of parseQuery(q, keys)) {
       if (tok.key !== SORT_KEY) continue;
+      if (!tok.negated && tok.value.toLowerCase() === NONE_META) { none = true; continue; }
       const k = sortKeyOf(tok, known);
       if (k && !chain.some((c) => c.column === k.column)) chain.push(k);
     }
-    return chain;
+    if (chain.length) return chain;   // a key that resolves outranks `*none*'
+    return none ? chain : null;       // the empty chain, or nothing said at all
   }
 
   /** KEY as the token that spells it. @param {SortKey} key  @returns {string} */
@@ -1761,14 +1791,17 @@
     }
 
     /**
-     * The order in force under query Q: the keys Q names, else the order the
+     * The order in force under query Q: the chain Q names, else the order the
      * view was STATED in. So the declared sort is invisible until a reader
      * diverges from it, and taking the last sort token off is the way home.
+     * `sort:*none*' names the EMPTY chain, which is a divergence like any other
+     * — it replaces the declared order rather than falling back to it, and the
+     * rows are read in the order they arrived.
      * @param {string} q  @returns {SortKey[]}
      */
     function chainFor(q) {
       const named = sortsIn(q, queryKeys(), (k) => !!colByKey(k));
-      return named.length ? named : stated;
+      return named === null ? stated : named;
     }
 
     /**
@@ -3203,18 +3236,40 @@
     }
 
     /**
-     * Put TOK on the strip, unless the strip already carries it as spelled.
+     * What TOK counts as the same token AS, for the strip's collapse. A
+     * predicate is itself as spelled: a near twin (`tag:game' beside
+     * `tag:games') asks a different question and stays a second chip.
+     *
+     * A SORT token is its COLUMN, whatever direction it wears and however that
+     * direction is spelled, because the chain keeps a column's first spelling
+     * and drops the rest. `sort:title' beside `sort:title:asc' is one ordering
+     * written twice, and `sort:title' beside `sort:title:desc' is an ordering
+     * beside a token that does nothing; either way the second chip describes an
+     * order the rows are not in, which is the one thing the strip may not do.
+     * A negated one is left as spelled — it is a refusal the reader typed, and
+     * the query carries it back to the producer verbatim.
+     * @param {string} tok  @returns {string}
+     */
+    function chipIdentity(tok) {
+      const t = parseQuery(tok, queryKeys())[0];
+      if (!t || t.key !== SORT_KEY || t.negated) return tok;
+      const at = t.value.indexOf(":");
+      return `${SORT_KEY}:${at === -1 ? t.value : t.value.slice(0, at)}`;
+    }
+
+    /**
+     * Put TOK on the strip, unless the strip already carries the same token.
      * Every token is idempotent under the one combination rule — a repeated
      * predicate narrows to what it narrowed, a repeated sort key is the position
      * it already holds — so a second copy is chrome the reader has to read past,
      * in the strip, in the URL and in what the producer is asked. The FIRST
-     * occurrence keeps its place, which is what makes precedence survive the
-     * collapse; a near-twin (`tag:game' beside `tag:games') is two tokens and
-     * stays two.
+     * occurrence keeps its place AND its spelling, which is what makes
+     * precedence survive the collapse.
      * @param {string} tok
      */
     function pushChip(tok) {
-      if (chips.indexOf(tok) === -1) chips.push(tok);
+      const id = chipIdentity(tok);
+      if (!chips.some((c) => chipIdentity(c) === id)) chips.push(tok);
     }
 
     /**
@@ -3435,13 +3490,17 @@
       const p = st.prefix.toLowerCase();
       const out = [];
       // `sort:' — the columns a reader may order by, `sortable' deciding which,
-      // and `asc'/`desc' once one is named in full. The offers finish the token,
-      // so each lands with the space that opens the next.
+      // and `asc'/`desc' once one is named in full, with `*none*' behind them.
+      // The offers finish the token, so each lands with the space that opens
+      // the next. What is offered is `sortable''s because completing IS the
+      // reader's gesture; the token a reader may WRITE is not gated by it, and
+      // a chain naming a column that opts out opens as written either way.
       if (st.stage === "sort") {
         const at = p.indexOf(":");
         const wantCol = at === -1 ? p : p.slice(0, at);
         const wantDir = at === -1 ? null : p.slice(at + 1);
-        const offer = (text) => out.push({ text, count: -1, full: true, dim: false });
+        const offer = (text, dim) =>
+          out.push({ text, count: -1, full: true, dim: !!dim });
         for (const c of columns()) {
           if (out.length >= AC_MAX) break;
           if (c.sortable !== true) continue;
@@ -3454,6 +3513,11 @@
             for (const d of ["asc", "desc"]) if (d.startsWith(wantDir)) offer(key + ":" + d);
           }
         }
+        // The empty chain, offered last and gated by nothing: it names no
+        // column, so there is no `sortable' to consult, and it wears no
+        // direction. Star-blind like every meta, so `non' reaches it, and drawn
+        // dim like every meta — vocabulary rather than a fact about a column.
+        if (wantDir === null && opensWith(NONE_META, wantCol)) offer(NONE_META, true);
         return out.slice(0, AC_MAX);
       }
       if (!st.col) {

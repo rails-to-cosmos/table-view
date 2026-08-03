@@ -34,31 +34,66 @@ the rails-to-cosmos ELPA archive publishes date-stamped snapshots.
   neither `asc` nor `desc` are each an error a producer refuses by name;
   a renderer has nobody to refuse to, so it drops the key and the token
   goes on narrowing nothing — a refused ordering never empties a table.
+  `sort:` with nothing after it is the `key:` rule and orders nothing,
+  and `sort:COL:` is the direction half typed, which ascends like an
+  unspelled one. A column named twice is NO error on either side: the
+  FIRST spelling stands and the later one is dropped, a chain never
+  naming a column twice. `sortable` gates the reader's GESTURE alone —
+  promotion, and a header click with it — so a query naming a column that
+  opts out opens as written, the way a declared `sort` does.
   `sortPromote` now WRITES that query rather than a chain beside it, so
-  the order is one of the query's own terms: it shows as chips,
-  `stripLastToken()` takes a key off it, a URL carrying the query carries
+  the order is one of the query's own terms: it rides the ordinary
+  filter chip strip, `stripLastToken()` takes a key off it, a URL carries
   the order, and a producer filtering server-side is told what to answer
   in. What a promotion composes onto is the chain in force, declared keys
   and all, so only the promoted key ever moves.
   The chain in force is drawn where it is about: every sorted column's
   own HEADER carries its direction and, past one key, its place in the
   chain (`Headline ▲¹`), the leading key in full ink and the tie-breakers
-  muted. The sort chips are gone with the second store behind them — the
-  query says it, the headers show it — and the column widths pay for the
-  marks a header wears.
+  muted. The dedicated sort-chip widget is gone with the second store
+  behind it — the query says the order and the headers show it — and the
+  column widths pay for the marks a header wears.
+  The suggestion list completes the token: after `sort:` come the columns
+  a reader may order by — `sortable`'s list, since completing is the
+  gesture — each offered again with its other direction once named in
+  full.
   New parity vectors (`fixtures/parity/sort-tokens.json`, a `query-sort`
   capability the browser harness runs: a query in, the row ids in the
   order it leaves them) cover ordering, direction, precedence, stability,
-  nulls, mixing with predicates and free text, and every refusal.
+  nulls, mixing with predicates and free text, the duplicate-column rule
+  and every refusal.
+- **`sort:*none*` is the EMPTY chain (SCHEMA.md + browser renderer).** A
+  declared `sort` was the one thing a reader could not take off: every
+  sort token replaced it with another order, and taking the last token
+  off came home to the declaration. `sort:*none*` NAMES a sort key, so it
+  replaces the declaration the way any other sort token does — with
+  nothing, leaving the rows in the order they arrived. It joins the
+  starred family as its one member on a key that is no predicate, reading
+  no cell and answering no column, and it completes star-blind like the
+  rest (`non` reaches it), offered under `sort:` where no `sortable`
+  gates it. It admits no companions: `sort:*none* sort:title` is an error
+  a producer refuses, and a renderer drops the `*none*` and lets the
+  companions stand — the producer the stricter of the two, which is every
+  other sort refusal's asymmetry, and no row moves either way. Thirteen
+  parity vectors, over a view whose rows arrive in an order its declared
+  sort does not put them in, that being the only way to tell the empty
+  chain from the declared one.
 - **A token spelled twice collapses (browser renderer).** Every token is
   idempotent under the one combination rule — a repeated predicate
   narrows to what it narrowed, a repeated sort key is the position it
   already holds — so `tag:game tag:game tag:game` was three chips'
   worth of noise in the strip, the URL and what the producer was asked.
-  A chip the strip already carries as spelled is no longer added: the
-  FIRST occurrence keeps its place, so precedence survives the collapse,
-  and a near twin (`tag:game` beside `tag:games`) is two tokens and stays
-  two.
+  A chip the strip already carries is no longer added: the FIRST
+  occurrence keeps its place AND its spelling, so precedence survives the
+  collapse, and a near twin (`tag:game` beside `tag:games`) is two tokens
+  and stays two. A SORT token counts as carried by its COLUMN rather than
+  by how it is spelled, the chain keeping a column's first spelling and
+  dropping the rest: `sort:title` beside `sort:title:asc` is one ordering
+  written twice, and beside `sort:title:desc` it is an ordering and a
+  token that does nothing — either way the second chip described an order
+  the rows were not in, which is the one thing the strip may not do. A
+  negated one stays as spelled, being a refusal the reader typed and one
+  the producer is owed verbatim.
 - **`sort` chains, spelled out (SCHEMA.md).** The array form was one
   line; it now says what a chain means — every key run in order, the
   first that separates two rows deciding, ties keeping arrival order
@@ -69,172 +104,6 @@ the rails-to-cosmos ELPA archive publishes date-stamped snapshots.
   inside a chain, a badge key over its palette with a text tie-breaker,
   and a chain of one being the single sort it always was.
 
-### Fixed
-- **A page's last row no longer parks under the hint bar (browser
-  renderer).** The hint is the scroller's next sibling, so its top IS
-  the fold, and the viewport's clamp modelled the content it had to stop
-  at as `header + rows × geom.row`. `geom.row` is ONE row's
-  `getBoundingClientRect().height`, and a browser snaps every rect it
-  hands back over a row box that is fractional (`13px/1.5`, padding, a
-  hairline) — so the sample is a rounding of the height rather than the
-  height, and the error compounds a fraction of a pixel per row. Over a
-  hundred-row page it came to 20px in Firefox: `>`, `G` and a held `n`
-  all stopped twenty pixels short of the end with the last row two
-  thirds under the bar, whatever the window size or the row count — the
-  constant that made it read as a layout bug. `maxScroll` now reads the
-  scroller's own `scrollHeight`, which is that sum without the rounding
-  and is the number the browser itself clamps `scrollTop` against. It
-  answers for the rows in the TBODY, so where their count differs from
-  the page on show — a page turn, the continuous seam — the modelled sum
-  still stands in until the render lands.
-- **An ease against a clamp ends rather than running for ever (browser
-  renderer).** `scrollTop` snaps to a device pixel and `scrollHeight` is
-  rounded over content that is not, so a target can sit a pixel past
-  anything a scroller will hold. Ending the ease only on ARRIVAL left a
-  `requestAnimationFrame` loop turning at 60fps for as long as the page
-  was open, which Firefox did at BOTH ends of the travel and did before
-  ever a target came off `scrollHeight` — 60 refused writes a second,
-  now none. A refused step is an arrival.
-- **The driver's DOM shim reports a spacer's own height, and a row's
-  snapped (`web/perf-driver.js`).** Two gaps that between them hid the
-  bug above: the shim parsed `style` as an opaque attribute, so a spacer
-  row standing in for sixty measured one row tall; and every row rect
-  came back exactly `ROW_PX`, so no arithmetic that multiplied one rect
-  by a page could ever be wrong. Rects are now snapped against where the
-  row falls, `scrollHeight` is the unsnapped sum, and a fractional
-  `ROW_PX` is what the new checks set. At a whole `ROW_PX` every number
-  is what it was.
-- **A `values` list holding starred metas alone no longer orders a
-  column (`table-view.el`).** SCHEMA.md has said since the metas landed
-  that a meta is filter vocabulary rather than a cell value and takes no
-  sort position; the browser renderer filtered them out of the value
-  order and Emacs did not. A producer shipping `values:
-  ["*active*","*inactive*"]` beside a badge column — glance's state
-  column does exactly this — had every real keyword tie at the end of
-  that two-element list, so sorting by state ordered nothing. The badge
-  palette below it now rules, as it does in the browser.
-
-### Changed
-- **A header click PROMOTES rather than replaces (browser renderer).**
-  It is the pointer's spelling of `^` and is now one command with it, so
-  a click no longer throws away a chain the keyboard just built. Clicking
-  a second column leaves the first as a tie-breaker instead of dropping
-  it; the chips say so. `sortBy` is unaffected — a producer stating an
-  order still replaces the chain outright.
-- **The hint line spells the whole chain (browser renderer).** It named
-  the primary key alone, so a view declaring `[{state},{scheduled}]`
-  read as `sort state asc` and lied by omission about what the rows were
-  in. It now prints `sort state asc → scheduled asc`, which is what
-  `table-view.el` has always printed.
-- **Marks and flags are ONE mechanism, instantiated twice (browser
-  renderer).** They were two sets with two of everything around them —
-  twin toggles, twin clears, and `getMarked`/`getFlagged` as nine-token
-  twins — so each answer had two homes to drift between. One id-keyed
-  row state now holds every operation (does a row wear it, toggle it,
-  take it off, put it on a whole set, take it off every row, list the
-  ids) and marks and flags are two instances of it, which is what makes
-  the listing order, the clear's independence and the survival matrix
-  true of both by construction rather than by two implementations
-  agreeing. They stay two SETS: a flag is a PENDING action where a mark
-  is a STANDING selection. The two asymmetries are kept and moved to
-  where they belong — the HANDLE offers `markAll` on marks alone and
-  `unflagRow` on flags alone, being what only that state is used for,
-  while the mechanism holds both. `isFlagged` loses the `marks &&`
-  conjunct it carried, which is what the new `flags` option needed. The
-  handle's surface is unchanged.
-- **Every row and cell class is derived ONCE (browser renderer).** The
-  window's HTML and the re-stamp that runs when a selection or a mark
-  moves each spelled the classes out for themselves, so a state could be
-  drawn one way when the row was built and another when it was
-  re-stamped. Both now read `[name, on]` pairs off one derivation: the
-  builder joins the names that are on, the stamper toggles each pair.
-  The stamper covers the stripe, the alignment and the link mark it used
-  to leave alone, and writes only what MOVED — `classList` is asked what
-  it holds before it is asked to change it — so re-deriving a window a
-  held movement key never altered writes nothing. The window remembers
-  the display order it was drawn from, which is how a `<tr>` gets back
-  to its row and its index without asking the state a second time.
-  Mount, filter, page-flip and select-burst benchmarks hold within
-  run-to-run noise. One visible byte: a `class` attribute no longer
-  carries a leading space.
-- **One sampler behind `multiColumn` and `dateColumn` (browser
-  renderer).** The two ran the same loop over up to 40 non-empty cells,
-  counting evidence for and evidence against and requiring at least two
-  for and none against, with both thresholds spelled twice. They are now
-  one `sampledShape(i, shapedBy, contraryTo)` and the thresholds are
-  named once. Same verdicts.
-- **`planned` is a cell SET (browser renderer).** A
-  filter key names cells by index — a column's own, or every date column
-  for `planned` — and one `valueTest` runs over them: `*empty*` asks
-  that they all be empty, any other value that any of them pass, each by
-  its own column's semantics. A key naming one cell is that rule with
-  one cell in it, so the reserved key stopped needing a branch of its
-  own. Term for term with glance's producer-side half. One consequence:
-  a date column a producer also declared `type: "badge"` is now read by
-  `planned` the way its own key reads it (whole value) rather than by
-  prefix, so the two keys agree where they used to differ.
-- **BREAKING: combination is one rule — TOKENS AND, ALTERNATIVES OR
-  (SCHEMA.md + browser renderer).** Every token narrows, whether or not
-  another token names its key. `tag:a tag:b` is a row carrying both, as
-  before; `state:TODO state:DONE` now asks a cell holding one value to
-  hold two, which is no row, **where it used to answer either state**.
-  The replacement idiom is the new alternation: `state:TODO|DONE`. A
-  predicate's VALUE splits on `|` and each alternative is read as that
-  key's own value, the results OR'd — uniform over every key and every
-  kind of value, so `tag:work|home` carries either, `scheduled:2026-08|2026-09`
-  is either month by prefix, `planned:A|B` is either, and a starred meta
-  alternates like any other value (`state:*active*|DONE`,
-  `tag:*web*|*archive*`). A negation covers the whole token, so
-  `-tag:a|b` carries neither. **A saved query or bookmark spelling a
-  same-key OR now answers nothing; rewrite it with `|`.**
-  Empty alternatives are DROPPED — `a|` is `a`, `|a` is `a`, `a||b` is
-  `a|b` — and a value spelled with bars alone is left with none, which
-  narrows nothing, the same answer `key:` has always given. The bar is a
-  PREDICATE's: a free-text token is the text it spells, bar and all, and
-  a token opening with a quote is free text whatever it spells; a
-  predicate's value has had its quotes taken out by the tokenizer, so a
-  bar inside one is always the operator and a literal bar is free text's
-  alone.
-  What it buys is the arity rule's death: `manyValued` is gone,
-  `queryMatcher` is a list of tests with no grouping in it, and `multi`
-  is left saying only what its name says — the cells hold a delimited
-  list, which the whole-entry meta, the chip rendering and the value
-  domain read. The suggestion list is alternation-aware: a `|` re-opens
-  the value domain, the prefix is what follows the last bar, and
-  accepting lands the alternative behind it, so the committed token stays
-  one token. The filter placeholder teaches the operator
-  (`state:TODO|DONE` in place of `state:active`).
-
-### Removed
-- **Virtual tag keys, from the grammar and from the suggestion list
-  (SCHEMA.md + browser renderer).** An org tag no longer names a filter
-  key: `course:text` is free text, colon and all, and `tag:course text`
-  is the one spelling — the predicate reads the tags cell, the free text
-  reads the row, and nothing expressible is lost. What is bought is the
-  worst divergence the grammar had: the keys a query could name were
-  DERIVED FROM ROWS, and a producer and a renderer hold different rows,
-  so the same token was a predicate for whoever held the tagged row and
-  free text for whoever did not. The two readings differ in one respect
-  and it is written down: `tag:` matches its column by SUBSTRING where
-  the tag key matched whole-tag, so `tag:glan` finds a row tagged
-  `:glance:` where `glan:` found nothing.
-  `tokenTest`'s virtual-key branch, `queryKeys`'s vocabulary half (it
-  and `namedKeys` are now one function) and `manyValued`'s tag arity go
-  with it. `tagVocab` stays, as the tags column's VALUE DOMAIN: `tag:`
-  completes and counts against it, and the cells still render a chip per
-  value from the same splitter.
-- **Scoped word completions from the suggestion list.** The tier that
-  offered `contact:tanik` for `tan` — whole title words paired with the
-  tags their rows sat under — composed a token the grammar no longer
-  has. Its machinery goes: the title WORD index and its postings (the
-  index is the distinct titles now), `scopedCompletions`, `lowerBound`,
-  the punctuation-stripping `bareWord`/`EDGES` pair that existed so a
-  title word could not compose a tag it was not, `tagVocab`'s per-row
-  map, and the suggestion row's tag ornament. The whole-TITLE tier
-  stands, which is what a reader typing a fragment of a headline was
-  reaching for.
-
-### Added
 - **`flags`, a mount option of the flag ground's own (browser
   renderer).** It DEFAULTS to `marks`, which is the one option flags
   shipped under, so every existing mount draws byte for byte what it
@@ -263,7 +132,15 @@ the rails-to-cosmos ELPA archive publishes date-stamped snapshots.
   of those and the crosshair, eleven grounds a theme, worst 4.69 light and
   4.63 dark. The accent was under the floor on dark's amber grounds (3.70
   at the crosshair), which is what makes this a value rather than an
-  alias. Ink and decoration and no ground, which is what keeps it
+  alias. For consumers who OVERRODE the link colour: it came off
+  `--tv-accent` and no longer does, so an accent override stops reaching
+  links and `--tv-link` is what to set instead — in every theme block a
+  consumer redeclares, the variable being declared in all four
+  (`.tv-root`, the `prefers-color-scheme` block, and both `data-theme`
+  roots). It is read through `var()` at paint rather than baked into the
+  row HTML the way a badge's ink is, so an override repaints on its own
+  and needs no re-render or `setRows`.
+  Ink and decoration and no ground, which is what keeps it
   orthogonal to every other row state: the zebra, the mark, the flag, the
   cursor and the two selection bands all write BACKGROUNDS, so a linked
   row under the cursor with a band across its title still reads as a
@@ -403,9 +280,7 @@ the rails-to-cosmos ELPA archive publishes date-stamped snapshots.
   Completing a **key** (`ta` → `tag:`) keeps focus and reopens the list at
   that key's values with their counts, since `tag:` is half a predicate;
   only a **finished** token sends Enter on to commit and hand the table
-  over. Values are no longer preselected, so Enter with `tag:` typed and
-  nothing chosen commits the presence predicate as written rather than
-  the first value. Tab is unchanged — accept and stay, at either stage.
+  over. Tab is unchanged — accept and stay, at either stage.
 - Browser renderer: touch support. On `pointer: coarse` the targets grow
   to ~44px — rows, suggestion rows and chips — by padding rather than a
   set height, so rows stay uniform and the *measured* row height carries
@@ -571,13 +446,6 @@ the rails-to-cosmos ELPA archive publishes date-stamped snapshots.
   bare value cannot argue either way (it has no delimiter to show, and
   reads as the one value it is), and only a colon arranged some other
   way — a time, a URL — rules the column out.
-- Browser renderer: same-key predicates group by the field's **arity** —
-  a single-valued field ORs (`state:TODO state:DONE` is either), a
-  multi-valued one ANDs (`tag:a tag:b` is a row carrying both,
-  GitHub-label style), and repeated virtual tag keys AND likewise. A
-  column counts as multi-valued when its cells hold delimited lists,
-  decided by their shape rather than by the column's name — so glance's
-  rename from `tags` to `tag` needed nothing here.
 - Browser renderer: the selection keeps its **place** when the row under
   it goes. Filtered away, deleted or paged past, it stays at that visual
   index (clamped to what is left) instead of vanishing, so the next
@@ -585,21 +453,6 @@ the rails-to-cosmos ELPA archive publishes date-stamped snapshots.
 - Browser renderer: Backspace's chip-strip and hand-over ignore key
   repeat — one press, one part. Holding it deletes the typed characters
   natively and then stops at the first chip.
-- Browser renderer: filter keys may be **virtual** — SCHEMA's
-  producer-defined keys, derived here as org tags: every distinct tag in
-  the `tags` column is a key, so `contact:tanik` is tagged `contact` and
-  matching `tanik`. Whole-tag membership (`con:` is not `:contact:`), an
-  empty value is presence alone, same-key OR and negation as for columns,
-  and a column of the same name shadows the tag. A tag prefix completes
-  to the tag as a key, with the count of rows holding it.
-- Browser renderer: scoped **word completions** in the suggestion list.
-  Past two characters, a prefix completes to whole title words paired
-  with the tags their rows carry — `tan` offers `contact:tanik` with the
-  rows behind it — so every offer is a query that finds something.
-  Backed by a sorted word index with per-word tag postings, built when the
-  rows settle rather than when someone types — 200ms of quiet then an idle
-  turn, re-queued by an edit burst, and built synchronously only if a
-  keystroke beats it. Prefix lookup is a binary search.
 - Browser renderer: domain-value completions match by **prefix** as well
   as in full — `TOD` reaches `state:TODO`, `alberbl` reaches
   `tags:alberblanc` (the tags column's values are the tags themselves).
@@ -611,8 +464,8 @@ the rails-to-cosmos ELPA archive publishes date-stamped snapshots.
   whose own key drives the query rather than recomposing it alongside.
 - Browser renderer: cell-level selection. `select(id, col)` stamps one
   `td` with `.tv-cell-sel` beside the row's `.tv-sel`, `getSelection()`
-  reports `{id, col}`, and `col` is clamped to the columns that exist
-  rather than wrapped. `select(id)` with no column is the whole-row
+  reports `{id, col}`, and an index outside the table is no column at
+  all. `select(id)` with no column is the whole-row
   selection it always was; both marks are re-derived on every render, so
   they survive a scroll, an upsert and a `setRows` that keeps the id.
 - Browser renderer: a committed filter token leaves the box and becomes
@@ -625,12 +478,12 @@ the rails-to-cosmos ELPA archive publishes date-stamped snapshots.
 - Browser renderer: the filter box speaks SCHEMA.md's query micro-syntax
   — `key:value` predicates (only where `key` names a column, so `:work:`
   and `=code=` stay org text), `"quoted text"`, `-negation`, free text
-  otherwise; predicates sharing a key OR, distinct keys and free text and
-  negations AND. `TableView.parseQuery(q, columnKeys)` is the tokenizer,
+  otherwise; tokens AND and alternatives OR, which is the one combination
+  rule. `TableView.parseQuery(q, columnKeys)` is the tokenizer,
   exported for consumers highlighting the box and producers implementing
   the grammar server-side. Filtering locally applies the parsed query,
   by column type: badge exact, text/number substring, date cells by
-  prefix, `none` for empty.
+  prefix, `*empty*` for the empty cell.
 - Browser renderer: a staged suggestion list under the filter box. A
   bare word offers, in order: the column keys it opens; the columns whose
   declared domain holds it as a value (`TODO` → `state:TODO`); and, only
@@ -639,8 +492,7 @@ the rails-to-cosmos ELPA archive publishes date-stamped snapshots.
   `key:` comes that column's value domain (`values`, else the badge
   palette, else the distinct cell values), each shown with the number of
   rows behind it. Arrows move, Tab/Enter accept, Escape dismisses before
-  it clears anything, a click accepts without taking focus; only a column
-  completion starts highlighted, so Enter still commits the word typed.
+  it clears anything, a click accepts without taking focus.
 - `web/perf-driver.js` + `make web-perf`: a dependency-free Node driver
   (its own DOM shim) that mounts 13,344 synthetic rows and reports the
   time, HTML bytes and listener count of a mount, a filter keystroke, an
@@ -692,9 +544,9 @@ the rails-to-cosmos ELPA archive publishes date-stamped snapshots.
   and `flaggedCount()`. A flag is a *pending* action, the two-press `d` a
   consumer drives before confirming, where a mark is a *standing*
   selection; they are separate id-keyed sets, so a row can carry both and
-  neither clear touches the other. Flags ride the existing `marks: true`
-  opt-in — one chrome opt-in for both, the leading box column being where
-  either is read — and share its whole survival matrix: a filter, a page,
+  neither clear touches the other. Flags ride `marks: true` by default —
+  the leading box column being where either is read — and share its whole
+  survival matrix: a filter, a page,
   a sort, `setRows` and an upsert keep them; `deleteRow`, a delta delete
   and `setView` take them. A flagged row wears a red wash (one `FLAG`
   constant, `#E74C3C`, at per-theme strengths of 8% light and 30% dark)
@@ -720,6 +572,96 @@ the rails-to-cosmos ELPA archive publishes date-stamped snapshots.
   consumer that says nothing sees the line it always saw.
 
 ### Changed
+- **A header click PROMOTES rather than replaces (browser renderer).**
+  It is the pointer's spelling of `^` and is now one command with it, so
+  a click no longer throws away a chain the keyboard just built. Clicking
+  a second column leaves the first as a tie-breaker instead of dropping
+  it; the headers say so. `sortBy` is unaffected — a producer stating an
+  order still replaces the chain outright.
+- **The hint line spells the whole chain (browser renderer).** It named
+  the primary key alone, so a view declaring `[{state},{scheduled}]`
+  read as `sort state asc` and lied by omission about what the rows were
+  in. It now prints `sort state asc → scheduled asc`, which is what
+  `table-view.el` has always printed.
+- **Marks and flags are ONE mechanism, instantiated twice (browser
+  renderer).** They were two sets with two of everything around them —
+  twin toggles, twin clears, and `getMarked`/`getFlagged` as nine-token
+  twins — so each answer had two homes to drift between. One id-keyed
+  row state now holds every operation (does a row wear it, toggle it,
+  take it off, put it on a whole set, take it off every row, list the
+  ids) and marks and flags are two instances of it, which is what makes
+  the listing order, the clear's independence and the survival matrix
+  true of both by construction rather than by two implementations
+  agreeing. They stay two SETS: a flag is a PENDING action where a mark
+  is a STANDING selection. The two asymmetries are kept and moved to
+  where they belong — the HANDLE offers `markAll` on marks alone and
+  `unflagRow` on flags alone, being what only that state is used for,
+  while the mechanism holds both. `isFlagged` loses the `marks &&`
+  conjunct it carried, which is what the new `flags` option needed. The
+  handle's surface is unchanged.
+- **Every row and cell class is derived ONCE (browser renderer).** The
+  window's HTML and the re-stamp that runs when a selection or a mark
+  moves each spelled the classes out for themselves, so a state could be
+  drawn one way when the row was built and another when it was
+  re-stamped. Both now read `[name, on]` pairs off one derivation: the
+  builder joins the names that are on, the stamper toggles each pair.
+  The stamper covers the stripe, the alignment and the link mark it used
+  to leave alone, and writes only what MOVED — `classList` is asked what
+  it holds before it is asked to change it — so re-deriving a window a
+  held movement key never altered writes nothing. The window remembers
+  the display order it was drawn from, which is how a `<tr>` gets back
+  to its row and its index without asking the state a second time.
+  Mount, filter, page-flip and select-burst benchmarks hold within
+  run-to-run noise. One visible byte: a `class` attribute no longer
+  carries a leading space.
+- **One sampler behind `multiColumn` and `dateColumn` (browser
+  renderer).** The two ran the same loop over up to 40 non-empty cells,
+  counting evidence for and evidence against and requiring at least two
+  for and none against, with both thresholds spelled twice. They are now
+  one `sampledShape(i, shapedBy, contraryTo)` and the thresholds are
+  named once. Same verdicts.
+- **`planned` is a cell SET (browser renderer).** A
+  filter key names cells by index — a column's own, or every date column
+  for `planned` — and one `valueTest` runs over them: `*empty*` asks
+  that they all be empty, any other value that any of them pass, each by
+  its own column's semantics. A key naming one cell is that rule with
+  one cell in it, so the reserved key stopped needing a branch of its
+  own. Term for term with glance's producer-side half. One consequence:
+  a date column a producer also declared `type: "badge"` is now read by
+  `planned` the way its own key reads it (whole value) rather than by
+  prefix, so the two keys agree where they used to differ.
+- **BREAKING: combination is one rule — TOKENS AND, ALTERNATIVES OR
+  (SCHEMA.md + browser renderer).** Every token narrows, whether or not
+  another token names its key. `tag:a tag:b` is a row carrying both, as
+  before; `state:TODO state:DONE` now asks a cell holding one value to
+  hold two, which is no row, **where it used to answer either state**.
+  The replacement idiom is the new alternation: `state:TODO|DONE`. A
+  predicate's VALUE splits on `|` and each alternative is read as that
+  key's own value, the results OR'd — uniform over every key and every
+  kind of value, so `tag:work|home` carries either, `scheduled:2026-08|2026-09`
+  is either month by prefix, `planned:A|B` is either, and a starred meta
+  alternates like any other value (`state:*active*|DONE`,
+  `tag:*web*|*archive*`). A negation covers the whole token, so
+  `-tag:a|b` carries neither. **A saved query or bookmark spelling a
+  same-key OR now answers nothing; rewrite it with `|`.**
+  Empty alternatives are DROPPED — `a|` is `a`, `|a` is `a`, `a||b` is
+  `a|b` — and a value spelled with bars alone is left with none, which
+  narrows nothing, the same answer `key:` has always given. The bar is a
+  PREDICATE's: a free-text token is the text it spells, bar and all, and
+  a token opening with a quote is free text whatever it spells; a
+  predicate's value has had its quotes taken out by the tokenizer, so a
+  bar inside one is always the operator and a literal bar is free text's
+  alone.
+  What it buys is the arity rule's death: `manyValued` is gone,
+  `queryMatcher` is a list of tests with no grouping in it, and `multi`
+  is left saying only what its name says — the cells hold a delimited
+  list, which the whole-entry meta, the chip rendering and the value
+  domain read. The suggestion list is alternation-aware: a `|` re-opens
+  the value domain, the prefix is what follows the last bar, and
+  accepting lands the alternative behind it, so the committed token stays
+  one token. The filter placeholder teaches the operator
+  (`state:TODO|DONE` in place of `state:active`).
+
 - **BREAKING: `key:none` is gone; the empty cell is `key:*empty*`
   (SCHEMA.md + browser renderer).** The bare word reserved a spelling a
   cell can hold, and what it cost was exactly that: a cell reading
@@ -739,6 +681,11 @@ the rails-to-cosmos ELPA archive publishes date-stamped snapshots.
   spelling. Decided from the cell, delimiter and all, so a producer and
   this renderer answer it identically; it is what glance's
   `tag:*archive*` is built on.
+  A producer may also attach meaning to a meta being NAMED AT ALL
+  (SCHEMA.md): glance leaves archived rows out of an answer unless the
+  query names `tag:*archive*`, in any polarity. A renderer reads the
+  token as the predicate it is; a producer reads its PRESENCE as well,
+  and the two answers differ by the rows the producer was withholding.
 - **A meta takes no sort position** (browser renderer). A column
   declaring `values: ["*active*"]` sorted every real value into the one
   "unlisted" bucket, which is no order at all — glance's state column
@@ -850,8 +797,8 @@ the rails-to-cosmos ELPA archive publishes date-stamped snapshots.
   active values — an entry nobody has stated is live work, and the
   default view is what would otherwise hide it — while `*inactive*`
   covers stated values alone. The two groups therefore do not partition
-  the column, and `-state:*active*` excludes the empty cell. `key:none`
-  is unchanged and is now a subset of `*active*`. In `tokenTest` this is
+  the column, and `-state:*active*` excludes the empty cell. `key:*empty*`
+  is a subset of `*active*`. In `tokenTest` this is
   the one term of a producer meta a renderer can decide for itself:
   which keywords are in a group needs the producer's sets, an empty cell
   does not, so `state:*active*` locally answers the stateless rows
@@ -982,9 +929,10 @@ the rails-to-cosmos ELPA archive publishes date-stamped snapshots.
   drop once per batch instead of once per op.
 - **Browser renderer: a column may declare `multi: true`.** The
   cell-shape heuristic stays as the fallback for producers that say
-  nothing, but a column that declares itself is believed — which is the
-  only way to get tag keys, scoped completions and value counts out of a
-  multi-valued column whose cells are not org-shaped.
+  nothing, and a column that declares itself is believed — which is the
+  only way to get the whole-entry `*word*` meta, the chip rendering and
+  the value domain out of a multi-valued column whose cells are not
+  org-shaped.
 - **Browser renderer: Enter in the filter box commits the typed token to
   a chip before handing the table over.** With the suggestion list
   closed, Enter chips whatever is typed, delivers the query once, then
@@ -1029,6 +977,40 @@ the rails-to-cosmos ELPA archive publishes date-stamped snapshots.
   refresh still touches only the status line.
 
 ### Removed
+- **Virtual tag keys, from the grammar and from the suggestion list
+  (SCHEMA.md + browser renderer).** An org tag no longer names a filter
+  key: `course:text` is free text, colon and all, and `tag:course text`
+  is the one spelling — the predicate reads the tags cell, the free text
+  reads the row, and nothing expressible is lost. What is bought is the
+  worst divergence the grammar had: the keys a query could name were
+  DERIVED FROM ROWS, and a producer and a renderer hold different rows,
+  so the same token was a predicate for whoever held the tagged row and
+  free text for whoever did not. The two readings differ in one respect
+  and it is written down: `tag:` matches its column by SUBSTRING where
+  the tag key matched whole-tag, so `tag:glan` finds a row tagged
+  `:glance:` where `glan:` found nothing.
+  `tokenTest`'s virtual-key branch, `queryKeys`'s vocabulary half (it
+  and `namedKeys` are now one function) and `manyValued`'s tag arity go
+  with it. `tagVocab` stays, as the tags column's VALUE DOMAIN: `tag:`
+  completes and counts against it, and the cells still render a chip per
+  value from the same splitter.
+  What a producer may still do is name a key of its OWN — one it NAMES
+  rather than derives from rows — provided a renderer reading that token
+  as free text narrows to a SUBSET of what the producer answers:
+  glance's `ref:ROWID`, over a link graph only the store holds, is one.
+  That is the rule the derived keys broke, and SCHEMA.md writes it down
+  as the condition a producer-named key has to meet.
+- **Scoped word completions from the suggestion list.** The tier that
+  offered `contact:tanik` for `tan` — whole title words paired with the
+  tags their rows sat under — composed a token the grammar no longer
+  has. Its machinery goes: the title WORD index and its postings (the
+  index is the distinct titles now), `scopedCompletions`, `lowerBound`,
+  the punctuation-stripping `bareWord`/`EDGES` pair that existed so a
+  title word could not compose a tag it was not, `tagVocab`'s per-row
+  map, and the suggestion row's tag ornament. The whole-TITLE tier
+  stands, which is what a reader typing a fragment of a headline was
+  reaching for.
+
 - The **outline guides** experiment and SCHEMA's row `depth` field, both
   added earlier in this same unreleased cycle and neither ever shipped:
   the `tree: true` mount option, the guide drawing and its degradations,
@@ -1042,6 +1024,50 @@ the rails-to-cosmos ELPA archive publishes date-stamped snapshots.
   this is a removal rather than a deprecation.
 
 ### Fixed
+- **A page's last row no longer parks under the hint bar (browser
+  renderer).** The hint is the scroller's next sibling, so its top IS
+  the fold, and the viewport's clamp modelled the content it had to stop
+  at as `header + rows × geom.row`. `geom.row` is ONE row's
+  `getBoundingClientRect().height`, and a browser snaps every rect it
+  hands back over a row box that is fractional (`13px/1.5`, padding, a
+  hairline) — so the sample is a rounding of the height rather than the
+  height, and the error compounds a fraction of a pixel per row. Over a
+  hundred-row page it came to 20px in Firefox: `>`, `G` and a held `n`
+  all stopped twenty pixels short of the end with the last row two
+  thirds under the bar, whatever the window size or the row count — the
+  constant that made it read as a layout bug. `maxScroll` now reads the
+  scroller's own `scrollHeight`, which is that sum without the rounding
+  and is the number the browser itself clamps `scrollTop` against. It
+  answers for the rows in the TBODY, so where their count differs from
+  the page on show — a page turn, the continuous seam — the modelled sum
+  still stands in until the render lands.
+- **An ease against a clamp ends rather than running for ever (browser
+  renderer).** `scrollTop` snaps to a device pixel and `scrollHeight` is
+  rounded over content that is not, so a target can sit a pixel past
+  anything a scroller will hold. Ending the ease only on ARRIVAL left a
+  `requestAnimationFrame` loop turning at 60fps for as long as the page
+  was open, which Firefox did at BOTH ends of the travel and did before
+  ever a target came off `scrollHeight` — 60 refused writes a second,
+  now none. A refused step is an arrival.
+- **The driver's DOM shim reports a spacer's own height, and a row's
+  snapped (`web/perf-driver.js`).** Two gaps that between them hid the
+  bug above: the shim parsed `style` as an opaque attribute, so a spacer
+  row standing in for sixty measured one row tall; and every row rect
+  came back exactly `ROW_PX`, so no arithmetic that multiplied one rect
+  by a page could ever be wrong. Rects are now snapped against where the
+  row falls, `scrollHeight` is the unsnapped sum, and a fractional
+  `ROW_PX` is what the new checks set. At a whole `ROW_PX` every number
+  is what it was.
+- **A `values` list holding starred metas alone no longer orders a
+  column (`table-view.el`).** SCHEMA.md has said since the metas landed
+  that a meta is filter vocabulary rather than a cell value and takes no
+  sort position; the browser renderer filtered them out of the value
+  order and Emacs did not. A producer shipping `values:
+  ["*active*","*inactive*"]` beside a badge column — glance's state
+  column does exactly this — had every real keyword tie at the end of
+  that two-element list, so sorting by state ordered nothing. The badge
+  palette below it now rules, as it does in the browser.
+
 - **A selection run no longer parks short of the row it chose** (browser
   renderer). Moving the selection aims the viewport at a row and eases
   there, and the target was worked out once, at the moment of the move,

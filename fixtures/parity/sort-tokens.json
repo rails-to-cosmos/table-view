@@ -1,6 +1,22 @@
 {
   "capability": "query-sort",
-  "doc": "SCHEMA.md's ORDER token, applied end to end: a query in, the ids in the order it leaves them. `sort:COL' and `sort:COL:desc' name one column each, written order is precedence, and the token narrows NOTHING -- so every case here asserts an order over the same four rows unless a predicate is spelled beside it. The view declares `title' ascending, which is the order a query naming no sort key leaves standing and the answer every refusal falls back to. A sort token names one column in one direction: a negation, an alternation, a column no view carries and a direction that is neither word are each a query a producer answers as an error, and a renderer, having nobody to refuse to, drops the key -- so the rows come back in the declared order, unnarrowed. Browser-renderer only, like the other query vectors: table-view.el has no query grammar.",
+  "doc": "SCHEMA.md's ORDER token, applied end to end: a query in, the ids in the order it leaves them. `sort:COL' and `sort:COL:desc' name one column each, written order is precedence, and the token narrows NOTHING -- so every case here asserts an order over the same four rows unless a predicate is spelled beside it. The view declares `title' ascending, which is the order a query naming no sort key leaves standing and the answer every refusal falls back to. A sort token names one column in one direction: a negation, an alternation, a column no view carries and a direction that is neither word are each a query a producer answers as an error, and a renderer, having nobody to refuse to, drops the key -- so the rows come back in the declared order, unnarrowed. A column named twice is NO error on either side: the first spelling stands and the later one is dropped. The `*none*' cases take the `arrival' view instead, whose rows arrive in an order the declared sort does not put them in -- which is the only way to tell the EMPTY chain from the declared one. Browser-renderer only, like the other query vectors: table-view.el has no query grammar.",
+  "views": {
+    "arrival": {
+      "title": "arrival order",
+      "columns": [
+        { "key": "title", "header": "Headline", "sortable": true },
+        { "key": "score", "header": "Score", "type": "number", "sortable": true }
+      ],
+      "sort": { "column": "title", "ascending": true },
+      "rows": [
+        { "id": "d", "cells": { "title": "delta",   "score": 10 } },
+        { "id": "b", "cells": { "title": "bravo",   "score": 40 } },
+        { "id": "a", "cells": { "title": "alpha",   "score": 20 } },
+        { "id": "c", "cells": { "title": "charlie", "score": 30 } }
+      ]
+    }
+  },
   "view": {
     "title": "sort tokens",
     "columns": [
@@ -46,8 +62,16 @@
     { "name": "and reversing the tokens reverses the precedence",
       "q": "sort:score sort:state", "expect": { "order": ["b", "c", "d", "a"] } },
     { "name": "a column named twice keeps the first spelling",
-      "doc": "SCHEMA calls a chain naming a column twice a producer error; the later spelling is what goes.",
+      "doc": "A chain never names a column twice, so the rule over the tokens that spell one is that the first stands and the later one is dropped. No error on either side.",
       "q": "sort:score:desc sort:score", "expect": { "order": ["a", "c", "d", "b"] } },
+    { "name": "and the other way round, so it is the FIRST spelling that rules rather than a direction",
+      "q": "sort:score sort:score:desc", "expect": { "order": ["b", "c", "d", "a"] } },
+    { "name": "two spellings of ONE direction are one ordering",
+      "doc": "`:asc' spells what an unspelled direction already means, so this repeat changes nothing at all -- which is what makes collapsing the twin safe.",
+      "q": "sort:score sort:score:asc", "expect": { "order": ["b", "c", "d", "a"] } },
+    { "name": "a repeat does not move the column's place in the chain",
+      "doc": "`state' leads because it was written first; the trailing spelling neither demotes it nor flips it. Last-wins would read DONE before TODO.",
+      "q": "sort:state sort:score sort:state:desc", "expect": { "order": ["c", "a", "b", "d"] } },
     { "name": "empty cells settle at one end, outside the direction",
       "q": "sort:scheduled", "expect": { "order": ["b", "d", "a", "c"] } },
     { "name": "and reversing the key does not drag them along",
@@ -81,6 +105,50 @@
       "q": "-sort:state sort:score", "expect": { "order": ["b", "c", "d", "a"] } },
     { "name": "and an exact repeat is the position the key already holds",
       "doc": "Idempotent, like every other token under the one combination rule -- which is what lets a consumer collapse the twin without changing what was asked.",
-      "q": "sort:score sort:score", "expect": { "order": ["b", "c", "d", "a"] } }
+      "q": "sort:score sort:score", "expect": { "order": ["b", "c", "d", "a"] } },
+
+    { "name": "the `arrival' view is stated in an order its declared sort does not put it in",
+      "doc": "The rows arrive d, b, a, c and the view declares `title' ascending, so the declared order is a, b, c, d. Every `*none*' case below turns on those two being different.",
+      "view": { "$ref": "arrival" }, "q": "", "expect": { "order": ["a", "b", "c", "d"] } },
+    { "name": "`sort:*none*' is the EMPTY chain, and the rows are read in the order they arrived",
+      "view": { "$ref": "arrival" }, "q": "sort:*none*",
+      "expect": { "order": ["d", "b", "a", "c"] } },
+    { "name": "so it REPLACES the declared order rather than falling back to it",
+      "doc": "It names a sort key, and a query naming any sort key replaces the declared `sort'. It is what a reader has instead of a token to take off.",
+      "view": { "$ref": "arrival" }, "q": "sort:*none*",
+      "expect": { "order": ["d", "b", "a", "c"] } },
+    { "name": "the stars are read: a bare `none' is a column name and no view carries it",
+      "view": { "$ref": "arrival" }, "q": "sort:none",
+      "expect": { "order": ["a", "b", "c", "d"] } },
+    { "name": "and the value folds, like every other value",
+      "view": { "$ref": "arrival" }, "q": "sort:*NONE*",
+      "expect": { "order": ["d", "b", "a", "c"] } },
+    { "name": "a key that RESOLVES outranks it, and the companion is the whole chain",
+      "doc": "The pair is a query a producer refuses; a renderer, having nobody to refuse to, drops the `*none*' and lets the companion stand. The producer is the stricter of the two and no row moves either way.",
+      "view": { "$ref": "arrival" }, "q": "sort:*none* sort:score",
+      "expect": { "order": ["d", "a", "c", "b"] } },
+    { "name": "wherever among the tokens it is written",
+      "view": { "$ref": "arrival" }, "q": "sort:score sort:*none*",
+      "expect": { "order": ["d", "a", "c", "b"] } },
+    { "name": "a REFUSED companion does not outrank it, having resolved to nothing",
+      "view": { "$ref": "arrival" }, "q": "sort:*none* sort:nope",
+      "expect": { "order": ["d", "b", "a", "c"] } },
+    { "name": "a negation of it is a refusal like any other, and the declared order stands",
+      "view": { "$ref": "arrival" }, "q": "-sort:*none*",
+      "expect": { "order": ["a", "b", "c", "d"] } },
+    { "name": "an alternation holding it is one too",
+      "view": { "$ref": "arrival" }, "q": "sort:*none*|score",
+      "expect": { "order": ["a", "b", "c", "d"] } },
+    { "name": "and a direction on it is no token the grammar has",
+      "doc": "`*none*' names no column, so there is nothing for a direction to order; the token resolves to neither the meta nor a key and is dropped.",
+      "view": { "$ref": "arrival" }, "q": "sort:*none*:desc",
+      "expect": { "order": ["a", "b", "c", "d"] } },
+    { "name": "spelling it twice is spelling it once",
+      "view": { "$ref": "arrival" }, "q": "sort:*none* sort:*none*",
+      "expect": { "order": ["d", "b", "a", "c"] } },
+    { "name": "and it narrows nothing, like every other sort token",
+      "doc": "The predicate leaves two rows and the arrival order is what they are read in.",
+      "view": { "$ref": "arrival" }, "q": "title:alpha|charlie sort:*none*",
+      "expect": { "order": ["a", "c"] } }
   ]
 }

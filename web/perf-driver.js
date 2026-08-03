@@ -2050,6 +2050,37 @@ async function sortTokens() {
   check("and a token outranks it while it is applied", ids("sort:dept"),
         ["ada", "bell", "gil", "dot"]);
 
+  // --- `*none*': the empty chain, and the only way a reader takes a declared
+  // order off. `stated' is score-descending here, from the `sortBy' above, so
+  // these are the meta beating a producer's own restatement — which is the
+  // whole of what NAMING a sort key means.
+  check("`*none*' is the empty chain, and the rows are in the order they arrived",
+        [ids("sort:*none*"), P.sortsOf(), P.handle.getSort()],
+        [["ada", "bell", "dot", "gil"], [], []]);
+  check("it rides as one chip, and DEL takes it off like any other token",
+        [P.chipsOf(), (P.handle.stripLastToken(), P.handle.getQuery()), P.sortsOf()],
+        [["sort:*none*"], "", ["Score▼"]]);
+  check("a key that RESOLVES outranks it, wherever among the tokens it is written",
+        [ids("sort:*none* sort:score"), ids("sort:score sort:*none*")],
+        [["dot", "gil", "bell", "ada"], ["dot", "gil", "bell", "ada"]]);
+  check("and the headers then wear the companion alone", P.sortsOf(), ["Score▲"]);
+
+  // --- the `sort:' stage completes what a reader may order by
+  check("`sort:' offers the sortable columns, and the empty chain behind them",
+        P.type("sort:"), ["dept", "score", "*none*"]);
+  check("a prefix narrows to the column it opens", P.type("sort:sc"), ["score"]);
+  check("naming one in full offers the other direction beside it",
+        P.type("sort:score"), ["score", "score:desc"]);
+  check("and past the colon the two directions are the whole domain",
+        P.type("sort:score:"), ["score:asc", "score:desc"]);
+  check("a column that opts out of sorting is offered by nothing",
+        P.type("sort:na"), []);
+  check("the meta completes star-blind, the way every meta does",
+        [P.type("sort:non"), P.type("sort:*non")], [["*none*"], ["*none*"]]);
+  check("`sortable' gates the OFFER; the token a reader may WRITE it never gated",
+        (P.shown("sort:name:desc"), P.handle.getVisible().map((r) => r.id)),
+        ["gil", "dot", "bell", "ada"]);
+
   // --- the strip carries one of each token, however often it is spelled
   check("an exact twin collapses, the first keeping its place",
         (P.shown("dept:Eng dept:Eng dept:Eng"), [P.chipsOf(), P.handle.getQuery()]),
@@ -2063,6 +2094,29 @@ async function sortTokens() {
   check("and a sort token collapses like every other one",
         (P.shown("sort:score sort:score"), [P.chipsOf(), P.handle.getQuery()]),
         [["sort:score"], "sort:score"]);
+
+  // --- and a sort token collapses by its COLUMN, not by how it is spelled.
+  // The chain keeps a column's first spelling and drops the rest, so a second
+  // chip naming that column describes an order the rows are not in — which is
+  // the one thing the strip may not do.
+  check("two spellings of one ordering are one chip",
+        (P.shown("sort:score sort:score:asc"), [P.chipsOf(), P.handle.getQuery()]),
+        [["sort:score"], "sort:score"]);
+  check("and a second direction on a column the chain already has is chrome too",
+        (P.shown("sort:score sort:score:desc"), [P.chipsOf(), P.handle.getQuery()]),
+        [["sort:score"], "sort:score"]);
+  check("the FIRST spelling is what stays, its direction with it",
+        (P.shown("sort:score:desc sort:score"), [P.chipsOf(), P.handle.getQuery()]),
+        [["sort:score:desc"], "sort:score:desc"]);
+  check("so the strip and the chain say ONE thing about the column",
+        P.handle.getSort().map((k) => k.column + (k.ascending ? "▲" : "▼")),
+        ["score▼"]);
+  check("a negated one stays as spelled — it is a refusal the reader typed",
+        (P.shown("sort:score -sort:score"), P.chipsOf()),
+        ["sort:score", "-sort:score"]);
+  check("and another column is another token",
+        (P.shown("sort:score sort:dept:desc"), P.chipsOf()),
+        ["sort:score", "sort:dept:desc"]);
 
   // --- the headers pay for what they wear
   {

@@ -299,8 +299,23 @@ which token was wrong, and a renderer, having nobody to refuse to, drops the key
 — the token still narrows nothing, in either polarity, so a refused ordering
 never empties a table. `sort:` with nothing after it is the `key:` rule: it
 orders nothing and narrows nothing, and `sort:COL:` is the direction half typed,
-which ascends like an unspelled one. Repeating a column is the chain rule's
-producer error, and the FIRST spelling is what stands.
+which ascends like an unspelled one.
+
+A column named twice is **no error on either side**: the FIRST spelling stands
+and the later one is dropped. That is the chain's own rule — a chain never names
+a column twice — read over the tokens that spell one, so `sort:title:desc
+sort:title` is title descending and `sort:title sort:title:asc` is one ordering
+written twice. A consumer collapsing the twin therefore asks what it asked
+before, which is what makes the collapse safe in a chip strip or a URL.
+
+**`sort:*none*`** is the EMPTY chain. It **names** a sort key, so it **replaces**
+the declared `sort` the way any other sort token does — with nothing, leaving the
+rows in the order they arrived. It is what a reader has instead of a token to
+take off, the declared order being invisible until they diverge from it. It
+admits no companions: `sort:*none* sort:title` is an error a producer refuses,
+and a renderer drops the `*none*` and lets the companions stand. The producer is
+the stricter of the two, which is every other sort refusal's asymmetry, and it
+costs no rows either way — a sort token narrows nothing in any polarity.
 
 Which columns a reader may sort by is `sortable`'s, and it gates the reader's
 gesture alone: a query naming a column that opts out opens as written, the way a
@@ -328,6 +343,10 @@ producer and a renderer answer them identically:
   than the producer — the blessed direction for a divergence. A view declaring
   producer metas is expected to filter through the producer.
 
+A fourth is decided from no cell at all: **`*none*`** on `sort`, the empty chain
+(above). It is the family's one member on a key that is no predicate, which is
+why it answers no column and reads no row.
+
 Metas arrive in a column's `values` (below), which is how a renderer offers
 them; `*empty*` needs no declaring. A producer may also attach meaning to a meta
 being **named at all**: glance leaves archived rows out of an answer unless the
@@ -337,6 +356,9 @@ query names `tag:*archive*`, in any polarity.
 bare word suggests matching column keys (completing to `key:`); after
 `key:`, that column's value domain — `values`, else the badge palette, else
 distinct cell values — plus the metas that key answers, `*empty*` among them.
+After `sort:`, the columns a reader may order by — `sortable`'s list, since
+completing is the reader's gesture — each offered again with its other direction
+once named in full, and `*none*` beside them, which no column gates.
 A renderer may match a meta through its stars (`arch` reaching `*archive*`),
 which is completion alone: what commits and what a query means keep them. A `|`
 **re-opens** that value domain — the prefix is what follows the last bar and the
