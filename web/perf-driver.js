@@ -904,8 +904,8 @@ async function sortOrder() {
     // promoting `score' leaves the marks where the columns are and renumbers.
     check("a promotion renumbers them at once",
           (p.sortPromote("score"), heads()), ["Dept▲²", "Score▲¹"]);
-    check("and writes the chain into the query, precedence order and all",
-          asked(), "sort:score sort:dept");
+    check("and writes the chain into the query as ONE token, precedence and all",
+          asked(), "sort:score->dept");
     check("a one-key chain wears the direction and no ordinal",
           (p.setSort([{ column: "score", ascending: true }]), heads()), ["Score▲"]);
     check("and clearing the chain takes the marks off",
@@ -2299,26 +2299,33 @@ async function sortTokens() {
   // reader was reading by is still what the rows are in.
   check("promotion writes the chain into the query, keeping the predicate",
         (P.handle.sortPromote("score"), P.handle.getQuery()),
-        "dept:Eng sort:score sort:name");
-  check("a second promotion recomposes the tokens rather than adding to them",
+        "dept:Eng sort:score->name");
+  check("a second promotion recomposes the one token rather than adding to it",
         (P.handle.sortPromote("dept"), P.handle.getQuery()),
-        "dept:Eng sort:dept sort:score sort:name");
+        "dept:Eng sort:dept->score->name");
   check("the leading key flips where it already leads",
         (P.handle.sortPromote("dept"), P.handle.getQuery()),
-        "dept:Eng sort:dept:desc sort:score sort:name");
+        "dept:Eng sort:dept:desc->score->name");
   check("and the rows are in that order without waiting for anyone",
         P.handle.getVisible().map((r) => r.id), ["bell", "ada"]);
+  check("and the whole order is ONE chip, however many keys it names",
+        P.chipsOf(), ["dept:Eng", "sort:dept:desc->score->name"]);
   check("`sortable' still gates it, and a refusal writes no token",
         [P.handle.sortPromote("name"), P.handle.getQuery()],
-        [false, "dept:Eng sort:dept:desc sort:score sort:name"]);
-  check("DEL takes a sort token off like any other token",
+        [false, "dept:Eng sort:dept:desc->score->name"]);
+  // A SORT CHIP IS A CHAIN, so DEL takes off its last KEY rather than the whole
+  // order: the arrow form put every promotion on one chip and the press still
+  // walks them back one at a time.
+  check("DEL takes the chain's last key off, leaving the chip standing",
         (P.handle.stripLastToken(), P.handle.getQuery()),
-        "dept:Eng sort:dept:desc sort:score");
+        "dept:Eng sort:dept:desc->score");
   check("and the order follows it down",
         P.handle.getVisible().map((r) => r.id), ["bell", "ada"]);
-  check("until the last one goes and the declared order is back",
-        (P.handle.stripLastToken(), P.handle.stripLastToken(),
-         [P.handle.getQuery(), P.sortsOf()]),
+  check("until the last key goes and the chip goes with it",
+        (P.handle.stripLastToken(), [P.handle.getQuery(), P.sortsOf()]),
+        ["dept:Eng sort:dept:desc", ["Dept▼"]]);
+  check("and then the declared order is back",
+        (P.handle.stripLastToken(), [P.handle.getQuery(), P.sortsOf()]),
         ["dept:Eng", ["Name▲"]]);
 
   // --- a stated order is the fallback, and a query naming one outranks it
@@ -2356,6 +2363,28 @@ async function sortTokens() {
         P.type("sort:na"), []);
   check("the meta completes star-blind, the way every meta does",
         [P.type("sort:non"), P.type("sort:*non")], [["*none*"], ["*none*"]]);
+  // A `->' RE-OPENS the domain, the way a `|' re-opens a value's: the prefix is
+  // what follows the last arrow, and a chain never names a column twice, so what
+  // is offered is the columns left to order by.
+  check("past an arrow the domain is the columns not yet chained",
+        P.type("sort:score->"), ["dept"]);
+  check("a prefix narrows that domain like any other",
+        [P.type("sort:score->de"), P.type("sort:score->sc")], [["dept"], []]);
+  check("directions are offered past the colon of a chained segment too",
+        P.type("sort:score->dept:"), ["dept:asc", "dept:desc"]);
+  check("naming the segment in full offers its other direction beside it",
+        P.type("sort:score->dept"), ["dept", "dept:desc"]);
+  check("a direction on the head does not take the head out of the chain",
+        P.type("sort:score:desc->"), ["dept"]);
+  check("and the empty chain is offered at the head alone, taking no companion",
+        [P.type("sort:"), P.type("sort:score->non")],
+        [["dept", "score", "*none*"], []]);
+  // Accepting keeps everything through the last arrow, the way a value keeps
+  // everything through the last bar: the chain grows and stays ONE token.
+  P.type("sort:score->de");
+  P.box.querySelectorAll(".tv-ac-item")[0].dispatchEvent(new Ev("click"));
+  check("accepting past an arrow appends a segment rather than replacing the token",
+        P.b().value.trim(), "sort:score->dept");
   check("`sortable' gates the OFFER; the token a reader may WRITE it never gated",
         (P.shown("sort:name:desc"), P.handle.getVisible().map((r) => r.id)),
         ["gil", "dot", "bell", "ada"]);
@@ -2369,15 +2398,32 @@ async function sortTokens() {
         ["dept:Eng", "dept:Engineering"]);
   check("position is the FIRST occurrence's, so precedence survives the collapse",
         (P.shown("sort:score sort:dept sort:score"), P.chipsOf()),
-        ["sort:score", "sort:dept"]);
+        ["sort:score->dept"]);
   check("and a sort token collapses like every other one",
         (P.shown("sort:score sort:score"), [P.chipsOf(), P.handle.getQuery()]),
         [["sort:score"], "sort:score"]);
 
-  // --- and a sort token collapses by its COLUMN, not by how it is spelled.
-  // The chain keeps a column's first spelling and drops the rest, so a second
-  // chip naming that column describes an order the rows are not in — which is
-  // the one thing the strip may not do.
+  // --- ONE ORDER, ONE CHIP. Every token that states an order folds into the
+  // chip already stating one, and what lands is the CANONICAL arrow form of the
+  // chain they name together — which is then what the URL carries and what the
+  // producer is asked. A second chip about the order could only describe one the
+  // rows are not in, which is the one thing the strip may not do.
+  check("typed repeats fold into one arrow-form chip",
+        (P.shown("sort:score sort:dept"), [P.chipsOf(), P.handle.getQuery()]),
+        [["sort:score->dept"], "sort:score->dept"]);
+  check("and the arrow form is the same query the tokens were",
+        [P.handle.getSort().map((k) => k.column),
+         (P.shown("sort:score->dept"), P.handle.getSort().map((k) => k.column))],
+        [["score", "dept"], ["score", "dept"]]);
+  check("a chain arriving whole is already what it folds to",
+        [P.chipsOf(), P.handle.getQuery()],
+        [["sort:score->dept"], "sort:score->dept"]);
+  check("the two spellings mix, and the fold does not care which was which",
+        (P.shown("sort:score->dept sort:name:desc"),
+         [P.chipsOf(), P.handle.getSort().map((k) => k.column)]),
+        [["sort:score->dept->name:desc"], ["score", "dept", "name"]]);
+  // First-wins dedup, and it spans the arrow: a column already chained keeps its
+  // place and its spelling whichever side of an arrow the twin falls on.
   check("two spellings of one ordering are one chip",
         (P.shown("sort:score sort:score:asc"), [P.chipsOf(), P.handle.getQuery()]),
         [["sort:score"], "sort:score"]);
@@ -2390,12 +2436,41 @@ async function sortTokens() {
   check("so the strip and the chain say ONE thing about the column",
         P.handle.getSort().map((k) => k.column + (k.ascending ? "▲" : "▼")),
         ["score▼"]);
+  check("a column named twice INSIDE one token dedups the same way",
+        (P.shown("sort:score:desc->score"), [P.chipsOf(), P.handle.getQuery()]),
+        [["sort:score:desc"], "sort:score:desc"]);
+  check("and across the boundary, whichever side the twin falls",
+        [(P.shown("sort:score->dept sort:score:desc"), P.chipsOf()),
+         (P.shown("sort:score sort:dept->score:desc"), P.chipsOf())],
+        [["sort:score->dept"], ["sort:score->dept"]]);
+  check("`:asc' is canonicalized away, an unspelled direction meaning it",
+        (P.shown("sort:score:asc->dept"), P.handle.getQuery()),
+        "sort:score->dept");
   check("a negated one stays as spelled — it is a refusal the reader typed",
         (P.shown("sort:score -sort:score"), P.chipsOf()),
         ["sort:score", "-sort:score"]);
-  check("and another column is another token",
-        (P.shown("sort:score sort:dept:desc"), P.chipsOf()),
-        ["sort:score", "sort:dept:desc"]);
+  // A token this renderer reads NO order from folds into nothing: it is its own
+  // chip as spelled, so the producer is asked the query the reader typed and can
+  // say what is wrong with it.
+  check("a refusal is its own chip beside the folded order",
+        (P.shown("sort:score sort:nope sort:dept"),
+         [P.chipsOf(), P.handle.getQuery()]),
+        [["sort:score->dept", "sort:nope"], "sort:score->dept sort:nope"]);
+  check("and a whole token of refusals leaves the order alone",
+        (P.shown("sort:score->nope->dept"), [P.chipsOf(), P.handle.getSort().map((k) => k.column)]),
+        [["sort:score->dept"], ["score", "dept"]]);
+  // `*none*' is the whole order or none of it. A companion that RESOLVES
+  // outranks it, so what the strip keeps is the companion — mid-chain included.
+  check("the empty chain folds away under a key that resolves",
+        (P.shown("sort:*none* sort:score"), [P.chipsOf(), P.handle.getQuery()]),
+        [["sort:score"], "sort:score"]);
+  check("and mid-chain it is the same token said another way",
+        (P.shown("sort:score->*none*->dept"), [P.chipsOf(), P.handle.getSort().map((k) => k.column)]),
+        [["sort:score->dept"], ["score", "dept"]]);
+  check("spelled alone, twice or on both sides of an arrow it is one empty chain",
+        [(P.shown("sort:*none* sort:*none*"), P.chipsOf()),
+         (P.shown("sort:*none*->*none*"), [P.chipsOf(), P.handle.getSort()])],
+        [["sort:*none*"], [["sort:*none*"], []]]);
 
   // --- the headers pay for what they wear
   {
@@ -6069,11 +6144,13 @@ async function smoke() {
     tt.pushCrumb({ label: "2026", query: "q2" });
     probe(tail, tt).commit("2026 sort:state sort:scheduled:desc");
     await sleep(50);
+    // Two crumbs and two live chips: the free text, and the ORDER as the one
+    // chip every sort token folds into.
     check("the strip is populated — crumbs, and the applied tokens with them",
           [tail.querySelectorAll(".tv-chip-muted").length,
            tail.querySelectorAll(".tv-chip[data-i]").length,
            sortMarks(tail)],
-          [2, 3, ["State▲¹", "Scheduled▼²"]]);
+          [2, 2, ["State▲¹", "Scheduled▼²"]]);
 
     /**
      * How much of the page's last row falls past the fold, in whole pixels:

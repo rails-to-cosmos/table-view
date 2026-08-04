@@ -6,6 +6,34 @@ the rails-to-cosmos ELPA archive publishes date-stamped snapshots.
 ## Unreleased
 
 ### Added
+- **A sort token spells a whole chain: `sort:title->priority:desc`
+  (SCHEMA.md, both halves of the wire).** Sugar, and ONE semantics — the
+  segments are read as exactly the tokens they compose, in the places
+  they are written, so `sort:a->b` and `sort:a sort:b` are the same query
+  and nothing downstream can tell them apart. Every rule the grammar had
+  reaches across an arrow unchanged: written order is precedence,
+  first-wins dedup spans the segments and the token boundaries alike, a
+  refusal is the segment's and the rest of the chain stands, `sort:COL->`
+  is a segment half typed and orders nothing, and `*none*` takes no
+  companion wherever in a chain it is written. The one exception is
+  NEGATION, which is written before the key and so covers every segment
+  of the token.
+  The CANONICAL form is that one token, with `:asc` unwritten. The
+  browser renderer now folds every sort token of an applied query into
+  one canonical chip AT THE CHIP DOOR: typing `sort:title sort:priority`
+  leaves the single chip `sort:title->priority`, promotion writes the
+  order as one token, and the arrow is what the URL carries and what the
+  producer is asked. A token the renderer reads no order from folds into
+  nothing — it stays its own chip as spelled, which is what leaves a
+  producer something to refuse. Since the chip IS the chain,
+  `stripLastToken()` gives up its last tie-breaker per press and takes
+  the chip off with the last key, so `DEL` still walks a promoted chain
+  back one column at a time.
+  Completion follows the same shape as an alternation's: a `->` re-opens
+  the domain, the prefix is what follows the last arrow, the columns
+  already chained are out of the offer, and accepting appends a segment
+  rather than replacing the token. The amber sort chip asks for
+  contextual ligatures, so a coding face draws the arrows.
 - **Sort chains are composed by PROMOTION (browser renderer).** Both
   renderers already ran a declared chain; only Emacs could build one, and
   it built it with a prefix argument — `C-u ^` appends a tie-breaker at

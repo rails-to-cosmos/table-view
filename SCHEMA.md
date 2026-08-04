@@ -142,7 +142,8 @@ renderer promotes the column at point to the head of the chain. A producer
 declares what a view *opens* as; what a reader builds on top of it is theirs.
 
 A chain a reader builds may travel back as the filter query's `sort:` tokens
-(below), which is how a renderer tells a producer what order to answer in. The
+(below) — one arrow-chained token in canonical form — which is how a renderer
+tells a producer what order to answer in. The
 declared `sort` is then what a query naming no sort key leaves standing: it
 opens the view and stays invisible until a reader diverges from it.
 
@@ -304,30 +305,53 @@ sort:deadline` is state, with deadline settling its ties, and the whole of the
 Sort object's rules above apply to the chain it names. A query naming any sort
 key **replaces** the view's declared `sort`; one naming none leaves it standing.
 
-A sort token names ONE column in ONE direction. A negation (`-sort:x`), an
+A token may spell a whole chain with `->`: `sort:title->priority:desc->deadline`
+is **sugar** for `sort:title sort:priority:desc sort:deadline` and parses to
+exactly the chain those tokens compose. One semantics — each segment is read as a
+sort token's whole value is, in the place it is written — so nothing downstream
+can tell the two spellings apart and every rule below reaches across an arrow
+unchanged. A **negation** is the exception, and only because it is written before
+the key: `-sort:a->b` refuses the whole token, every segment of it.
+
+The **canonical form** is one token, arrow-chained, with `:asc` unwritten (an
+unspelled direction already means it). Whatever a consumer is handed, that is
+what it hands back: the browser renderer folds every sort token of an applied
+query into one canonical chip at the moment the query is applied, so the strip
+shows one order, the URL carries one token, and the producer is asked in one
+spelling. Folding is safe for the reason repeating is: the fold asks what was
+asked. What a consumer must **not** fold away is a token it reads no order from —
+that is the reader's own text and the producer's chance to say what is wrong with
+it.
+
+A sort segment names ONE column in ONE direction. A negation (`-sort:x`), an
 alternation (`sort:a|b`), a column the view does not carry and a direction that
 is neither word are each an **error**: a producer refuses the query and says
 which token was wrong, and a renderer, having nobody to refuse to, drops the key
 — the token still narrows nothing, in either polarity, so a refused ordering
 never empties a table. `sort:` with nothing after it is the `key:` rule: it
-orders nothing and narrows nothing, and `sort:COL:` is the direction half typed,
-which ascends like an unspelled one.
+orders nothing and narrows nothing; `sort:COL:` is the direction half typed,
+which ascends like an unspelled one; and `sort:COL->` is a segment half typed,
+which is that same nothing, since it is the state a reader passes through on the
+way to the next column.
 
 A column named twice is **no error on either side**: the FIRST spelling stands
 and the later one is dropped. That is the chain's own rule — a chain never names
-a column twice — read over the tokens that spell one, so `sort:title:desc
-sort:title` is title descending and `sort:title sort:title:asc` is one ordering
-written twice. A consumer collapsing the twin therefore asks what it asked
-before, which is what makes the collapse safe in a chip strip or a URL.
+a column twice — read over the segments that spell one, wherever the token
+boundaries fall, so `sort:title:desc sort:title`, `sort:title:desc->title` and
+`sort:title->x sort:title:asc` all name what they named first. A consumer
+collapsing the twin therefore asks what it asked before, which is what makes the
+collapse safe in a chip strip or a URL.
 
 **`sort:*none*`** is the EMPTY chain. It **names** a sort key, so it **replaces**
 the declared `sort` the way any other sort token does — with nothing, leaving the
 rows in the order they arrived. It is what a reader has instead of a token to
 take off, the declared order being invisible until they diverge from it. It
 admits no companions: `sort:*none* sort:title` is an error a producer refuses,
-and a renderer drops the `*none*` and lets the companions stand. The producer is
-the stricter of the two, which is every other sort refusal's asymmetry, and it
-costs no rows either way — a sort token narrows nothing in any polarity.
+and a renderer drops the `*none*` and lets the companions stand. A segment is a
+companion like any other, so `sort:*none*->title` is that same pair written once
+and answered the same way on each side. The producer is the stricter of the two,
+which is every other sort refusal's asymmetry, and it costs no rows either way —
+a sort token narrows nothing in any polarity.
 
 Which columns a reader may sort by is `sortable`'s, and it gates the reader's
 gesture alone: a query naming a column that opts out opens as written, the way a
@@ -370,7 +394,11 @@ bare word suggests matching column keys (completing to `key:`); after
 distinct cell values — plus the metas that key answers, `*empty*` among them.
 After `sort:`, the columns a reader may order by — `sortable`'s list, since
 completing is the reader's gesture — each offered again with its other direction
-once named in full, and `*none*` beside them, which no column gates.
+once named in full, and `*none*` beside them, which no column gates. A `->`
+**re-opens** that domain the way a `|` re-opens a value's: the prefix is what
+follows the last arrow, the columns already chained are out of the offer (a chain
+never names one twice), and `*none*` is offered at the head of a token alone,
+having no companions to be offered beside.
 A renderer may match a meta through its stars (`arch` reaching `*archive*`) and
 a decorated value through its brackets (`a` reaching `[#A]`), which is
 completion alone: what commits and what a query means keep the notation. A `|`

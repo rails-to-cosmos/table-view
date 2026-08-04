@@ -339,9 +339,9 @@ hands the query to the producer, and whatever `setRows` delivers is what shows.
 | `pageInfo()`       | `{ page, pages, from, to, total }` over the filtered set       |
 | `openFilter()`     | summon the filter — raises the palette, or focuses the resident box |
 | `closeFilter()`    | dismiss it and give the keyboard back to the table            |
-| `stripLastToken()` | drop the typed text, else the last chip, and reapply; false if nothing was left |
+| `stripLastToken()` | drop the typed text, else the last chip — a sort chain gives up its last key per press — and reapply; false if nothing was left |
 | `sortBy(col, asc?)` | sort on that column key, ascending unless `asc` is `false`, replacing the chain; false if no column carries the key |
-| `sortPromote(col)` | `^`: put that column at the **head** of the sort chain ascending, flipping it where it already leads, and write the chain into the query as `sort:` tokens; false if it is not `sortable` |
+| `sortPromote(col)` | `^`: put that column at the **head** of the sort chain ascending, flipping it where it already leads, and write the chain into the query as one `sort:a->b` token; false if it is not `sortable` |
 | `getSort()` / `setSort(chain)` | read the chain in force, highest priority first; replace it (an empty one clears the sort) |
 | `pushCrumb(c)`     | leave a `{label, query}` crumb behind; returns how deep the trail is now |
 | `popCrumb()`       | take the last crumb off and hand it back — `{label, query}`, or `null` on an empty trail. It applies nothing |
@@ -386,12 +386,22 @@ key in full ink and the tie-breakers muted — and the hint line spells it in
 words.
 
 **Promotion writes the query.** The new chain goes into the applied filter query
-as `sort:` tokens (`sort:state`, `sort:deadline:desc` — SCHEMA.md, Filter
-query), which is delivered like any other query change. So the order is one of
-the query's own terms: it shows as chips, `stripLastToken()` takes a key off it,
-a consumer that writes the query into a URL has written the order too, and a
-producer filtering server-side is told what order to answer in. Nothing keeps a
-second copy of it.
+as ONE arrow-chained `sort:` token (`sort:state->deadline:desc` — SCHEMA.md,
+Filter query), which is delivered like any other query change. So the order is
+one of the query's own terms: it shows as a chip, `stripLastToken()` takes a key
+off it, a consumer that writes the query into a URL has written the order too,
+and a producer filtering server-side is told what order to answer in. Nothing
+keeps a second copy of it.
+
+**One order, one chip.** Every sort token of an applied query folds into that
+same canonical form at the chip door, so typing `sort:title sort:priority` leaves
+one chip reading `sort:title->priority` and the arrow is what the URL carries.
+Folding is safe for the reason repeating is — a repeated sort key is the position
+it already holds — and first-wins dedup spans the segments and the token
+boundaries alike. A token the renderer reads no order from is left alone as its
+own chip: it is the reader's text, and the producer's chance to say what is wrong
+with it. Since the chip IS the chain, `stripLastToken()` gives up its last
+tie-breaker per press and takes the chip off with the last key.
 
 What a promotion composes onto is the chain **in force**, declared keys and all,
 so only the promoted key ever moves — the first press is where a declared chain
@@ -865,7 +875,8 @@ the two washes sit the same distance from the page, so ordering and narrowing
 are told apart by hue rather than by weight. Only a token the renderer accepts
 as a sort key wears it; a negation, an unknown column or a direction that is
 neither word is dropped from the chain, orders nothing and keeps the ordinary
-chip. A crumb takes neither identity and stays muted.
+chip. A crumb takes neither identity and stays muted. The amber chip asks for
+contextual ligatures, so a coding face draws its `->` as the arrow it is.
 
 `initialQuery`, `getQuery()` and `stripLastToken()` behave exactly
 as they do elsewhere — the chips are the same state, only styled. The overlay
