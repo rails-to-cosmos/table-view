@@ -225,7 +225,8 @@ whitespace (`&` accepted as an alias); each token is:
 
 - `key:value` — a field predicate, **only when `key` is a column `key`** of
   the view (`=` accepted as an alias for `:`) **or `planned`** (below). `sort`
-  is reserved too, and is no predicate at all: it states the ORDER (below).
+  and `columns` are reserved too, and are no predicates at all: one states the
+  ORDER, the other the COLUMN SET (below).
   Otherwise the token is free text — org cell text like `:work:` or `=code=`
   never turns into a predicate by accident, and neither does an org TAG:
   `tag:course` is the one spelling of a tag facet, and the facet-then-search
@@ -352,6 +353,25 @@ companion like any other, so `sort:*none*->title` is that same pair written once
 and answered the same way on each side. The producer is the stricter of the two,
 which is every other sort refusal's asymmetry, and it costs no rows either way —
 a sort token narrows nothing in any polarity.
+
+**`columns`** is the sort key's twin for what the table SHOWS:
+`columns:State,Title,Tags` is a view of those three columns in that order, and
+it **narrows nothing** in either polarity. Names are matched
+**case-insensitively** against the view's column `key`s and `header`s alike, so
+`Tags` and `tag` name one column; a name the view carries none of is the
+**producer's custom column** — glance reads it out of the row's own property
+drawer (`columns:state,ORG_GLANCE_ID,Closed`, with `closed` the planning line's
+own timestamp) — so no name is an error for being unknown. Repeats compose in
+written order and a name named twice keeps its first place, the chain's own
+dedup one key over. A producer refuses a negation (`-columns:x`) and an
+alternation (`columns:a|b`), naming the token; a renderer, having nobody to
+refuse to, drops the key — the token still narrows nothing. `columns:` with
+nothing after it is the `key:` rule, and empty names between commas drop the
+way empty alternatives do. A query naming no columns token leaves the view's
+declared `columns` standing. Shaping the set is the **producer's**: a renderer
+draws whatever `columns` the answer declares, keeps the token out of free text,
+and may dress its chip (the browser renderer wears the link hue on a token
+naming at least one column).
 
 Which columns a reader may sort by is `sortable`'s, and it gates the reader's
 gesture alone: a query naming a column that opts out opens as written, the way a
