@@ -5,6 +5,13 @@ the rails-to-cosmos ELPA archive publishes date-stamped snapshots.
 
 ## Unreleased
 
+### Changed
+- **The stylesheet is one declaration per line.** The whole embedded CSS block
+  reads the way the palette blocks already did: a rule opens on its selector,
+  each declaration sits on its own line, and the closing brace has a line too.
+  Same rules, same order, same values — a re-layout, so nothing a host sees
+  moves.
+
 ### Added
 - **A sort token spells a whole chain: `sort:title->priority:desc`
   (SCHEMA.md, both halves of the wire).** Sugar, and ONE semantics — the
