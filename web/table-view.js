@@ -1402,12 +1402,20 @@
    mode, so it clears 4.5:1 in both themes (light 5.1, dark 11.5) while sitting
    quieter than a live chip's ink does on its own ground (19.9 and 15.4).
    Spelled with the row it lives in so it outranks the palette's own chip rule,
-   the one other place a chip's ground is set. */
+   the one other place a chip's ground is set.
+
+   AND IT IS STRUCK THROUGH, because a crumb is a query that is NO LONGER IN
+   FORCE: the mute alone says quiet, where the rule says the tokens under it
+   are not narrowing anything on screen. A drill -- glance's shell binds it to
+   the @ key -- leaves
+   the whole query it came from standing in the strip, and a reader has to be
+   able to tell it from the one that is applied at a glance. */
 .tv-chips .tv-chip-muted{
   color:var(--tv-muted);
   background:transparent;
   cursor:default;
   padding-right:8px;
+  text-decoration:line-through;
 }
 .tv-chip-x{
   font-style:normal;

@@ -13,6 +13,11 @@ the rails-to-cosmos ELPA archive publishes date-stamped snapshots.
   — under quotes without being read as something else.
 
 ### Changed
+- **A crumb chip is struck through.** The trail's chips are a query that is no
+  longer in force; muting alone said quiet, where the line says the tokens
+  under it are narrowing nothing on screen. A drill leaves the whole query it
+  came from standing in the strip, and it now reads apart from the applied one
+  at a glance.
 - **The stylesheet is one declaration per line.** The whole embedded CSS block
   reads the way the palette blocks already did: a rule opens on its selector,
   each declaration sits on its own line, and the closing brace has a line too.
