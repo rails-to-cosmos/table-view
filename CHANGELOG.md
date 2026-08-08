@@ -5,6 +5,13 @@ the rails-to-cosmos ELPA archive publishes date-stamped snapshots.
 
 ## Unreleased
 
+### Added
+- **`substring:VALUE` is free text under a key** (SCHEMA.md, Filter query), so
+  the grammar is `key:value` throughout and a bare word is that spelling with
+  the key elided. ONE matcher answers both spellings. What the key buys is a
+  value that may spell a separator's neighbour — a leading `-`, a colon, a bar
+  — under quotes without being read as something else.
+
 ### Changed
 - **The stylesheet is one declaration per line.** The whole embedded CSS block
   reads the way the palette blocks already did: a rule opens on its selector,

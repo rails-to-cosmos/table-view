@@ -224,9 +224,9 @@ A shared micro-syntax for the filter box, so producers filtering server-side
 whitespace (`&` accepted as an alias); each token is:
 
 - `key:value` — a field predicate, **only when `key` is a column `key`** of
-  the view (`=` accepted as an alias for `:`) **or `planned`** (below). `sort`
-  and `columns` are reserved too, and are no predicates at all: one states the
-  ORDER, the other the COLUMN SET (below).
+  the view (`=` accepted as an alias for `:`) **or `planned`** or `substring`
+  (below). `sort` and `columns` are reserved too, and are no predicates at
+  all: one states the ORDER, the other the COLUMN SET (below).
   Otherwise the token is free text — org cell text like `:work:` or `=code=`
   never turns into a predicate by accident, and neither does an org TAG:
   `tag:course` is the one spelling of a tag facet, and the facet-then-search
@@ -240,6 +240,12 @@ whitespace (`&` accepted as an alias); each token is:
 - `"quoted text"` — free text containing spaces.
 - `-token` — negation of either form.
 - anything else — free text, case-insensitive substring over the row's cells.
+  `substring:VALUE` is that same test under a key, so the grammar is
+  `key:value` throughout and a bare word is that spelling with the key
+  elided. ONE matcher answers both. What the key buys is a value that may
+  spell a separator's neighbour — a leading `-`, a colon, a bar — under
+  quotes without being read as something else. A column keyed `substring`
+  shadows it, the way one keyed `planned` shadows that.
 
 **Combination is one rule: tokens AND, alternatives OR.** Every token narrows,
 whether or not another token names its key. `state:TODO state:DONE` is a row in
