@@ -3873,9 +3873,25 @@
      * @param {string} tok
      */
     function chipText(tok) {
-      if (!chipLabel) return tok;
-      const alias = chipLabel(tok);
-      return typeof alias === "string" && alias ? alias : tok;
+      if (chipLabel) {
+        const alias = chipLabel(tok);
+        if (typeof alias === "string" && alias) return alias;
+      }
+      return spelled(tok);
+    }
+
+    /**
+     * TOK in the grammar's own `key:value' spelling. A bare word is free text,
+     * which is `substring:' with the key elided (SCHEMA.md, Filter query), so
+     * the chip spells the key out and the strip reads `key:value' throughout.
+     * The QUERY keeps what the reader typed — this is the label alone.
+     * @param {string} tok  @returns {string}
+     */
+    function spelled(tok) {
+      const t = asToken(tok);
+      if (!t || t.key !== null || !t.value) return tok;
+      const value = /[\s&"]/.test(t.value) ? `"${t.value}"` : t.value;
+      return `${t.negated ? "-" : ""}${SUBSTRING_KEY}:${value}`;
     }
 
     /**
@@ -4464,8 +4480,12 @@
      * @param {string} text
      */
     function literalOffer(text) {
-      return { text: /[\s:]/.test(text) ? `"${text}"` : text,
-               show: `"${text}"`, aside: "text search",
+      // SPELLED, key and all: free text IS `substring:' with the key elided,
+      // so committing it writes the grammar's own `key:value' and the chip
+      // that comes back reads the same way (SCHEMA.md, Filter query).
+      const value = /[\s:&"]/.test(text) ? `"${text}"` : text;
+      const tok = `${SUBSTRING_KEY}:${value}`;
+      return { text: tok, show: tok, aside: "text search",
                count: -1, full: true, dim: false };
     }
 

@@ -242,7 +242,10 @@ whitespace (`&` accepted as an alias); each token is:
 - anything else — free text, case-insensitive substring over the row's cells.
   `substring:VALUE` is that same test under a key, so the grammar is
   `key:value` throughout and a bare word is that spelling with the key
-  elided. ONE matcher answers both. What the key buys is a value that may
+  elided. ONE matcher answers both. It is the CANONICAL spelling: a chip
+  labels a keyless token `substring:VALUE`, and the completion's text-search
+  row inserts it, so what a reader commits and what the strip reads back are
+  the grammar's own form. What the key buys is a value that may
   spell a separator's neighbour — a leading `-`, a colon, a bar — under
   quotes without being read as something else. A column keyed `substring`
   shadows it, the way one keyed `planned` shadows that.

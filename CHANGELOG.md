@@ -6,6 +6,11 @@ the rails-to-cosmos ELPA archive publishes date-stamped snapshots.
 ## Unreleased
 
 ### Added
+- **`substring:` is the canonical spelling on screen.** A chip over a bare word
+  now reads `substring:asdf`, and the completion's text-search row inserts that
+  rather than the bare word — so committing a search writes the grammar's own
+  `key:value` and the strip reads one way throughout. The query still accepts a
+  bare word; only what is shown and what the completion commits changed.
 - **`substring:VALUE` is free text under a key** (SCHEMA.md, Filter query), so
   the grammar is `key:value` throughout and a bare word is that spelling with
   the key elided. ONE matcher answers both spellings. What the key buys is a
