@@ -453,6 +453,9 @@ once named in full, and `*none*` beside them, which no column gates. A `->`
 follows the last arrow, the columns already chained are out of the offer (a chain
 never names one twice), and `*none*` is offered at the head of a token alone,
 having no companions to be offered beside.
+A bare word that opens a view's NAME offers `view:NAME` **first**, ahead of
+every value and key: a view is a question already composed, so a reader typing
+its name wants the view rather than the rows that happen to hold the word.
 After `view:`, the producer's `views` by name, each with the query it holds now
 as the aside, so a reader picks by what a view DOES rather than by what it is
 called. Every offer finishes the token: a view is one name. **The pick is the
