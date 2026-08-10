@@ -29,7 +29,20 @@ The whole view. All fields optional except `columns`.
 | `columns` | array<Column>     | —              | column order and definitions             |
 | `actions` | array<Action>     | `[]`           | commands the view can dispatch           |
 | `sort`    | Sort \| array<Sort> | unsorted     | initial sort, one key or a chain         |
+| `views`   | array<SavedView>  | `[]`           | saved views `view:` completes from       |
 | `rows`    | array<Row>        | `[]`           | initial rows (may arrive later, streamed)|
+
+## SavedView object
+
+A view the producer has named. The renderer offers these as the vocabulary of
+the `view:` filter key and does nothing else with them — **applying one is the
+producer's**, since only it knows what a name means. A producer that grows a
+view is offered with no renderer change.
+
+| field   | type   | default | meaning                                        |
+|---------|--------|---------|------------------------------------------------|
+| `name`  | string | —       | the name `view:NAME` spells                    |
+| `query` | string | —       | the query it holds now, shown as the completion's aside |
 
 ## Column object
 
@@ -382,6 +395,18 @@ draws whatever `columns` the answer declares, keeps the token out of free text,
 and may dress its chip (the browser renderer wears the link hue on a token
 naming at least one column).
 
+`view:NAME` is the third view token, and the one that names a whole view rather
+than shaping one. Its vocabulary is the producer's `views`, and so is its
+meaning: **applying a view is the producer's**, since only it knows what a name
+holds. A renderer keeps the token out of free text, offers the names, may dress
+its chip (the browser renderer wears the accent on a token naming a view the
+producer declared), and — like every view token — **narrows nothing** with it. A
+name the producer did not declare is no error: it is written, chipped plainly,
+and narrows nothing either. A producer that expands the token before answering
+should say so; glance's shell expands it before the fetch, so the token never
+survives into the applied query and the chips a reader ends up with are the
+view's own.
+
 Which columns a reader may sort by is `sortable`'s, and it gates the reader's
 gesture alone: a query naming a column that opts out opens as written, the way a
 declared `sort` does.
@@ -428,6 +453,12 @@ once named in full, and `*none*` beside them, which no column gates. A `->`
 follows the last arrow, the columns already chained are out of the offer (a chain
 never names one twice), and `*none*` is offered at the head of a token alone,
 having no companions to be offered beside.
+After `view:`, the producer's `views` by name, each with the query it holds now
+as the aside, so a reader picks by what a view DOES rather than by what it is
+called. Every offer finishes the token: a view is one name. **The pick is the
+commit** — a view is the whole answer, replacing the query rather than narrowing
+it, so accepting one applies it and hands the table back where every other stage
+leaves the box open for the next token.
 A renderer may match a meta through its stars (`arch` reaching `*archive*`) and
 a decorated value through its brackets (`a` reaching `[#A]`), which is
 completion alone: what commits and what a query means keep the notation. A `|`
