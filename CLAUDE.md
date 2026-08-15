@@ -28,6 +28,16 @@ Never use the "negation-reveal" pattern ("not X, but Y" / "it's not just A,
 it's B" / "this isn't about A, it's about B") in any generated text — docs,
 comments, commit messages, prose. State the point directly.
 
+In `web/table-view.js`: a JSDoc block is its function's FACTS and its tags, two
+or three lines of description at most. Rendering behaviour, geometry, the filter
+grammar and the suggestion ordering are documented in `README.md` under
+`## Browser renderer` and in `docs/web-renderer.org` — a comment restating them
+is a second copy, and two copies drift. Cross-reference instead, the way
+`// column geometry (COL_MAX, TITLE_MIN): docs/web-renderer.org` already does.
+Type tags (`@param`, `@returns`, `@type`, `@typedef`) are read by
+`make web-check` and are never shortened. Stacking two doc blocks before one
+function hides the first from the checker: one block, attached.
+
 ## Build / test
 
 - `make test` — run the ERT suite in batch mode.
