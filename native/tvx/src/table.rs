@@ -1,6 +1,4 @@
-//! The in-memory table: columnar store with tombstones, a view (filter + sort)
-//! cache, patch application, and post-patch delta computation for a subscribed
-//! window.
+//! In-memory table: columnar store with tombstones, a view (filter+sort) cache, patch, and delta.
 
 use crate::column::{gen_col, Col, StrCol};
 use crate::delta::{diff_ops, RowSnap, Sub};
@@ -74,9 +72,6 @@ impl Table {
     }
 
     /// Filtered+sorted row indices for (SORT, FILTER); memoized per rev (LRU 4).
-    /// Each SORT key is (column, ascending, nulls_first); the cache key uses
-    /// `{sort:?}` Debug, which includes the nulls_first bool, so runs that
-    /// differ only in null placement are cached separately.
     pub fn view(&mut self, sort: &[(String, bool, bool)], filter: &str) -> Result<Vec<u32>, String> {
         let cache_key = format!("{}|{sort:?}|{filter}", self.rev);
         if let Some((_, v)) = self.cache.iter().find(|(k, _)| *k == cache_key) {
@@ -88,16 +83,8 @@ impl Table {
         self.ensure_ranks();
         let mut v = self.filter_rows(filter);
         if !sort_ci.is_empty() {
-            // Stable sort_by + a final RowIx tiebreak => deterministic, load-order
-            // stable (ties keep insertion order, matching the elisp stable sort);
-            // desc is a reversed compare per key, not a whole-vector reverse.
-            // Null (empty-string) placement is ABSOLUTE per key: nulls_first
-            // floats empties to the top and nulls_last (default) sinks them to
-            // the bottom, independent of that key's asc/desc.  A tie on this key
-            // (both null, or equal non-null keys) falls through to the next key.
-            // `empty_code` is the code of "" precomputed once per key (None for a
-            // Col::Int, or a Col::Str with no empty cell), so the per-row null
-            // test is a u32 compare.
+            // Stable sort + RowIx tiebreak: ties keep insertion order (elisp parity).
+            // Null placement is absolute per key, independent of that key's asc/desc.
             let keys: Vec<(&Col, bool, bool, Option<u32>)> = sort_ci.iter()
                 .map(|&(ci, asc, nf)| (&self.cols[ci], asc, nf, self.cols[ci].empty_code()))
                 .collect();
@@ -120,10 +107,8 @@ impl Table {
         Ok(v)
     }
 
-    /// Live (non-tombstoned) rows matching FILTER (empty = all).  Substring is
-    /// tested against string columns' dictionary uniques; numeric columns are
-    /// consulted only for a numeric-looking needle (a non-numeric needle cannot
-    /// match a decimal string), matching the elisp joined-cell filter.
+    /// Live rows matching FILTER (empty = all); numeric columns match only a
+    /// numeric needle, mirroring the elisp joined-cell filter.
     pub fn filter_rows(&self, filter: &str) -> Vec<u32> {
         let n = self.ids.len();
         let alive = &self.alive;
@@ -154,7 +139,6 @@ impl Table {
     }
 
     /// The RowSnap window `[offset, offset+limit)` of VIEW (empty past the end).
-    /// VIEW is the filtered+sorted row indices, so `view.len()` is `matched`.
     pub fn window_snaps(&self, view: &[u32], offset: usize, limit: usize) -> Vec<RowSnap> {
         let end = (offset + limit).min(view.len());
         if offset < view.len() {
@@ -164,8 +148,7 @@ impl Table {
         }
     }
 
-    /// Apply upserts (update by id, else append) and deletes (tombstone); bump
-    /// rev and drop the view cache.
+    /// Apply upserts (update by id, else append) and deletes (tombstone); bump rev, drop cache.
     pub fn patch(&mut self, upserts: &[Value], deletes: &[Value]) {
         let keys = self.keys.clone();
         for row in upserts {
@@ -197,9 +180,7 @@ impl Table {
         self.cache.clear();
     }
 
-    /// Recompute the subscribed window against what the client last saw and
-    /// return a `$/delta` payload, or None when the window is unaffected (the
-    /// client stays consistent at its current rev).
+    /// Recompute the subscribed window; return a `$/delta` payload, or None when the window is unaffected.
     pub fn delta_after_patch(&mut self) -> Option<Value> {
         let sub = self.sub.as_ref()?;
         let (offset, limit) = (sub.offset, sub.limit);
@@ -215,10 +196,8 @@ impl Table {
         let rev = self.rev;
         let sub = self.sub.as_mut().unwrap();
         sub.last = new;
-        // Nothing visible changed *and* the counts are unchanged: the client
-        // stays consistent, no delta needed.  But a patch outside the window can
-        // move matched/total with no ops -- still push (empty ops) so the counts
-        // refresh rather than going stale until a window-affecting patch.
+        // Unchanged window AND unchanged counts: no delta.  But a patch outside
+        // the window still pushes empty ops so the counts refresh.
         if ops.is_empty() && matched == last_matched && total == last_total {
             return None;
         }

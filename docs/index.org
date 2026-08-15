@@ -26,12 +26,16 @@ Design records for features already in the package.
   and the =(COL . DIRECTION-CODE)= encoding.  Shipped in =table-view.el=; the
   browser renderer spells the same idea as the =direction= strings
   =asc-nulls-first= / =desc-nulls-first= (see [[file:../SCHEMA.md][SCHEMA.md]]).
-- [[file:proposals/native-backend.org][Native data backend (tvx)]] :: a Rust background process as a fast
+- [[file:proposals/native-accelerator.org][Native accelerator (tvx)]] :: a Rust background process as a fast
   local =page-fn= over =jsonrpc.el= for 100k–1M rows.  Shipped as
   =table-view-native.el= plus the =tvx= crate in =native/tvx=; the document
   is kept under =proposals/= as the design record.  Its ERT suite
   (=table-view-native-test.el=) skips the binary-dependent tests where =tvx=
   has not been built.
+- [[file:web-renderer.org][Web renderer (table-view.js) — design rationale]] :: the "why" behind the
+  browser renderer's palette/contrast values, column geometry, filter grammar,
+  suggestion tiers, and interaction hazards.  The source points here rather
+  than carrying the essays.
 
 * Bugs
 
@@ -66,6 +70,7 @@ docs/
     incremental-width-maintenance.org ┘
     select-all-matching.org          pagination v2
     nulls-ordering.org               shipped: nulls-first/last sort
+  web-renderer.org                shipped: table-view.js design rationale
   reviews/
     incremental-render.org           review of the shipped incremental render
 #+end_example

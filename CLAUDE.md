@@ -1,6 +1,6 @@
 # table-view
 
-Declarative, backend-agnostic table view for Emacs (Emacs Lisp package).
+Declarative, producer-agnostic table view for Emacs (Emacs Lisp package).
 
 ## Documentation convention
 
@@ -67,7 +67,7 @@ Core / native split:
   on both sides. `table-view--sort-key-spec` is the single source of sort
   resolution; `--comparator` derives from it.
 
-Wire protocol / backend:
+Wire protocol / accelerator:
 - Sort wire is back-compatible: a 2-element `[col asc]` entry means nulls-last;
   the 3rd `"first"`/`"last"` nulls element is optional.
 - Server owns gen/rev; the client applies a `$/delta` only when `baseRev` AND

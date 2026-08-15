@@ -1,14 +1,9 @@
-//! The live layer's value types: a client's subscribed window (`Sub`), a row
-//! snapshot for diffing (`RowSnap`), and the prefix/suffix diff that turns two
-//! window states into minimal delete/insert ops.
+//! Live-layer value types: subscribed window (`Sub`), row snapshot (`RowSnap`), and the prefix/suffix diff.
 
 use serde_json::{json, Value};
 
-/// One window a client is watching, plus the rows last pushed to it and the
-/// rev that client is currently consistent at (for `baseRev` self-healing).
-/// `gen` identifies this subscription: it is bumped on every (re)subscribe, so
-/// a delta for a newer window is rejected by a client still showing an older
-/// one even when the revs happen to match.
+/// A client's subscribed window and its last-pushed rows; `gen` bumps on every
+/// (re)subscribe so a client showing a stale window rejects the delta.
 pub struct Sub {
     pub offset: usize,
     pub limit: usize,
@@ -27,11 +22,8 @@ pub struct RowSnap {
     pub cells: Value,
 }
 
-/// Prefix/suffix diff of two row windows into delete/insert ops, mirroring the
-/// elisp incremental renderer.  Deletes descend and inserts ascend, so applying
-/// them left to right on the client is unambiguous.  A row whose content changed
-/// falls into the rewritten middle (delete + insert); the client's id->cons pool
-/// still recovers `eq` for an unchanged row that merely moved.
+/// Prefix/suffix diff of two row windows into ops: deletes descend, inserts
+/// ascend, applied left-to-right (mirrors the elisp incremental renderer).
 pub fn diff_ops(old: &[RowSnap], new: &[RowSnap]) -> Vec<Value> {
     let (no, nn) = (old.len(), new.len());
     let mut p = 0;

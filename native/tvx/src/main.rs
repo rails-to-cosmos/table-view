@@ -1,11 +1,4 @@
-//! tvx — table-view native backend.
-//! JSON-RPC 2.0 over stdio (Content-Length framed, like jsonrpc.el / LSP).
-//! Requests: initialize, open, window, close, count, aggregate, patch.
-//! Server notification: $/delta (a subscribed window changed after a patch).
-//!
-//! Modules: `wire` (framing + json helpers), `column` (dict-encoded columns),
-//! `delta` (subscription + prefix/suffix diff), `table` (the store + views +
-//! patch).  See docs/proposals/native-backend.org.
+//! tvx — table-view native accelerator (JSON-RPC 2.0 over stdio); see docs/proposals/native-accelerator.org.
 
 mod column;
 mod delta;

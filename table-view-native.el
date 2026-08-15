@@ -1,4 +1,4 @@
-;;; table-view-native.el --- Native (Rust) data backend for table-view -*- lexical-binding: t; -*-
+;;; table-view-native.el --- Native (Rust) accelerator for table-view -*- lexical-binding: t; -*-
 
 ;; Author: Dmitry Akatov <dmitry.akatov@protonmail.com>
 ;; URL: https://github.com/rails-to-cosmos/table-view
@@ -33,14 +33,14 @@ Must equal the binary's `open' reply :protocol and the N in
 ;;; Customization
 
 (defgroup table-view-native nil
-  "Native backend for `table-view'." :group 'table-view :prefix "table-view-native-")
+  "Native accelerator for `table-view'." :group 'table-view :prefix "table-view-native-")
 
 (defcustom table-view-native-enabled t
-  "When nil, always use the pure-elisp path (no native backend)." :type 'boolean)
+  "When nil, always use the pure-elisp path (no native accelerator)." :type 'boolean)
 (defcustom table-view-native-program nil
   "Explicit path to the `tvx' binary, or nil to auto-resolve." :type '(choice (const nil) file))
 (defcustom table-view-native-cargo-program "cargo"
-  "Cargo executable used to build the backend." :type 'string)
+  "Cargo executable used to build the accelerator." :type 'string)
 (defcustom table-view-native-auto-compile 'prompt
   "Whether first native use may build the binary: prompt, t (silent), nil (never)."
   :type '(choice (const prompt) (const t) (const nil)))
@@ -78,7 +78,8 @@ Must equal the binary's `open' reply :protocol and the N in
           prog)))))
 
 (defun table-view-native--resolve ()
-  "Return a validated backend path, or nil.  Order: custom, cache, PATH, cargo bin."
+  "Return a validated accelerator path, or nil.
+Order: custom, cache, PATH, cargo bin."
   (seq-some #'table-view-native--validate
             (list (and table-view-native-program (executable-find table-view-native-program))
                   (let ((c (table-view-native--cached-binary))) (and (file-executable-p c) c))
@@ -94,14 +95,14 @@ Must equal the binary's `open' reply :protocol and the N in
 (defun table-view-native--warn-text (reason detail)
   (concat
    (pcase reason
-     ('no-cargo "native backend unavailable: cargo not found.  Install Rust (https://rustup.rs), then M-x table-view-native-compile.")
-     ('no-binary "native backend not built.  M-x table-view-native-compile to enable it.")
-     ('building "building the native backend; using the pure-elisp path until it finishes.")
+     ('no-cargo "native accelerator unavailable: cargo not found.  Install Rust (https://rustup.rs), then M-x table-view-native-compile.")
+     ('no-binary "native accelerator not built.  M-x table-view-native-compile to enable it.")
+     ('building "building the native accelerator; using the pure-elisp path until it finishes.")
      ('build-failed "native build failed -- see *tvx-compile*.  Using the pure-elisp path.")
      ('version-mismatch (format "native binary speaks protocol %s, need %d.  Rebuild with M-x table-view-native-compile."
                                 detail table-view-native-protocol))
-     ('unsupported-source "the native backend is required for this data source.")
-     ('recommend-build (format "this %s-row table would be much faster with the native backend.  M-x table-view-native-compile to build it (needs cargo)." detail))
+     ('unsupported-source "the native accelerator is required for this data source.")
+     ('recommend-build (format "this %s-row table would be much faster with the native accelerator.  M-x table-view-native-compile to build it (needs cargo)." detail))
      (_ "using the pure-elisp path (slow past ~20k rows)."))
    "  Silence: (setq table-view-native-warn nil)."))
 
@@ -124,7 +125,7 @@ Must equal the binary's `open' reply :protocol and the N in
   "Callbacks awaiting the in-progress build; each is called with the path or nil.")
 
 (defun table-view-native-compile (&optional force callback)
-  "Build the native backend with cargo and cache the binary.
+  "Build the native accelerator with cargo and cache the binary.
 With FORCE (interactively, or non-nil), rebuild even when a valid binary
 exists.  CALLBACK, if given, runs with the resulting path (or nil) when the
 build finishes; callbacks queued while a build is already running all fire."
@@ -166,11 +167,11 @@ build finishes; callbacks queued while a build is already running all fire."
                       (cbs (nreverse table-view-native--build-callbacks)))
                  (setq table-view-native--build-callbacks nil)
                  (dolist (cb cbs) (funcall cb result))))))
-          (message "Building the table-view native backend in *tvx-compile*...")
+          (message "Building the table-view native accelerator in *tvx-compile*...")
           nil))))))
 
 (defun table-view-native--ensure ()
-  "Return a validated backend path if ready, else nil.
+  "Return a validated accelerator path if ready, else nil.
 Does not prompt or build -- `table-view-native-display' owns the build
 decision; this is the best-effort resolver for the connection/respawn path."
   (and table-view-native-enabled (table-view-native--resolve)))
@@ -180,7 +181,7 @@ decision; this is the best-effort resolver for the connection/respawn path."
 (defvar table-view-native--connection nil "Shared jsonrpc connection, or nil.")
 (defvar table-view-native--handles (make-hash-table) "Handle -> buffer, for respawn.")
 
-(defvar-local table-view-native--source nil "This buffer's backend source plist.")
+(defvar-local table-view-native--source nil "This buffer's accelerator source plist.")
 (defvar-local table-view-native--conn-handle nil "Cons (CONNECTION . HANDLE) for this buffer.")
 (defvar-local table-view-native--rev 0 "Server rev this buffer is consistent at.")
 (defvar-local table-view-native--gen 0 "Subscription generation this buffer is bound to.")
@@ -194,7 +195,7 @@ Idempotent; safe to call for an already-dead connection."
     (remhash handle table-view-native--handles)))
 
 (defun table-view-native--on-kill ()
-  "Close this buffer's backend handle when the buffer is killed."
+  "Close this buffer's accelerator handle when the buffer is killed."
   (when table-view-native--conn-handle
     (table-view-native--close (car table-view-native--conn-handle)
                               (cdr table-view-native--conn-handle))))
@@ -252,7 +253,7 @@ re-subscribes and re-bases, so the view self-heals instead of corrupting."
                               collect (cons (intern (substring (symbol-name k) 1)) v)))))
 
 (defun table-view-native--row->wire (row)
-  "Convert a table-view ROW alist to the backend's (:id ID :cells PLIST) shape."
+  "Convert a table-view ROW alist to the accelerator's (:id ID :cells PLIST) shape."
   (list :id (alist-get 'id row)
         :cells (cl-loop for (k . v) in (alist-get 'cells row)
                         append (list (intern (concat ":" (symbol-name k))) v))))
@@ -268,7 +269,7 @@ re-subscribes and re-bases, so the view self-heals instead of corrupting."
 ;;; The page-fn closure
 
 (defun table-view-native--columns (spec)
-  "Backend column schema from SPEC.
+  "Accelerator column schema from SPEC.
 A vector of (:key K :type T); `value-fn' columns are excluded (Emacs-side only)."
   (vconcat
    (delq nil
@@ -291,7 +292,7 @@ transparently, after a respawn re-opens the source on a fresh connection."
                       :protocol table-view-native-protocol)))
          (handle (plist-get open :handle)))
     ;; Drop the previous handle (dead after a respawn) so its registry entry and
-    ;; backend table do not leak.
+    ;; accelerator table do not leak.
     (when table-view-native--conn-handle
       (table-view-native--close (car table-view-native--conn-handle)
                                 (cdr table-view-native--conn-handle)))
@@ -302,7 +303,7 @@ transparently, after a respawn re-opens the source on a fresh connection."
 
 (defun table-view-native--live-handle (buf conn conn0 handle0)
   "The handle for BUF valid on CONN, re-opening the source if CONN is new.
-This is the respawn seam: a crashed backend yields a fresh CONN, and the
+This is the respawn seam: a crashed accelerator yields a fresh CONN, and the
 next window re-opens and re-subscribes without the caller noticing.  CONN0
 and HANDLE0 are the open captured at display time -- used for the very first
 fetch, which fires from `table-view-display' before the buffer-local handle
@@ -315,12 +316,12 @@ is stored."
 (defun table-view-native--page-fn (conn0 handle0)
   "Return a `page-fn' closure fetching subscribed windows for the table buffer.
 The closure resolves the live connection and handle at call time, so it
-survives a backend respawn; CONN0/HANDLE0 bootstrap the first fetch."
+survives a accelerator respawn; CONN0/HANDLE0 bootstrap the first fetch."
   (lambda (req)
     (let* ((buf (plist-get req :buffer))
            (conn (table-view-native--ensure-connection)))
       (if (not conn)
-          (table-view-page-error buf "native backend unavailable")
+          (table-view-page-error buf "native accelerator unavailable")
         (jsonrpc-async-request
          conn 'window
          (list :handle (table-view-native--live-handle buf conn conn0 handle0)
@@ -348,7 +349,7 @@ survives a backend respawn; CONN0/HANDLE0 bootstrap the first fetch."
          :error-fn
          (lambda (err) (table-view-page-error buf (plist-get err :message)))
          :timeout-fn
-         (lambda () (table-view-page-error buf "native backend timeout")))))))
+         (lambda () (table-view-page-error buf "native accelerator timeout")))))))
 
 ;;; Public entry
 
@@ -362,7 +363,7 @@ Other source kinds (e.g. \"gen\", \"file\") pass through untouched."
     source))
 
 (defun table-view-native--display-now (buffer source spec handlers)
-  "Open SOURCE on the backend and display SPEC in BUFFER (the native path)."
+  "Open SOURCE on the accelerator and display SPEC in BUFFER (the native path)."
   (if-let ((conn (table-view-native--ensure-connection)))
       (let* ((buf (get-buffer-create buffer))
              ;; Capture any prior handle before `table-view-mode' wipes the
@@ -395,7 +396,8 @@ Other source kinds (e.g. \"gen\", \"file\") pass through untouched."
     (table-view-native--display-fallback buffer source spec handlers)))
 
 (defun table-view-native--display-fallback (buffer source spec handlers)
-  "Render SOURCE in pure elisp: inline rows directly, other kinds need the backend."
+  "Render SOURCE in pure elisp: inline rows directly, other kinds need the
+accelerator."
   (if (equal (plist-get source :kind) "rows")
       (progn
         (table-view-display buffer spec handlers)
@@ -417,12 +419,12 @@ Other source kinds (e.g. \"gen\", \"file\") pass through untouched."
     (goto-char (point-min))))
 
 (defun table-view-native--display-deferred (buffer source spec handlers)
-  "Show a build placeholder in BUFFER, build the backend, then load it or show
+  "Show a build placeholder in BUFFER, build the accelerator, then load it or show
 the error.  The compile runs asynchronously (Emacs stays responsive) with live
 output in *tvx-compile*; the real table replaces the placeholder on success."
   (let ((buf (get-buffer-create buffer)))
     (table-view-native--render-status
-     buf spec "Building native backend (tvx)…"
+     buf spec "Building native accelerator (tvx)…"
      "Compiling with cargo — live output in *tvx-compile*.  The table loads when it finishes.")
     (display-buffer buf)
     (display-buffer (get-buffer-create "*tvx-compile*"))   ; watch progress/logs
@@ -433,23 +435,23 @@ output in *tvx-compile*; the real table replaces the placeholder on success."
         ((not (buffer-live-p buf)) nil)          ; user gave up and killed it
         (path (table-view-native--display-now buffer source spec handlers))
         (t (table-view-native--render-status
-            buf spec "Native backend build failed"
+            buf spec "Native accelerator build failed"
             "cargo build failed — see *tvx-compile*.  Fix it, then M-x table-view-native-compile and re-open.")))))
     buf))
 
 ;;;###autoload
 (defun table-view-native-display (buffer source spec &optional handlers)
   "Display SPEC in BUFFER backed by the native tvx over SOURCE.
-SOURCE is a plist naming the data the backend should own:
+SOURCE is a plist naming the data the accelerator should own:
   (:kind \"rows\" :rows ROWS)  inline table-view ((id . ID) (cells . ALIST)) rows;
-  (:kind \"gen\"  :n N)        N synthetic rows generated in the backend.
+  (:kind \"gen\"  :n N)        N synthetic rows generated in the accelerator.
 
-When the backend must first be built (`table-view-native-auto-compile'), the
+When the accelerator must first be built (`table-view-native-auto-compile'), the
 display is *deferred*: BUFFER shows a build placeholder, cargo runs
 asynchronously with live output in *tvx-compile*, and the table loads once the
-build succeeds (or shows the error if it fails).  When the backend is
+build succeeds (or shows the error if it fails).  When the accelerator is
 unavailable and no build happens, falls back to the pure-elisp path with a
-warning (a \"rows\" source still renders; others need the backend).  Returns
+warning (a \"rows\" source still renders; others need the accelerator).  Returns
 the buffer."
   (cond
    ;; Ready now: a live connection, or a validated binary to connect to.
@@ -469,7 +471,7 @@ the buffer."
         ('nil (table-view-native--fallback 'no-binary)
               (table-view-native--display-fallback buffer source spec handlers))
         ('t (table-view-native--display-deferred buffer source spec handlers))
-        (_ (if (y-or-n-p "Build the table-view native backend now (~30s)? ")
+        (_ (if (y-or-n-p "Build the table-view native accelerator now (~30s)? ")
                (table-view-native--display-deferred buffer source spec handlers)
              (table-view-native--fallback 'no-binary)
              (table-view-native--display-fallback buffer source spec handlers)))))))
@@ -479,7 +481,7 @@ the buffer."
 (defun table-view-native-patch (buffer &rest args)
   "Upsert and delete rows in native table-view BUFFER.
 ARGS is a plist: :upserts ROWS (table-view ((id . ID) (cells . ALIST)) rows)
-and :deletes IDS.  The backend applies them, bumps its rev, and pushes a
+and :deletes IDS.  The accelerator applies them, bumps its rev, and pushes a
 $/delta that updates the subscribed window."
   (let ((buf (get-buffer buffer)))
     (when (buffer-live-p buf)
@@ -512,7 +514,7 @@ OP is one of \"sum\", \"min\", \"max\", \"avg\", \"count\" (a string)."
    buffer 'aggregate (list :column column :op op :filter (or filter "")) :value))
 
 (defun table-view-native-reset ()
-  "Clear native fallback/crash state and rebuild the backend."
+  "Clear native fallback/crash state and rebuild the accelerator."
   (interactive)
   (clrhash table-view-native--warned)
   (when (and table-view-native--connection (jsonrpc-running-p table-view-native--connection))
@@ -523,11 +525,11 @@ OP is one of \"sum\", \"min\", \"max\", \"avg\", \"count\" (a string)."
 ;;; Auto-routing from `table-view-display'
 
 (defun table-view-native-available-p ()
-  "Return non-nil when the native backend is enabled and its binary resolves."
+  "Return non-nil when the native accelerator is enabled and its binary resolves."
   (and table-view-native-enabled (table-view-native--resolve) t))
 
 (defun table-view-native--auto-display (buffer spec handlers)
-  "Route a large inline-rows SPEC through the native backend when it is ready.
+  "Route a large inline-rows SPEC through the native accelerator when it is ready.
 Registered as `table-view--native-display-function'.  Returns non-nil when it
 displayed natively; nil (after recommending a build) to let the elisp path run."
   (if (table-view-native-available-p)
@@ -539,7 +541,7 @@ displayed natively; nil (after recommending a build) to let the elisp path run."
     nil))
 
 ;; Loading table-view-native opts every large `table-view-display' into the
-;; native backend (when its binary is available); the core stays standalone.
+;; native accelerator (when its binary is available); the core stays standalone.
 (setq table-view--native-display-function #'table-view-native--auto-display)
 
 (provide 'table-view-native)

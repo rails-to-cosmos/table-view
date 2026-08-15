@@ -1,19 +1,19 @@
-;;; native-live.el --- Native backend live updates: patch -> $/delta -*- lexical-binding: t; -*-
+;;; native-live.el --- Native accelerator live updates: patch -> $/delta -*- lexical-binding: t; -*-
 
 ;; Eval this buffer for a native-backed table that MUTATES LIVE.  A timer pushes
-;; row upserts and deletes into the backend with `table-view-native-patch'; the
-;; backend re-sorts, re-filters, diffs the visible window, and pushes back only
+;; row upserts and deletes into the accelerator with `table-view-native-patch'; the
+;; accelerator re-sorts, re-filters, diffs the visible window, and pushes back only
 ;; the minimal insert/delete ops as a $/delta notification -- so Emacs re-renders
 ;; just the changed lines, not the page.  This is the live layer over the paged
-;; backend (see examples/native.el for the base).
+;; accelerator (see examples/native.el for the base).
 ;;
 ;; The echo area updates via `table-view-native-count' and
 ;; `table-view-native-aggregate' -- both computed in Rust under the live filter.
 ;;
-;; First run offers to build the backend (cargo, ~30s): accept and the buffer
+;; First run offers to build the accelerator (cargo, ~30s): accept and the buffer
 ;; shows build progress, then loads.  Decline and this "rows" source still
 ;; renders in pure elisp (with a warning) -- but the live timer's patches then
-;; have no backend to reach.
+;; have no accelerator to reach.
 ;;
 ;;   ^ / /   sort / filter -- pushed down; live updates keep flowing under them
 ;;   g       refresh
@@ -39,13 +39,13 @@
   (native-live--stop)
   (setq native-live--tick 200)
   (let ((buf "*native-live*")
-        (spec '((title . "Live workers (native backend)")
+        (spec '((title . "Live workers (native accelerator)")
                 (columns . (((key . "name") (header . "Worker") (sortable . t))
                             ((key . "load") (header . "Load") (type . "number")
                              (align . "right") (sortable . t))))
                 (sort . ((column . "load") (ascending . nil)))       ; hottest first
                 (pagination . ((page-size . 20) (strategy . offset))))))
-    ;; Seed with 200 rows the backend then owns.
+    ;; Seed with 200 rows the accelerator then owns.
     (table-view-native-display buf (list :kind "rows" :rows (mapcar #'native-live--row (number-sequence 0 199)))
                                spec)
     (setq native-live--timer

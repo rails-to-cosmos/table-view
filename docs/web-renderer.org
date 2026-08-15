@@ -1,0 +1,181 @@
+#+TITLE: Web renderer (table-view.js) — design rationale
+#+OPTIONS: toc:2 num:nil
+
+[[file:index.org][← Wiki index]] · contract: [[file:../SCHEMA.md][SCHEMA.md]] · glossary: [[file:../CONTEXT.md][CONTEXT.md]]
+
+The reference browser [[file:../CONTEXT.md::*Renderer][renderer]] of the table-view contract. Dependency-free,
+one file, no build; the palette CSS lives in the =const css= template
+(off-limits to prose passes — CSS comments there are code). This page is the
+"why" behind the numbers and the non-obvious behavior, so the source carries
+one-line pointers rather than essays.
+
+* Palette & contrast
+
+Both palettes are the author's Emacs theme, mapped role for role (default
+faces for dark, =light-*= for light). Three values are lightness-only nudges
+where the theme's own colour missed a contrast floor, hue held: light muted
+=#7F8C8D→#667071= (3.5→5.1:1 on white), light accent =#4CB5F5→#31769F=
+(2.3→5.0:1). The full derivation is in the =css= block's own header comment.
+
+- Palette is a DEFAULT at zero specificity (=:where=), injected into =<head>=
+  at mount; a host themes it with any ordinary rule. The custom properties ARE
+  the theming API.
+- Identities spelled once as JS consts, palettes below carry only how much each
+  theme wants: FROST (applied filter), the pending-action red, the selected
+  column's amber, the link.
+- *Selected column = amber*: the one hue nothing else uses (frost 215, flag 6,
+  light cursor 120, mark ink 185/215). Pale on purpose — luminance .899, level
+  with the darkest ground a row wears — so washing a column shifts hue without
+  spending the tag ink's contrast. Every other candidate darkened a marked/
+  flagged row past 4.5:1 before becoming visible.
+- *Link = accent blue (hue 202) moved in LIGHTNESS ALONE*, in two weights (a
+  wash, unlike ink, can be one colour at two strengths), until it clears 4.5:1
+  on every ground a cell wears — the four row washes, the column band over each,
+  the crosshair — not the page alone. =LINK_LIGHT #30739B= (floor 4.69 on a
+  flagged row); =LINK_DARK #7CC9F8= (floor 4.63 on the crosshair, where the raw
+  accent was 3.70). Dark lands within .01 of =--tv-muted= on every ground.
+- Selected row takes the theme's highlight (light-golden =#FFD600=), overridable
+  like any token — one role, one hue wherever it appears.
+- Borders are the exception: hairlines carry no information, so contrast is not
+  a goal. Light =#E3E6EA= (1.25:1 on white), dark =#2a2d3d= over true black. 1px.
+- Badge ink: a producer's badge colour is the badge's identity, picked for one
+  (usually dark) ground. The renderer keeps the hue and moves lightness only,
+  until the label clears WCAG AA on its own pill.
+- Redraw on a system/theme scheme flip: badge ink is baked into the row HTML.
+
+* Column geometry & fill policy
+
+Measured against a 12,674-headline Org corpus.
+
+- =COL_MAX = 40= chars — ceiling a sized column may not pass. The widest
+  non-title cell in the corpus is exactly 40 (one compact timestamp range; tag
+  runs top out at 33), so the cap costs nothing and bounds the pathological
+  cell that would eat the title's share.
+- =TITLE_MIN= — the fill column's floor, taken by the table's =min-width= not
+  the column, so a too-narrow window SCROLLS rather than crushing the title. 40
+  chars shows 83% of the corpus's titles whole.
+- *A pill's ground is pixels, paid in pixels, +1px*: a badge column whose widest
+  cell IS the badge needs the pill's real px ground plus a hair — a width lands
+  on the engine's 1/64px grid and rounds DOWN, so an exact allowance is a
+  sixtieth short and Chromium draws an ellipsis beside an inline-block pill it
+  cannot cut. The +1 keeps the rule from firing on a cell that fits.
+- A tag cell needs no allowance: =:a:b:= and =a · b= are the same length, the
+  smaller type shrinks it further; the rendering never outgrows the raw text the
+  widths were measured from.
+- Header marks (sort arrows) are paid OUTSIDE the cells' measure under the fill
+  policy: =.tv-hn= (word) flexes to an ellipsis, =.tv-arrow= declines to, so a
+  squeezed header loses its word and keeps its mark.
+
+* Filter grammar
+
+Renderer-local implementation of [[file:../SCHEMA.md][SCHEMA.md]]'s micro-syntax, exported as
+=TableView.parseQuery= so a producer filtering server-side answers the same box
+the same way. Renderer-specific decisions:
+
+- *Metas are not sort positions*: a meta is filter vocabulary (no cell holds
+  one), so it is removed from a column's ordered domain; a =values= that was
+  metas alone falls through to the palette order.
+- =*empty*= is the uniform meta on every key (an empty cell), answered before
+  any column's own reading; the bare word =none= it was once spelled as is
+  ordinary text now.
+- =*active*= crosses the seam half-answered: SCHEMA puts the EMPTY cell in the
+  active group, and that half is answered locally; the keyword half drops out,
+  leaving an answer a producer's =onFilter= can only widen. =*inactive*= has no
+  empty-cell term and stays literal. A producer meta names a set only the
+  producer enumerates — matched literally here, finds nothing, expected to go
+  through =onFilter=.
+- Priority reads through org decoration both ways: =priority:A= and
+  =priority:[#A]= are one query (both spellings worked out once, so the fold is
+  a string compare, not a regex).
+- Multi-valued star: =tag:*book*= is the whole entry =book=, where =tag:boo= is
+  a substring of the delimited cell — decidable locally (the delimiter is in the
+  cell), so both sides answer it identically.
+- A keyless token and =substring:= are ONE test — the key is an elision, not a
+  second search; the cached joined string is the hot path.
+
+* Suggestion list
+
+Renderer-local autocomplete ([[file:../SCHEMA.md][SCHEMA.md]]); the producer is never asked. Row
+one is always the choice, so Enter costs no arrow. Free-text/tier ranking of a
+bare word:
+
+0. A SAVED VIEW the word opens (=view:NAME=) — a composed question outranks the
+   rows that merely hold the word.
+1. The value the word SPELLS in full where a column holds one (=book=→=tag:book=)
+   — the one offer needing no more typing; seeded before the caps below.
+2. The keys the word opens (view's columns + =planned=); exact, none dimmed, no
+   counts. A full-spelled key leads the ones it only opens.
+3. The values it merely opens, in the sort's order.
+4. The TITLES the text is inside, whole, quoted, with the row's title as aside;
+   prefix hits lead. On its own floor — one letter is inside most of the store.
+   Cased text read here for the five on offer, not per-title at index time.
+
+- THE LITERAL is spliced to its rank (leads, so caps can't crowd it out), and
+  yields only to an offer that SPELLS what was typed. Without it a plain search
+  is reachable only by quoting or Escape.
+- =sort:=/=columns:=/=view:= have their own domains (not a column's). =->=, =,=
+  and =|= RE-OPEN a domain on the LAST separator, so a chain/set/alternative is
+  completed one segment at a time and the committed token stays one token.
+- An empty =sort:= leads with THE ORDER IN FORCE (canonical arrow form, the
+  chip door's spelling), edited from there; offered as non-final so the list
+  stays open. =*none*= is the empty chain, gated by nothing, star-blind and dim.
+- =*empty*= rides the foot of every column's domain; producer metas stand apart
+  (dim, italic, no count — a per-value count beside a set-naming meta would
+  print a misleading fraction).
+- C-n/C-p move the list (Emacs minibuffer + vim insert-mode agree). Chrome-family
+  browsers take C-n for a new window before the page sees it, so arrows are the
+  fallback there; Firefox and system-webview deliver both. Outside an open list
+  these keys stay the browser's.
+
+* Interaction & rendering
+
+- *One frame loop* drives the window (from scroll position), the selection's
+  marks, and the viewport ease. Two schedulers would re-render the tbody twice a
+  frame and read =scrollTop= while the other wrote it.
+- *Scroller clamp — a refused step is an arrival*: =scrollHeight= is integer over
+  fractional content and =scrollTop= snaps to a device pixel, so a target can sit
+  a pixel past anything the scroller holds. Ending only on ARRIVAL runs a frame
+  loop against that clamp forever; a step that moves nothing is the end.
+- =geom= is re-read where a row is DRAWN, and again inside the tick that owns the
+  frame — else an ease parks short against a height an earlier frame read.
+- *Class derivation is single-source*: =[name, on]= pairs, one place. =rowHTML=
+  joins the names that are on; =stampSelection= toggles each pair (a no-op where
+  the DOM agrees). Spelled twice, a state drew one way when built and another
+  when re-stamped. Re-stamp (not rebuild) is what lets marks crossfade.
+- *Marks and flags are ONE mechanism, twice*: two id-keyed SETS (a mark survives
+  re-send/re-sort/filter/page — hence keyed by id, not row or index). Two sets
+  because two questions — a flag is a PENDING action, a mark a standing
+  selection — so a row carries both and neither clear touches the other.
+- Continuous vs paged: stepping off a page's end goes CONTINUOUS (the cursor
+  steps onto the always-there row) rather than turning the page (a jumped
+  scroller blinks under a held key); an explicit turn snaps back to crisp.
+- Touch: a long press is the row's default action (like RET / double-click);
+  drift or any scroll calls it off. A press on the checkbox stays the checkbox —
+  only the completing touchend is swallowed, so the 44px target is checkable.
+- Chip strip reads left→right: crumbs (where the reader came FROM, no =data-i=,
+  not removable) then live chips. The ORDER is in the strip as =sort:= tokens and
+  carried over the columns by the headers — a per-key chip would say it twice.
+  Only an ORDERING live chip wears the column band's hue.
+- Enter/Escape are stopped at the input (not bubbled into a consumer keymap);
+  the suggestion list gets first refusal (SCHEMA precedence — Esc closes the
+  list before it clears anything). Backspace walks the query down: on the page,
+  characters then chips then hands the table over; in the palette, characters
+  only (the chips are elsewhere). Held Backspace stops before taking a chip.
+- The legend/pager are the renderer's rendering of the CONSUMER's keymap —
+  presentation only, the actions still dispatch. A page printing its own keymap
+  has said it already; two disagreeing legends are worse than one. A flag helper
+  string on the cursor row is the consumer's own text (a renderer inventing =d=
+  would assert a keymap it does not own).
+
+* Streaming
+
+- =setQuery= seeds the chips from a query and delivers nothing — how a consumer
+  restores state (reconnect, view change, =?q== load) without the first commit
+  chipping the value twice. With =onFilter= the producer narrows and the query
+  travels whole (chips + box joined); the sort token takes effect locally first,
+  so rows re-order under the reader's hand.
+- Delta op indices count in the WINDOW (display order), per [[file:../SCHEMA.md][SCHEMA.md]]; with no
+  local sort/filter/page that is the store's order, so each op is placed against
+  the window the ops before it left. See also [[file:proposals/native-accelerator.org][the accelerator]] ($/delta).
+- On rows-replace the presentation resets but =page= CLAMPS rather than resets,
+  keeping a reader near where they were when rows go away.

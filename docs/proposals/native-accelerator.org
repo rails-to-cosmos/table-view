@@ -1,4 +1,4 @@
-#+TITLE: Design — Native data backend (tvx), production spec
+#+TITLE: Design — Native accelerator (tvx), production spec
 #+OPTIONS: toc:2 num:nil
 
 [[file:../index.org][← Wiki index]] · related: [[file:select-all-matching.org][pagination v2]], [[file:incremental-render-o1.org][O(1) render]], [[file:nulls-ordering.org][nulls ordering]]
@@ -43,7 +43,7 @@ Adversarial review (4 lenses) hardened the live layer:
 - Handles are =close='d and unregistered on =kill-buffer= and on respawn re-open
   (no handle/table leak).
 
-Known deferred: a backend respawn re-opens the source from scratch, so patches
+Known deferred: a accelerator respawn re-opens the source from scratch, so patches
 applied since =open= are lost until an upstream event-log/replay is added.
 
 * Prototype results (100k rows, spike)
@@ -67,7 +67,7 @@ degrades to elisp when the binary is absent, so MELPA still ships pure elisp.
 Transport = subprocess + JSON-RPC 2.0 over stdio via =jsonrpc.el=; one shared
 process per Emacs, multiplexed by opaque =handle=, all requests async.
 Rendering = reuse the discrete paged viewport (a page IS a window).  The base
-backend is one adapter closure handed to =table-view-display='s 5th (=page-fn=)
+accelerator is one adapter closure handed to =table-view-display='s 5th (=page-fn=)
 arg, reusing =table-view--build-request=, =table-view-set-page= / =-page-error=,
 and =table-view--render= / =-render-incremental= verbatim.
 
@@ -173,7 +173,7 @@ T"), so the closure maps =reply.matched → :total=, not =reply.total=:
 Error branch → =(table-view-page-error BUF message)=.  =value-fn= cells are
 re-materialised by =set-page='s own =compute-cells=; the wire never carries them.
 
-* Rust backend (=native/tvx/=)
+* Rust accelerator (=native/tvx/=)
 
 Crate layout evolving the spike (minimal default deps =serde/serde_json/memchr/
 smallvec=; =rayon= behind default =parallel=; =memmap2=/=csv= opt-in — every
@@ -262,7 +262,7 @@ rewrites only changed lines (O(k)).
 
 =build-request=, =refetch-first=, =set-page=/=page-error=, the =--pending= guard,
 paged nav, =render=/=-render-incremental=.  =value-fn= columns are excluded from
-push-down (not declared to the backend) and re-materialised by =set-page='s
+push-down (not declared to the accelerator) and re-materialised by =set-page='s
 =compute-cells= on every pull; =apply-delta= re-runs =compute-cells= for inserted
 rows.
 
@@ -337,7 +337,7 @@ replays =open= from each buffer's =tvx--source= (new handle) and re-=refresh=es.
    singleton + page-fn closure + compile-on-install + fallback warning.
    /Verify/: differential ERT (native==elisp order) + the 100k bench, UI never
    blocks, fallback warning on a missing binary.
-2. *Backend data model*.  Dictionary-encoded strings + =rank[]= collation,
+2. *Accelerator data model*.  Dictionary-encoded strings + =rank[]= collation,
    =memchr= dict-unique filter, LRU view cache, numeric-skip.  /Verify/: string
    sort/filter drop toward the 15ms/23ms targets; differential still holds;
    criterion at 1M.
@@ -360,7 +360,7 @@ replays =open= from each buffer's =tvx--source= (new handle) and re-=refresh=es.
 
 * Open questions (for the maintainer)
 
-- Categorical/=values= and =natural= compare: replicate in the backend
+- Categorical/=values= and =natural= compare: replicate in the accelerator
   (=CompareKind=) or leave those columns elisp-side (non-pushdown)?
 - =$/delta= op vocabulary vs the exact =apply-delta= pool — freeze =move= or fold
   it into upsert?  Keyset + =$/delta= has no stable window-local index → restrict

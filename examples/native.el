@@ -1,16 +1,16 @@
-;;; native.el --- Native (Rust) backend: a MILLION rows, sorted in Rust -*- lexical-binding: t; -*-
+;;; native.el --- Native (Rust) accelerator: a MILLION rows, sorted in Rust -*- lexical-binding: t; -*-
 
 ;; Eval this buffer for a 1,000,000-row table whose sort, filter, and paging run
-;; in the `tvx' Rust subprocess (see docs/proposals/native-backend.org), never
+;; in the `tvx' Rust subprocess (see docs/proposals/native-accelerator.org), never
 ;; in Emacs.  `table-view-native-display' is a drop-in for a paged table: you
-;; hand it a SOURCE plist and it wires the backend in as the page-fn for you.
+;; hand it a SOURCE plist and it wires the accelerator in as the page-fn for you.
 ;;
 ;; Here SOURCE is (:kind "gen" :n 1000000): the rows are SYNTHESIZED IN THE
-;; BACKEND, so a million of them never cross into Emacs -- only the ~25 on
+;; ACCELERATOR, so a million of them never cross into Emacs -- only the ~25 on
 ;; screen do.  Sorting a string column across 1M rows is ~170 ms in Rust; the
 ;; equivalent in-buffer elisp sort is ~2 s of blocked Emacs.
 ;;
-;; First run: if the backend is not built, table-view offers to build it (cargo,
+;; First run: if the accelerator is not built, table-view offers to build it (cargo,
 ;; ~30s).  Accept and the buffer shows a "Building…" placeholder with live output
 ;; in *tvx-compile*, then loads the table once the build finishes.  Decline (or
 ;; set `table-view-native-auto-compile' to nil) and a "gen" source cannot render;
@@ -36,7 +36,7 @@
                            (align . "right") (sortable . t))))
               (sort . ((column . "name") (ascending . t)))
               (pagination . ((page-size . 25) (strategy . offset))))))
-  ;; SOURCE plist: "gen" N tells the backend to synthesize N rows itself.
+  ;; SOURCE plist: "gen" N tells the accelerator to synthesize N rows itself.
   (table-view-native-display "*native-1M*" '(:kind "gen" :n 1000000) spec))
 
 ;;; native.el ends here

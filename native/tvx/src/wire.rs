@@ -1,5 +1,4 @@
-//! JSON-RPC stdio transport: Content-Length framing (like jsonrpc.el / LSP)
-//! and the small serde_json coercion helpers the rest of the crate shares.
+//! JSON-RPC stdio transport (Content-Length framing) plus serde_json coercion helpers.
 
 use serde_json::Value;
 use std::io::{self, Read, Write};
@@ -62,10 +61,7 @@ pub fn cell_i64(row: &Value, key: &str) -> i64 {
     row.get("cells").and_then(|c| c.get(key)).map(json_i64).unwrap_or(0)
 }
 
-/// Parse a `[[key, asc, nulls], ...]` sort chain into (column, ascending,
-/// nulls_first) triples.  NULLS is the string `"first"` or `"last"` and is
-/// optional: an absent (2-element) entry means `"last"`, so `nulls_first`
-/// defaults to false, keeping the old 2-element wire form working.
+/// Parse a `[[key, asc, nulls], ...]` sort chain into (column, ascending, nulls_first); a 2-element entry means nulls-last.
 pub fn parse_sort(v: &Value) -> Vec<(String, bool, bool)> {
     v.as_array()
         .map(|a| {

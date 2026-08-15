@@ -1,6 +1,4 @@
-//! Columnar storage.  String columns are dictionary-encoded with a precomputed
-//! `rank[]` so sort/filter is u32 work over uniques, not per-row string work;
-//! the rank rebuilds lazily after a patch introduces new uniques.
+//! Columnar storage; string columns are dictionary-encoded with a precomputed `rank[]`.
 
 use crate::wire::{json_i64, json_to_string};
 use serde_json::{json, Value};
@@ -8,10 +6,8 @@ use std::collections::HashMap;
 
 const WORDS: [&str; 8] = ["core", "lib", "utils", "http", "json", "async", "test", "cli"];
 
-/// Dictionary-encoded string column: rows hold a u32 code into the unique table.
-/// `rank[code]` is the codepoint-sorted position (compares become u32); it is
-/// stale exactly when `rank.len() != values.len()` -- a patch interned a new
-/// unique since the last `rebuild_rank` -- which `Table::ensure_ranks` checks.
+/// Dictionary-encoded string column; `rank[code]` is the codepoint-sorted
+/// position, stale exactly when `rank.len() != values.len()` (see CLAUDE.md).
 pub struct StrCol {
     pub codes: Vec<u32>,
     pub values: Vec<String>,          // unique display strings, by code
@@ -39,8 +35,7 @@ impl StrCol {
         self.values.push(value);
         code
     }
-    /// Rebuild rank[code] = position in codepoint-sorted order.  String Ord is
-    /// bytewise UTF-8 = codepoint order = elisp `string<'.
+    /// Rebuild rank[code] = codepoint-sorted position; Rust byte-Ord = elisp `string<`.
     pub fn rebuild_rank(&mut self) {
         let mut order: Vec<u32> = (0..self.values.len() as u32).collect();
         order.sort_by(|&a, &b| self.values[a as usize].cmp(&self.values[b as usize]));
@@ -63,27 +58,21 @@ impl Col {
             Col::Str(c) => json!(c.values[c.codes[r] as usize]),
         }
     }
-    /// Total-ordered u64 key so `cmp` matches the elisp comparator (signed ints,
-    /// codepoint strings via rank).
+    /// Total-ordered u64 key matching the elisp comparator (signed ints, codepoint strings via rank).
     pub fn order_key(&self, r: usize) -> u64 {
         match self {
             Col::Int(v) => (v[r] as u64) ^ (1u64 << 63),
             Col::Str(c) => c.rank[c.codes[r] as usize] as u64,
         }
     }
-    /// Dictionary code of the "null" cell (the empty string `""`), if this
-    /// column has one.  Only a `Col::Str` can hold an empty cell; a `Col::Int`
-    /// ingests a missing value as 0, never as an empty string, so this is
-    /// always None for it and the nulls-first/last flag is a no-op there.
+    /// Dictionary code of the empty-string ("null") cell, if any; always None for
+    /// a `Col::Int` (missing ingests as 0, so the nulls flag is inert there).
     pub fn empty_code(&self) -> Option<u32> {
         match self {
             Col::Int(_) => None,
             Col::Str(c) => c.lookup.get("").copied(),
         }
     }
-    /// Whether row R holds the "null" (empty-string) cell identified by
-    /// EMPTY_CODE (as returned by `empty_code`).  Always false for a `Col::Int`
-    /// or when EMPTY_CODE is None.
     pub fn is_empty_cell(&self, r: usize, empty_code: Option<u32>) -> bool {
         matches!((self, empty_code), (Col::Str(c), Some(ec)) if c.codes[r] == ec)
     }
@@ -100,8 +89,7 @@ impl Col {
         match self {
             Col::Int(col) => col.push(json_i64(v)),
             Col::Str(c) => {
-                // A missing (Null) string cell is "", matching the build path;
-                // json_to_string(Null) would otherwise store the literal "null".
+                // A missing (Null) string cell stores "" (matching the build path).
                 let s = if v.is_null() { String::new() } else { json_to_string(v) };
                 let code = c.code_of(s);
                 c.codes.push(code);
@@ -110,8 +98,7 @@ impl Col {
     }
 }
 
-/// Synthetic column for the `gen` source; the elisp benchmark replicates the
-/// same formula so the two can be compared fairly.
+/// Synthetic column for the `gen` source; the elisp benchmark replicates this formula.
 pub fn gen_col(key: &str, num: bool, n: usize) -> Col {
     if num {
         if key == "num" {

@@ -1,4 +1,4 @@
-;;; table-view.el --- Declarative, backend-agnostic table view -*- lexical-binding: t; -*-
+;;; table-view.el --- Declarative, producer-agnostic table view -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2025-2026 Dmitry Akatov
 
@@ -31,7 +31,7 @@
 ;; DEALINGS IN THE SOFTWARE.
 
 ;;; Commentary:
-;; A tiny, backend-agnostic core that renders a declarative table
+;; A tiny, producer-agnostic core that renders a declarative table
 ;; description -- columns, actions, default sort -- and dispatches keys to
 ;; consumer-registered command handlers.
 ;;
@@ -59,7 +59,7 @@
 ;;   sort-methods.el  — per-column sort methods (values / compare) + default sort
 ;;   delete.el        — row deletion gated on a custom pre-delete step
 ;;   bulk.el          — marking (m), narrowing (/), and bulk actions (bulk: t)
-;;   paginate.el      — server-side pagination over a fake backend (page-fn)
+;;   paginate.el      — server-side pagination over a fake producer (page-fn)
 ;;   org-links.el     — Org links in cells, followed by C-c C-o or mouse
 ;;
 ;; Keybindings in table-view-mode:
@@ -130,7 +130,7 @@ and bulk span pages.")
 ;;; Pagination state
 ;;
 ;; When a `page-fn' is supplied, `table-view--rows' holds only the CURRENT
-;; page fetched from the consumer's backend; sort and filter are pushed down
+;; page fetched from the producer; sort and filter are pushed down
 ;; into each page request instead of running client-side.  A buffer with no
 ;; page-fn leaves all of this nil/0 and behaves exactly as before.
 
@@ -149,7 +149,7 @@ and bulk span pages.")
   "Current 0-based page number, for the indicator.")
 (defvar-local table-view--total nil
   "Server's total matching-row count under the active filter, or nil when
-the backend does not report one.")
+the producer does not report one.")
 (defvar-local table-view--has-next nil
   "Non-nil when another page follows the current one.")
 (defvar-local table-view--page-cursor nil
@@ -368,7 +368,7 @@ A fresh cons list, so the caller's ROW is never mutated."
   "Return ROWS with SPEC's `value-fn' columns' cells materialised.
 A `value-fn' column declares a function of (ID ROW).  Each row lacking that
 cell gets it filled by the function; a row that already carries the cell keeps
-it, so a backend-supplied value wins.  The computed value is stored like any
+it, so a producer-supplied value wins.  The computed value is stored like any
 other cell, so sort/filter/width see it.  Non-destructive: changed rows get a
 fresh `cells' alist, so the caller's ROWS are never mutated."
   (let ((vcols (seq-filter (lambda (c) (alist-get 'value-fn c))
@@ -1933,7 +1933,7 @@ Call this from a `page-fn' once a page has been fetched (synchronously or
 asynchronously).  Keyword metadata, all optional:
 
   :total        total matching-row count under the active filter, or nil
-                when the backend does not report one -- offset paging then
+                when the producer does not report one -- offset paging then
                 shows \"page K/N of T\" only when it is known;
   :has-next     force whether a page follows; when omitted it is derived
                 from :total (offset) or :next-cursor (keyset), falling back
@@ -2107,23 +2107,23 @@ the current page, keeping point on the same row when it comes back."
          (table-view--fill-fn (funcall table-view--fill-fn buf)))))))
 
 (defgroup table-view nil
-  "Declarative, backend-agnostic table view."
+  "Declarative, producer-agnostic table view."
   :group 'convenience :prefix "table-view-")
 
 (defcustom table-view-native-threshold 10000
-  "Row count at or above which `table-view-display' prefers the native backend.
+  "Row count at or above which `table-view-display' prefers the accelerator.
 Applies only to a plain inline-rows table (no FILL-FN/PAGE-FN/`pagination')
 when the optional `table-view-native' package is loaded: such a large table is
-then displayed through the Rust backend if its binary is available; otherwise
-the elisp path runs and a one-time build recommendation is shown.  nil disables
-this routing."
+then displayed through the Rust accelerator if its binary is available;
+otherwise the elisp path runs and a one-time build recommendation is shown.
+nil disables this routing."
   :type '(choice (const :tag "Never" nil) integer))
 
 (defvar table-view--native-display-function nil
   "Function (BUFFER SPEC HANDLERS) consulted by `table-view-display' for a large
 inline-rows table, or nil.  `table-view-native' sets it on load to route big
-tables through the Rust backend; it returns non-nil when it handled the display
-and nil to fall back to the elisp path.")
+tables through the Rust accelerator; it returns non-nil when it handled the
+display and nil to fall back to the elisp path.")
 
 (cl-defun table-view-display (buffer spec handlers &optional fill-fn page-fn)
   "Render SPEC into BUFFER, install HANDLERS, populate; return the buffer.
@@ -2145,8 +2145,8 @@ page request (paged).
 
 When the optional `table-view-native' package is loaded and SPEC carries a
 large inline-rows set (see `table-view-native-threshold'), the display is
-routed through the native Rust backend if its binary is available."
-  ;; Route a large inline table to the native backend when it can take over.
+routed through the native Rust accelerator if its binary is available."
+  ;; Route a large inline table to the native accelerator when it can take over.
   (when (and table-view--native-display-function
              (null fill-fn) (null page-fn)
              (not (alist-get 'pagination spec))

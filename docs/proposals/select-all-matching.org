@@ -19,7 +19,7 @@ that were never fetched.
 
 * Proposal
 
-A *virtual* select-all, resolved by the backend rather than by loading rows.
+A *virtual* select-all, resolved by the producer rather than by loading rows.
 
 - A command “mark all matching” that sets a virtual-select-all flag instead of
   marking individual rows.
@@ -27,7 +27,7 @@ A *virtual* select-all, resolved by the backend rather than by loading rows.
   - =table-view-selection-rows= — the cached, explicitly-marked rows;
   - =table-view-selection-all-p= — whether virtual select-all is active;
   - =table-view-selection-query= — the live sort + filter (from
-    =table-view-page-request=), so the consumer issues one backend operation
+    =table-view-page-request=), so the consumer issues one producer operation
     (e.g. =DELETE ... WHERE <filter>=) instead of enumerating unloaded rows.
 - The indicator shows “all N matching selected”.
 
@@ -36,7 +36,7 @@ A *virtual* select-all, resolved by the backend rather than by loading rows.
 - The bulk-handler contract grows a selection object.  Keep the common
   explicit-marks path returning a plain row list, so existing =(bulk . t)=
   handlers are unaffected — only virtual select-all needs the query descriptor.
-- The backend must be able to act on a filter predicate (true for SQL-ish
+- The producer must be able to act on a filter predicate (true for SQL-ish
   stores; an in-memory =page-fn= can just re-run its own query).
 
 * See also

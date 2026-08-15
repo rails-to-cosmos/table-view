@@ -1,4 +1,4 @@
-;;; table-view-native-test.el --- Tests for the native backend -*- lexical-binding: t; -*-
+;;; table-view-native-test.el --- Tests for the native accelerator -*- lexical-binding: t; -*-
 
 ;; Guarded: every test skips unless the tvx binary is present/buildable, so the
 ;; pure-elisp suite (table-view-test.el) stays independent of cargo.
@@ -23,7 +23,7 @@ Returns nil when cargo is unavailable and no valid binary exists."
          (newest (apply #'max 0 (delq nil (mapcar #'tvn-test--mtime src))))
          (bin (tvn-test--mtime built)))
     ;; Rebuild if the binary is missing or older than any source file, so tests
-    ;; never silently run against a stale backend.
+    ;; never silently run against a stale accelerator.
     (when (and (table-view-native--cargo) (or (not bin) (> newest bin)))
       (call-process (table-view-native--cargo) nil nil nil "build" "--release"
                     "--manifest-path" (expand-file-name "native/tvx/Cargo.toml" root)))
@@ -114,7 +114,7 @@ Returns nil when cargo is unavailable and no valid binary exists."
        (kill-buffer buf)))))
 
 (ert-deftest tvn-test-fallback-warns-and-renders ()
-  "When the backend is unavailable, inline rows render in elisp and a warning fires."
+  "When the accelerator is unavailable, inline rows render in elisp and a warning fires."
   (let ((table-view-native-program "/nonexistent/tvx")
         (table-view-native-auto-compile nil)
         (table-view-native-cargo-program "/nonexistent/cargo")
@@ -123,7 +123,7 @@ Returns nil when cargo is unavailable and no valid binary exists."
         (warned nil)
         (buf (get-buffer-create " *tvn-fb*")))
     (unwind-protect
-        ;; Force "no backend" regardless of any binary cached in this user's env.
+        ;; Force "no accelerator" regardless of any binary cached in this user's env.
         (cl-letf (((symbol-function 'display-warning) (lambda (&rest _) (setq warned t)))
                   ((symbol-function 'table-view-native--resolve) (lambda () nil)))
           (table-view-native-display buf (list :kind "rows" :rows (tvn-test--rows 5))
@@ -132,7 +132,7 @@ Returns nil when cargo is unavailable and no valid binary exists."
           (with-current-buffer buf (should (string-match-p "core-00000" (buffer-string)))))
       (kill-buffer buf))))
 
-;;; Live layer: core `table-view-apply-delta' (pure, no backend needed)
+;;; Live layer: core `table-view-apply-delta' (pure, no accelerator needed)
 
 (defconst tvn-test--client-spec
   '((title . "x") (columns . (((key . "name") (header . "N"))))))
@@ -190,7 +190,7 @@ Returns nil when cargo is unavailable and no valid binary exists."
                                           :key (lambda (r) (alist-get 'id r)) :test #'equal))))))
       (kill-buffer buf))))
 
-;;; Live layer end-to-end (backend): patch -> $/delta -> apply-delta
+;;; Live layer end-to-end (accelerator): patch -> $/delta -> apply-delta
 
 (defun tvn-test--settle ()
   "Pump process output so pending $/delta notifications are dispatched."
@@ -249,7 +249,7 @@ Returns nil when cargo is unavailable and no valid binary exists."
        (kill-buffer buf)))))
 
 (ert-deftest tvn-test-respawn-replays ()
-  "Killing the backend process; the next refresh respawns, re-opens, re-renders."
+  "Killing the accelerator process; the next refresh respawns, re-opens, re-renders."
   (tvn-test--skip-unless-binary
    (let ((buf (get-buffer-create " *tvn-respawn*")))
      (unwind-protect
@@ -291,7 +291,7 @@ Returns nil when cargo is unavailable and no valid binary exists."
        (kill-buffer buf)))))
 
 (ert-deftest tvn-test-close-removes-handle-on-kill ()
-  "Killing the buffer closes its backend handle and unregisters it."
+  "Killing the buffer closes its accelerator handle and unregisters it."
   (tvn-test--skip-unless-binary
    (let ((buf (get-buffer-create " *tvn-close*")))
      (table-view-native-display buf (list :kind "rows" :rows (tvn-test--rows 5))
@@ -349,7 +349,7 @@ Returns nil when cargo is unavailable and no valid binary exists."
   (tvn-test--skip-unless-binary (should (table-view-native-available-p))))
 
 (ert-deftest tvn-test-auto-display-routes-when-available ()
-  "The auto-display routes a large inline table to the native backend."
+  "The auto-display routes a large inline table to the native accelerator."
   (tvn-test--skip-unless-binary
    (let ((buf (get-buffer-create " *tvn-auto*")))
      (unwind-protect
@@ -368,7 +368,7 @@ Returns nil when cargo is unavailable and no valid binary exists."
        (kill-buffer buf)))))
 
 (ert-deftest tvn-test-auto-display-recommends-when-unavailable ()
-  "When the backend is not ready, auto-display recommends a build and declines."
+  "When the accelerator is not ready, auto-display recommends a build and declines."
   (let ((table-view-native--warned (make-hash-table))
         (warned nil)
         (buf (get-buffer-create " *tvn-auto-rec*")))

@@ -1,7 +1,7 @@
 #+TITLE: Nulls-first / nulls-last ordering
 #+OPTIONS: toc:nil num:nil
 
-[[file:../index.org][← Wiki index]] · related: [[file:native-backend.org][Native data backend (tvx)]]
+[[file:../index.org][← Wiki index]] · related: [[file:native-accelerator.org][Native accelerator (tvx)]]
 
 * Status
 
@@ -64,11 +64,11 @@ desc, nulls-last only — visiting each sortable column in turn.
 - *Native (tvx).*  =table-view-native--page-fn= emits each key as a wire vector
   =[COL ASC NULLS]=, where =NULLS= is ="first"= or ="last"=.  A two-element
   vector =[COL ASC]= (an absent third element) means nulls-last, so older
-  payloads still parse.  The Rust backend reads the optional third element.
+  payloads still parse.  The Rust accelerator reads the optional third element.
 
 * Known limitation — numeric native columns
 
-A column typed =number= in the native backend ingests each cell as a number,
+A column typed =number= in the native accelerator ingests each cell as a number,
 and a *missing* value is stored as =0=.  A =0= is a real value, so nulls
 placement is a *no-op* on such a column: the blanks-as-zeros sort among the
 other numbers rather than gathering at one end.  The client path treats an
@@ -81,4 +81,4 @@ as text, or add an explicit "is-empty" sort key ahead of it.
 
 - Key reference and the spec =sort= field's =nulls=: [[file:../../README.md][README]] → “Sorting” and
   “Spec format”.
-- Native wire protocol: [[file:native-backend.org][Native data backend (tvx)]].
+- Native wire protocol: [[file:native-accelerator.org][Native accelerator (tvx)]].

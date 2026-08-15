@@ -1,6 +1,6 @@
 # table-view
 
-> Declarative, backend-agnostic table views for Emacs — render a JSON/alist
+> Declarative, producer-agnostic table views for Emacs — render a JSON/alist
 > spec into an aligned, sortable, filterable, org-table-styled buffer.
 
 `table-view` is a tiny core (no dependencies beyond Emacs ≥ 28.1) that
@@ -97,18 +97,18 @@ Runnable demos live in [`examples/`](examples/):
 | [`sort-methods.el`](examples/sort-methods.el)   | per-column sort methods (`values`, `compare`) + a default sort |
 | [`delete.el`](examples/delete.el)               | row deletion gated on a custom pre-delete step |
 | [`bulk.el`](examples/bulk.el)                   | marking (`m`), narrowing (`/`), and bulk actions (`bulk: t`) |
-| [`paginate.el`](examples/paginate.el)           | server-side pagination over a fake backend (`page-fn`, push-down sort/filter, cross-page marks) |
+| [`paginate.el`](examples/paginate.el)           | server-side pagination over a fake producer (`page-fn`, push-down sort/filter, cross-page marks) |
 | [`org-links.el`](examples/org-links.el)         | Org links in cells (`[[target][desc]]`), followed by `C-c C-o` or mouse |
-| [`native.el`](examples/native.el)               | **1,000,000 rows** sorted/filtered in a Rust backend (`table-view-native-display`) |
-| [`native-live.el`](examples/native-live.el)     | live updates through the backend (`table-view-native-patch` → `$/delta`), plus Rust `count`/`aggregate` |
+| [`native.el`](examples/native.el)               | **1,000,000 rows** sorted/filtered in a Rust accelerator (`table-view-native-display`) |
+| [`native-live.el`](examples/native-live.el)     | live updates through the accelerator (`table-view-native-patch` → `$/delta`), plus Rust `count`/`aggregate` |
 
 Open one and `M-x eval-buffer`.
 
-> The two `native*` demos use the optional Rust backend (`tvx`).  On first run
+> The two `native*` demos use the optional Rust accelerator (`tvx`).  On first run
 > table-view offers to build it (needs [cargo](https://rustup.rs)); accept and
 > the buffer shows build progress, then loads once the build finishes.  Decline
 > and it runs pure elisp with a warning.  See
-> [`docs/proposals/native-backend.org`](docs/proposals/native-backend.org).
+> [`docs/proposals/native-accelerator.org`](docs/proposals/native-accelerator.org).
 
 ## Keybindings
 
@@ -264,11 +264,11 @@ fetch (synchronously *or* asynchronously) and deliver the page with
 - **`strategy`**: `offset` (default) gives random page access and exact totals;
   `keyset` uses opaque forward/back cursors (`:next-cursor` / `:prev-cursor`
   from `table-view-set-page`) — stable on large, changing datasets, but without
-  a total or random jumps. When the backend can't count, pass `:total nil` and
+  a total or random jumps. When the producer can't count, pass `:total nil` and
   the view infers "more" from a full page.
 
 See [`examples/paginate.el`](examples/paginate.el) for a complete runnable demo
-over a fake in-memory backend.
+over a fake in-memory producer.
 
 ## Org links
 

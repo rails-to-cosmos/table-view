@@ -990,7 +990,7 @@ load order and check the row-id order equals EXPECTED."
 
 (ert-deftest tv-test-value-fn-materializes-and-sorts ()
   "A column with a `value-fn' has its cells computed at add/set time, so it
-renders and sorts like a backend-supplied column."
+renders and sorts like a producer-supplied column."
   (tv-test--with-table
     (table-view-add-column
      `((key . "neg") (header . "Neg") (type . "number") (align . "right")
@@ -1016,7 +1016,7 @@ renders and sorts like a backend-supplied column."
 
 (ert-deftest tv-test-compute-cells-fills-only-missing ()
   "`table-view--compute-cells' fills a missing cell but keeps a supplied one.
-This is the set-rows contract: a backend-delivered value wins over the `value-fn'."
+This is the set-rows contract: a producer-delivered value wins over the `value-fn'."
   (let* ((spec `((columns . (((key . "v") (header . "V")
                               (value-fn . ,(lambda (_id _row) "computed")))))))
          (rows '(((id . "a") (cells . ((v . "supplied"))))
@@ -1473,7 +1473,7 @@ This is the set-rows contract: a backend-delivered value wins over the `value-fn
 ;;; Pagination (server-side)
 
 (defvar tv-test--fetches nil
-  "Requests the fake backend received during a paged test (newest first).")
+  "Requests the fake producer received during a paged test (newest first).")
 
 (defun tv-test--dataset (n)
   "N rows r1..rN with a numeric `num' cell and a `name' cell \"user-K\"."
@@ -1484,7 +1484,7 @@ This is the set-rows contract: a backend-delivered value wins over the `value-fn
 (defun tv-test--numof (row) (alist-get 'num (alist-get 'cells row)))
 
 (defun tv-test--apply-query (rows req)
-  "Filter and sort ROWS per REQ, emulating what a backend would do.
+  "Filter and sort ROWS per REQ, emulating what a producer would do.
 Filters `name' by substring and sorts by the FULL sort chain (so multi-key
 push-down can be tested)."
   (let ((filter (plist-get req :filter))
@@ -1560,7 +1560,7 @@ push-down can be tested)."
         (cons 'pagination (list (cons 'page-size page-size) (cons 'strategy strategy)))))
 
 (defmacro tv-test--with-paged (size page-size &rest body)
-  "Display a paged OFFSET table over a fake backend of SIZE rows, run BODY."
+  "Display a paged OFFSET table over a fake producer of SIZE rows, run BODY."
   (declare (indent 2))
   `(let ((buf (get-buffer-create " *tv-paged*"))
          (tv-test--fetches nil)
@@ -1573,7 +1573,7 @@ push-down can be tested)."
        (kill-buffer buf))))
 
 (defmacro tv-test--with-keyset (size page-size &rest body)
-  "Display a paged KEYSET table over a fake backend of SIZE rows, run BODY."
+  "Display a paged KEYSET table over a fake producer of SIZE rows, run BODY."
   (declare (indent 2))
   `(let ((buf (get-buffer-create " *tv-keyset*"))
          (tv-test--fetches nil)

@@ -1,8 +1,8 @@
-;;; paginate.el --- Server-side pagination over a fake backend -*- lexical-binding: t; -*-
+;;; paginate.el --- Server-side pagination over a fake producer -*- lexical-binding: t; -*-
 
 ;; Eval this buffer for a 137-row "package registry" served ONE PAGE AT A
 ;; TIME.  Only the current page lives in the buffer; sort, filter, and totals
-;; are the backend's job.  A real consumer swaps the in-memory `db' below for
+;; are the producer's job.  A real consumer swaps the in-memory `db' below for
 ;; a database or HTTP call and delivers each page with `table-view-set-page'
 ;; (or `table-view-page-error' on failure) -- from an async callback if the
 ;; fetch is slow.
@@ -24,7 +24,7 @@
 (require 'cl-lib)
 (require 'seq)
 
-;;; A pretend backend: an in-memory table the page-fn queries.
+;;; A pretend producer: an in-memory table the page-fn queries.
 
 (defconst paginate-example--words
   '("core" "lib" "utils" "http" "json" "async" "test" "cli")
