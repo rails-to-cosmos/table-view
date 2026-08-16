@@ -500,9 +500,8 @@ standing choice about a row and says nothing about where the cursor is. On a
 coarse pointer the box widens to a 44px target and takes the tap; the long
 press that runs a row's default action belongs to the rest of the row.
 
-Without the option the chrome is not merely hidden — one predicate gates the
-column, the wash and the count together, so a consumer who never asked for
-marking cannot get half of it.
+Without the option, one predicate gates the column, the wash and the count
+together, so a consumer who never asked for marking cannot get half of it.
 
 Marks are keyed by `id` and held apart from the rows, so one survives a
 `setRows`, an `upsertRow`, a filter that hides its row, a page it is not on and
