@@ -4309,7 +4309,7 @@ async function queryKeys() {
           ["tv-title", "tv-chips", "tv-filter-wrap"]);
     // The box teaches the grammar, which is the part nobody can guess, in
     // every mode — the control is the same control wherever it is put.
-    const TEACH = `tag:book · state:TODO|DONE · -word · "some phrase"`;
+    const TEACH = `key:value · status:open|closed · -word · "some phrase"`;
     const summoned = new El("div");
     TableView.mount(summoned, view(20), { palette: true });
     check("and every mode's box teaches the query language",
@@ -4317,6 +4317,23 @@ async function queryKeys() {
            filterOf(summoned).placeholder], [TEACH, TEACH, TEACH]);
     check("in a muted colour that Firefox cannot dim further",
           css.indexOf(".tv-filter::placeholder{color:var(--tv-muted);opacity:1}") !== -1, true);
+    // INLINE: the HOST drew the box, so the mount brings no chrome of its own —
+    // no hint line, no sort marks — and its editor is summoned onto the chips'
+    // line by `openFilter' rather than sitting there.
+    const inlined = new El("div");
+    const inl = TableView.mount(inlined, view(20), { inline: true });
+    const inlRoot = inlined.querySelector(".tv-root");
+    check("and `inline' is omnibox in a box someone else drew",
+          [inlRoot.classList.contains("tv-inline"),
+           inlRoot.classList.contains("tv-omni"),
+           !!inlined.querySelector(".tv-hint")],
+          [true, true, false]);
+    check("with an editor `openFilter' summons and `closeFilter' puts away",
+          [inlRoot.classList.contains("tv-typing"),
+           (inl.openFilter(), inlRoot.classList.contains("tv-typing")),
+           (inl.closeFilter(), inlRoot.classList.contains("tv-typing"))],
+          [false, true, false]);
+    inl.destroy();
     check("saying nothing about keys — the legend and the list own those",
           /tab|ret|enter|esc/i.test(TEACH), false);
     check("the control is told to fill, at a larger size",

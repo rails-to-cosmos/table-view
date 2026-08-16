@@ -673,7 +673,7 @@ with no `title` column carries no row mark.
 ### The filter box
 
 Its placeholder teaches the grammar rather than naming the box —
-`tag:book · state:TODO|DONE · -word · "some phrase"` — since what a filter box is
+`key:value · status:open|closed · -word · "some phrase"` — since what a filter box is
 for is obvious and what it accepts is not.
 
 It speaks [`SCHEMA.md`](SCHEMA.md)'s query micro-syntax: `key:value` field
@@ -886,6 +886,15 @@ goes, the input takes the full width, and the applied chips move to a row of
 their own beneath it that collapses when empty. Without it the bar
 is exactly as it was.
 
+Pass **`inline: true`** for a mount that lives inside chrome someone else has
+drawn — a picker hung at a caret, a box in a panel. It implies `omnibox`, drops
+the mount's own border, title, hint line and sort marks, and caps the window at
+eight rows. The filter box is summoned rather than resident: the chips are all
+that shows until `openFilter()` (or `/`, wherever the consumer binds it) puts
+the input on the chips' own line. Escape out of it is **one step** — the
+half-typed filter is dropped and the cursor lands on a row in a single press,
+because a compact table is a thing to pick from.
+
 Pass **`initialQuery`** to restore a query rather than run one — it arrives as
 committed chips with the box empty and nothing delivered, which is what a
 consumer remounting after a reconnect or a `?q=` load wants. There is no other
@@ -922,7 +931,9 @@ coming back to the box, which reopens empty with its chips standing:
 
 — two ANDed tokens and two queries sent. **Escape** walks out one step at a
 time: it closes the list if one is open, else drops what is half-typed, else
-blurs. Both keys stop at the input rather than bubbling into a consumer's own
+blurs. Under `inline` those three collapse into one press, which drops the
+half-typed filter and hands the table over together. Both keys stop at the
+input rather than bubbling into a consumer's own
 keymap, and nothing else moves focus or the selection: a debounce firing on its
 own leaves both where the typist left them.
 
