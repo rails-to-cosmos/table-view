@@ -6,6 +6,20 @@ the rails-to-cosmos ELPA archive publishes date-stamped snapshots.
 ## Unreleased
 
 ### Added
+- **`inline: true` — a compact mount for a box someone else framed.** It implies
+  `omnibox`, drops the mount's own border, title, hint line and sort marks, and
+  caps the window at twelve rows. The filter box is SUMMONED rather than
+  resident: chips alone until `openFilter()` puts the input on the chips' own
+  line. Two keys leave that editor in ONE step — Escape, dropping whatever was
+  half-typed, and Backspace over an already-empty box, which takes the box
+  itself rather than the chip behind it. The chips stay the consumer's own key
+  to walk, through `stripLastToken()`. What a picker hung at a caret wants.
+- **`filtering()` and `destroy()` on the handle.** `filtering()` answers whether
+  the filter box holds the keyboard, so a consumer binding keys globally over a
+  mount can ask rather than probe the DOM. `destroy()` releases the two theme
+  watchers — one on `document.documentElement`, one on a `matchMedia` list —
+  which are registered outside the container and outlive its being emptied; a
+  mount-per-gesture consumer leaked one of each without it.
 - **`substring:` is the canonical spelling on screen.** A chip over a bare word
   now reads `substring:asdf`, and the completion's text-search row inserts that
   rather than the bare word — so committing a search writes the grammar's own
@@ -16,6 +30,20 @@ the rails-to-cosmos ELPA archive publishes date-stamped snapshots.
   the key elided. ONE matcher answers both spellings. What the key buys is a
   value that may spell a separator's neighbour — a leading `-`, a colon, a bar
   — under quotes without being read as something else.
+
+### Fixed
+- **`setQuery(q)` paints the strip it seeds.** `pushChip` fills the chips array
+  and draws nothing, and the repaint sat in the empty-query branch — so a
+  consumer restoring a non-empty query got chips in the state and an unchanged
+  strip on screen. `initialQuery` was unaffected, having a repaint of its own
+  after the mount.
+- **A summoned box that loses the keyboard is no longer left drawn.** Tab walks
+  out of the filter natively and a row click takes the focus; under `inline`
+  either left the editor on screen with the keys elsewhere, so `filtering()` and
+  the screen disagreed. A blur now un-summons it.
+- **`palette` and `inline` are one decision.** Passed together they gave
+  Backspace and Escape opposite precedence; `palette` now wins outright, it
+  being the mode that draws its own overlay.
 
 ### Changed
 - **A crumb chip is struck through.** The trail's chips are a query that is no

@@ -337,9 +337,11 @@ hands the query to the producer, and whatever `setRows` delivers is what shows.
 | `selectStep(±1)`   | move the selection a row, turning the page at either end       |
 | `nextPage()` / `previousPage()` | turn a page, landing on its first / last row     |
 | `pageInfo()`       | `{ page, pages, from, to, total }` over the filtered set       |
-| `openFilter()`     | summon the filter — raises the palette, or focuses the resident box |
+| `openFilter()`     | summon the filter — raises the palette, draws `inline`'s box onto the chips' line, or focuses the resident box |
 | `closeFilter()`    | dismiss it and give the keyboard back to the table            |
-| `stripLastToken()` | drop the typed text, else the last chip — a sort chain gives up its last key per press — and reapply; false if nothing was left |
+| `filtering()`      | is the filter box holding the keyboard? — what a consumer binding keys over the whole document asks before claiming one |
+| `destroy()`        | let the mount go: releases the theme watchers — one on `document.documentElement`, one on a `matchMedia` list — registered outside the container and outliving your emptying it |
+| `stripLastToken()` | drop the typed text, else the last chip — a sort chain gives up its last key per press — and reapply; false if nothing was left. Under `inline` this is the ONLY route to a chip from the keyboard, the box's own Backspace stopping at the box |
 | `sortBy(col, asc?)` | sort on that column key, ascending unless `asc` is `false`, replacing the chain; false if no column carries the key |
 | `sortPromote(col)` | `^`: put that column at the **head** of the sort chain ascending, flipping it where it already leads, and write the chain into the query as one `sort:a->b` token; false if it is not `sortable` |
 | `getSort()` / `setSort(chain)` | read the chain in force, highest priority first; replace it (an empty one clears the sort) |
@@ -889,11 +891,16 @@ is exactly as it was.
 Pass **`inline: true`** for a mount that lives inside chrome someone else has
 drawn — a picker hung at a caret, a box in a panel. It implies `omnibox`, drops
 the mount's own border, title, hint line and sort marks, and caps the window at
-eight rows. The filter box is summoned rather than resident: the chips are all
+twelve rows. The filter box is summoned rather than resident: the chips are all
 that shows until `openFilter()` (or `/`, wherever the consumer binds it) puts
 the input on the chips' own line. Escape out of it is **one step** — the
 half-typed filter is dropped and the cursor lands on a row in a single press,
-because a compact table is a thing to pick from.
+because a compact table is a thing to pick from. **Backspace** over an
+already-empty box lands in the same place for the same reason: the box was the
+last thing put there, so it is the first thing taken back. Both leave the mount
+with no focus of its own, so a consumer that wants the *next* press must listen
+on the document rather than on the mount's root, and can ask `filtering()`
+whether the box has the keys before claiming anything.
 
 Pass **`initialQuery`** to restore a query rather than run one — it arrives as
 committed chips with the box empty and nothing delivered, which is what a
@@ -908,7 +915,11 @@ scrolling out of sight. Enter commits the box whole; a settling debounce commits
 only the tokens something follows, so a word is never chipped out from under the
 caret. **Backspace** walks the query down: characters first, then chips one at a time,
 and with nothing left it hands the table over — one press per part, so holding
-it deletes what was typed and then stops at the first chip. A click takes any chip off, and
+it deletes what was typed and then stops at the first chip. Under `inline` the chip
+rungs are not the renderer's at all: an emptied box is the SUMMONED editor
+itself, so the first Backspace takes the box and hands over however many chips
+are applied — the chips behind it are the consumer's own key to walk, through
+`stripLastToken()`. A click takes any chip off, and
 `onFilter` is handed the whole query joined — a producer never learns that chips
 exist.
 

@@ -158,9 +158,12 @@ bare word:
   Only an ORDERING live chip wears the column band's hue.
 - Enter/Escape are stopped at the input (not bubbled into a consumer keymap);
   the suggestion list gets first refusal (SCHEMA precedence — Esc closes the
-  list before it clears anything). Backspace walks the query down: on the page,
-  characters then chips then hands the table over; in the palette, characters
-  only (the chips are elsewhere). Held Backspace stops before taking a chip.
+  list before it clears anything). Backspace walks the query down in three
+  shapes: on the page, characters then chips then hands the table over; in the
+  palette, characters only (the chips are elsewhere); =inline=, characters then
+  the SUMMONED BOX ITSELF — an emptied box was the last thing the reader put
+  there, and the chips under it are the consumer's own rung. Held Backspace
+  stops before taking a chip.
 - The legend/pager are the renderer's rendering of the CONSUMER's keymap —
   presentation only, the actions still dispatch. A page printing its own keymap
   has said it already; two disagreeing legends are worse than one. A flag helper

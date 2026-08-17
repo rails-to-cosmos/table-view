@@ -54,7 +54,11 @@ const sortMarks = (root) => root.querySelectorAll(".tv-table thead th")
  */
 function probe(box, handle) {
   const b = () => filterOf(box);
-  /** Empty the box and take every chip back off, so each case starts clean. */
+  /** Empty the box and take every chip back off, so each case starts clean.
+   *  BACKSPACE IS THE PLUMBING HERE, so this is `inline''s one trap: there an
+   *  empty-box Backspace puts the summoned editor away instead of taking a chip,
+   *  and the loop below would spin its 40 turns clearing nothing.  Safe while no
+   *  `driver()' mount passes `inline: true'. */
   const reset = () => {
     const el = b();
     // An empty box offers nothing, so this shuts any list a previous check
@@ -4333,6 +4337,22 @@ async function queryKeys() {
            (inl.openFilter(), inlRoot.classList.contains("tv-typing")),
            (inl.closeFilter(), inlRoot.classList.contains("tv-typing"))],
           [false, true, false]);
+    // AND BACKSPACE OVER AN EMPTIED BOX TAKES THE BOX, not the chip behind it —
+    // the summoned editor was the last thing put there.  `hero' above pins the
+    // opposite for `omnibox', which `inline' implies, so an implementation that
+    // branched on the wrong flag turns one of the two red.
+    inl.setQuery("state:DONE");
+    inl.openFilter();
+    const inlBox = filterOf(inlined);
+    inlBox.value = "";
+    inlBox.dispatchEvent(new Ev("keydown", { key: "Backspace" }));
+    check("and Backspace over an emptied box takes the box, not the chip",
+          [inlRoot.classList.contains("tv-typing"),
+           inlined.querySelectorAll(".tv-chip[data-i]").length],
+          [false, 1]);
+    check("leaving the chip to `stripLastToken', the consumer's own route to it",
+          [inl.stripLastToken(), inlined.querySelectorAll(".tv-chip[data-i]").length],
+          [true, 0]);
     inl.destroy();
     check("saying nothing about keys — the legend and the list own those",
           /tab|ret|enter|esc/i.test(TEACH), false);
