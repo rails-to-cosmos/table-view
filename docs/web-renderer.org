@@ -119,6 +119,11 @@ bare word:
 - An empty =sort:= leads with THE ORDER IN FORCE (canonical arrow form, the
   chip door's spelling), edited from there; offered as non-final so the list
   stays open. =*none*= is the empty chain, gated by nothing, star-blind and dim.
+- A NARROWED session (=openFilter({narrow: true})=) offers the narrowing keys
+  alone: =sort:=/=columns:=/=view:= and the saved-view names that spell one drop
+  out of the key stage, every other tier untouched. THE PARSE IS NOT NARROWED
+  WITH IT — a shaping token has to read as one to be refused at the chip door
+  rather than land as free text.
 - =*empty*= rides the foot of every column's domain; producer metas stand apart
   (dim, italic, no count — a per-value count beside a set-naming meta would
   print a misleading fraction).
@@ -152,6 +157,13 @@ bare word:
 - Touch: a long press is the row's default action (like RET / double-click);
   drift or any scroll calls it off. A press on the checkbox stays the checkbox —
   only the completing touchend is swallowed, so the 44px target is checkable.
+- *Two doors, one query*: a narrowed box edits the FILTER half and refuses a
+  shaping token at the chip door — never chipped, never in the delivered query
+  (the box's own text is read less its refusals), left standing where the reader
+  sees it, and spoken through =onRefused= once per spelling, since the box
+  commits again on every settling debounce. The chips already applied ride along
+  untouched: the strip is not the box, so narrowing never loses the order. The
+  flag is the SESSION's and the refusals go with it when the box closes.
 - Chip strip reads left→right: crumbs (where the reader came FROM, no =data-i=,
   not removable) then live chips. The ORDER is in the strip as =sort:= tokens and
   carried over the columns by the headers — a per-key chip would say it twice.

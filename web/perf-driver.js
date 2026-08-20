@@ -3114,6 +3114,84 @@ async function filterQuery() {
          !!box.querySelector(".tv-table tbody tr.tv-sel")], [1, "", true, true]);
 }
 
+/**
+ * `openFilter({narrow: true})': the box that edits the FILTER half. The key
+ * stage offers the narrowing keys alone, a shaping token is refused on commit
+ * and left standing, and the chips already applied ride along untouched.
+ */
+async function narrowedDoor() {
+  console.log("\n== the narrowed door");
+  const WHOLE = `key:value · status:open|closed · -word · "some phrase"`;
+  const named = Object.assign(view(40), { views: [{ name: "hot", query: "state:NEXT" }] });
+  const A = driver(named);
+  const ab = A.b();
+  /** Type into the box and read back every label the list offers. */
+  const type = (q) => {
+    ab.value = q;
+    ab.dispatchEvent(new Ev("input"));
+    return A.box.querySelectorAll(".tv-ac-label").map((e) => e.text);
+  };
+  const offers = (q, label) => type(q).indexOf(label) !== -1;
+
+  A.handle.openFilter();
+  check("the whole door offers the three shaping keys",
+        [offers("sor", "sort:"), offers("col", "columns:"), offers("vie", "view:")],
+        [true, true, true]);
+  check("and a saved view by name", offers("ho", "view:hot"), true);
+  check("and wears the whole grammar's placeholder", ab.placeholder, WHOLE);
+
+  A.handle.openFilter({ narrow: true });
+  check("the narrowed door offers none of the three",
+        [offers("sor", "sort:"), offers("col", "columns:"), offers("vie", "view:")],
+        [false, false, false]);
+  check("nor a saved view, which names one of them", offers("ho", "view:hot"), false);
+  check("the narrowing keys, their values and their metas are all still there",
+        [offers("sta", "state:"), offers("DON", "state:DONE"),
+         offers("-sta", "state:"), offers("state:*emp", "*empty*")],
+        [true, true, true, true]);
+  check("and it names the half it edits", ab.placeholder.indexOf("filter rows"), 0);
+
+  const spoken = [];
+  const B = driver(40, { onRefused: (t) => spoken.push(t) });
+  const bb = B.b();
+  B.handle.openFilter({ narrow: true });
+  B.commit("sort:title state:DONE");
+  check("a commit chips the narrowing token and refuses the shaping one",
+        [B.chipsOf(), bb.value, B.handle.getQuery()],
+        [["state:DONE"], "sort:title", "state:DONE"]);
+  check("the refusal is spoken as written", spoken, ["sort:title"]);
+  B.press("Enter");
+  check("committing it again neither chips it nor says so twice",
+        [B.chipsOf(), bb.value, spoken.length], [["state:DONE"], "sort:title", 1]);
+  B.commit("-columns:state +view:hot sort:a->b");
+  check("every shaping sign is refused, and each spoken once",
+        [B.chipsOf(), bb.value, spoken.length],
+        [["state:DONE"], "-columns:state +view:hot sort:a->b", 4]);
+
+  B.handle.closeFilter();
+  check("closing takes the refusals out of the box with the session", bb.value, "");
+  B.handle.openFilter();
+  B.commit("sort:state");
+  check("and the next plain summons is the whole grammar again",
+        [B.chipsOf(), bb.placeholder], [["state:DONE", "sort:state"], WHOLE]);
+
+  const C = driver(40, { initialQuery: "sort:state columns:state,title" });
+  C.handle.openFilter({ narrow: true });
+  C.commit("state:DONE");
+  check("the standing shaping chips ride along untouched",
+        C.handle.getQuery(), "sort:state columns:state,title state:DONE");
+
+  const D = driver(40);
+  const db = D.b();
+  D.handle.openFilter({ narrow: true });
+  db.value = "sort:x state:DONE ";
+  db.dispatchEvent(new Ev("input"));
+  await sleep(250);
+  check("a settling debounce chips what narrows and keeps back what shapes",
+        [D.chipsOf(), db.value, D.handle.getQuery()],
+        [["state:DONE"], "sort:x", "state:DONE"]);
+}
+
 /** Cell-level selection, the action legend, chips and badge pills. */
 async function cellsChipsPills() {
   console.log("\n== cells, chips and pills");
@@ -6049,6 +6127,7 @@ async function smoke() {
         }), [0, 1]);
 
   await filterQuery();
+  await narrowedDoor();
   await cellsChipsPills();
   await queryKeys();
   await sortOrder();

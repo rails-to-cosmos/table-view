@@ -337,7 +337,7 @@ hands the query to the producer, and whatever `setRows` delivers is what shows.
 | `selectStep(±1)`   | move the selection a row, turning the page at either end       |
 | `nextPage()` / `previousPage()` | turn a page, landing on its first / last row     |
 | `pageInfo()`       | `{ page, pages, from, to, total }` over the filtered set       |
-| `openFilter()`     | summon the filter — raises the palette, draws `inline`'s box onto the chips' line, or focuses the resident box |
+| `openFilter(how?)` | summon the filter — raises the palette, draws `inline`'s box onto the chips' line, or focuses the resident box. `{narrow: true}` opens it on the **filter half** of the grammar alone (below) |
 | `closeFilter()`    | dismiss it and give the keyboard back to the table            |
 | `filtering()`      | is the filter box holding the keyboard? — what a consumer binding keys over the whole document asks before claiming one |
 | `destroy()`        | let the mount go: releases the theme watchers — one on `document.documentElement`, one on a `matchMedia` list — registered outside the container and outliving your emptying it |
@@ -955,6 +955,31 @@ the token a click or `stripLastToken()` removes are all the text as written — 
 a chip may lie prettily while the grammar does not. Anything but a non-empty
 string leaves the token raw, which is how one formatter aliases the two tokens
 it knows and passes the rest through.
+
+### The narrowed door
+
+The grammar has two halves: `sort:`, `columns:` and `view:` shape the table,
+every other key narrows the rows in it. **`openFilter({ narrow: true })`** opens
+the box on the narrowing half alone — a search box, where the plain
+`openFilter()` is the whole expression.
+
+The key stage offers the narrowing keys only: the view's columns, `planned`,
+`substring`, and no `sort:`, `columns:`, `view:` or saved-view name among them.
+Signs, metas and every value stage are exactly what they are anywhere, and the
+placeholder names the half being edited. A **shaping token committed through
+such a box is refused**: it never becomes a chip, never reaches the delivered
+query, and is left standing in the box where the reader can see what was not
+taken. `onRefused(token)` — a mount option — is handed the source text as
+written, once per spelling per summons, so the consumer names the other door in
+its own words. The box commits again on every settling debounce, and a refusal
+repeated per keystroke is a refusal nobody reads.
+
+The chips already applied **ride along untouched** — the strip is not the box —
+so narrowing never loses the order or the column set. The narrowing is the
+*session's*: it clears when the box closes, taking its refusals out of the box
+with it, and a plain `openFilter()` is the whole grammar again however the last
+one opened. Two doors, one query: the narrowed one is a restricted view over the
+`?q=` the other writes, never a second query.
 
 ### Drill-down crumbs
 
