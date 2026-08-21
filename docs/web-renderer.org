@@ -164,6 +164,17 @@ bare word:
   commits again on every settling debounce. The chips already applied ride along
   untouched: the strip is not the box, so narrowing never loses the order. The
   flag is the SESSION's and the refusals go with it when the box closes.
+- *The dock is where a summoned box lands, not what summons it*:
+  =filterDock: "overlay" | "strip"=. Overlay raises the veil, strip lays the box
+  on the CHIP STRIP'S OWN ROW (chips auto column, box taking the slack, revealed
+  by =tv-typing=). =palette= defaults to overlay and =inline= to strip; named on
+  a plain mount it is what makes the box summoned at all, and the rest of that
+  mount — the filling table, the sort marks, the hint line and its pager —
+  stays. The SUMMONED LADDER follows the summoning: two-step Escape, dead
+  Backspace over an emptied box, delivery on COMMIT alone. =inline= is a PICKER
+  and keeps its own rungs (one Escape, a Backspace that eats the box, rows that
+  narrow as they are typed), so the internal =summoned= predicate is spelled to
+  leave it out.
 - Chip strip reads left→right: crumbs (where the reader came FROM, no =data-i=,
   not removable) then live chips. The ORDER is in the strip as =sort:= tokens and
   carried over the columns by the headers — a per-key chip would say it twice.
@@ -171,8 +182,9 @@ bare word:
 - Enter/Escape are stopped at the input (not bubbled into a consumer keymap);
   the suggestion list gets first refusal (SCHEMA precedence — Esc closes the
   list before it clears anything). Backspace walks the query down in three
-  shapes: on the page, characters then chips then hands the table over; in the
-  palette, characters only (the chips are elsewhere); =inline=, characters then
+  shapes: on the page, characters then chips then hands the table over; over a
+  SUMMONED box, characters only (the chips are elsewhere, on the page behind the
+  box or beside it on the strip); =inline=, characters then
   the SUMMONED BOX ITSELF — an emptied box was the last thing the reader put
   there, and the chips under it are the consumer's own rung. Held Backspace
   stops before taking a chip.

@@ -902,6 +902,19 @@ with no focus of its own, so a consumer that wants the *next* press must listen
 on the document rather than on the mount's root, and can ask `filtering()`
 whether the box has the keys before claiming anything.
 
+Pass **`filterDock: "overlay" | "strip"`** to say *where* a summoned box lands,
+which is a separate question from what summons it. `overlay` raises the veil the
+palette always did; `strip` lays the box on the **chip strip's own row** — the
+chips take their width, the box takes the slack, and nothing is drawn over the
+table. `palette` docks overlay and `inline` docks strip unless the option says
+otherwise, so every existing mount is what it was. Named on a plain mount, it is
+what makes the box summoned at all: the mount keeps its filling table, its sort
+marks and its hint line, and gains the summoned ladder — Escape in two steps
+(the typed text, then the box), a Backspace that is dead over an emptied box
+(the chips are on the page beside it), and **filtering on commit alone**. The
+`inline` picker is the exception it always was: one Escape, a Backspace that
+eats the box, and rows that narrow as they are typed.
+
 Pass **`initialQuery`** to restore a query rather than run one — it arrives as
 committed chips with the box empty and nothing delivered, which is what a
 consumer remounting after a reconnect or a `?q=` load wants. There is no other

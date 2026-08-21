@@ -167,6 +167,14 @@ const mixed = (a, b, t) => "#" + rgb(a)
 /** Every stylesheet the renderer injected, as one string. */
 const cssText = () => document.head.children.map((e) => e.text).join("");
 
+/**
+ * The applied chip's rule, selector and all. The identity belongs to the
+ * SUMMONED mount — the palette's overlay and the strip dock alike — so it is
+ * spelled for both, and the checks that read it say where it is written once
+ * instead of eight times.
+ */
+const FROST_RULE = ".tv-pal .tv-chip,.tv-summon .tv-chip";
+
 /** A CSS percentage as a fraction. */
 const pctOf = (v) => Number(String(v).replace("%", "")) / 100;
 
@@ -2525,12 +2533,12 @@ async function sortTokens() {
   //     it: the silhouette, the ink, the × and the hover are the chip's own.
   {
     const css = cssText();
-    const rule = ".tv-pal .tv-chip-sort";
+    const rule = ".tv-pal .tv-chip-sort,.tv-summon .tv-chip-sort";
     check("the sort chip's rule is spelled where the filter chip's is, after it",
-          [css.indexOf(rule + "{") > css.indexOf(".tv-pal .tv-chip{"),
+          [css.indexOf(rule + "{") > css.indexOf(FROST_RULE + "{"),
            css.indexOf(rule + "{") < css.indexOf(".tv-chips .tv-chip-muted{")],
           [true, true]);
-    const sort = boxOf([rule]), frost = boxOf([".tv-pal .tv-chip"]);
+    const sort = boxOf([rule]), frost = boxOf([FROST_RULE]);
     check("it washes the column band's own colour where the filter chip washes frost",
           [/var\(--tv-col\)/.test(sort.background), /var\(--tv-frost\)/.test(frost.background)],
           [true, true]);
@@ -2771,7 +2779,7 @@ async function crumbTrail() {
     check("the crumb rule exists, spelled with the row so it outranks the palette's",
           css.indexOf(inert) !== -1, true);
     check("and sits after the frost rule it has to beat at equal specificity",
-          css.indexOf(inert) > css.indexOf(".tv-pal .tv-chip{"), true);
+          css.indexOf(inert) > css.indexOf(FROST_RULE + "{"), true);
     const rule = css.slice(css.indexOf(inert));
     const decl = rule.slice(rule.indexOf("{") + 1, rule.indexOf("}"));
     check("it gives up the chip's ground and takes the muted ink",
@@ -2784,7 +2792,7 @@ async function crumbTrail() {
     // Both grounds a chip is drawn on: the palette tints an edge with frost,
     // the bar leaves it the plain hairline, and a crumb takes the SAME one
     // either way.
-    for (const [where, live] of [["palette", [".tv-chip", ".tv-pal .tv-chip"]],
+    for (const [where, live] of [["palette", [".tv-chip", FROST_RULE]],
                                  ["bar", [".tv-chip"]]]) {
       const chip = boxOf(live), crumb = boxOf([...live, ".tv-chips .tv-chip-muted"]);
       check(where + ": the crumb's border is the live chip's, frost and all",
@@ -2806,7 +2814,7 @@ async function crumbTrail() {
           [boxOf([".tv-chip"], coarse)["padding-left"]]);
     check("and no hover, a crumb being nothing to act on — the rules decline it",
           [/\.tv-chip:not\(\.tv-chip-muted\):hover\{/.test(css),
-           /\.tv-pal \.tv-chip:not\(\.tv-chip-muted\):hover\{/.test(css),
+           /\.tv-pal \.tv-chip:not\(\.tv-chip-muted\):hover[,{]/.test(css),
            /\.tv-chip-muted:hover/.test(css)], [true, true, false]);
     for (const theme of ["light", "dark"]) {
       const p = paletteIn(`:root[data-theme="${theme}"] .tv-root{`);
@@ -3139,6 +3147,10 @@ async function narrowedDoor() {
         [true, true, true]);
   check("and a saved view by name", offers("ho", "view:hot"), true);
   check("and wears the whole grammar's placeholder", ab.placeholder, WHOLE);
+  check("a shaping key spelled out opens its own stage there",
+        [type("sort:").length > 0, type("columns:").length > 0,
+         type("view:").length > 0],
+        [true, true, true]);
 
   A.handle.openFilter({ narrow: true });
   check("the narrowed door offers none of the three",
@@ -3149,6 +3161,12 @@ async function narrowedDoor() {
         [offers("sta", "state:"), offers("DON", "state:DONE"),
          offers("-sta", "state:"), offers("state:*emp", "*empty*")],
         [true, true, true, true]);
+  check("nor does a hand-typed shaping key open its stage",
+        [type("sort:"), type("columns:"), type("view:")], [[], [], []]);
+  check("not with a value half-typed behind it either",
+        [type("sort:ti"), type("columns:sta"), type("view:ho")], [[], [], []]);
+  check("a narrowing key's value stage is untouched by the ban",
+        [type("state:").length > 0, offers("state:DON", "DONE")], [true, true]);
   check("and it names the half it edits", ab.placeholder.indexOf("filter rows"), 0);
 
   const spoken = [];
@@ -3190,6 +3208,241 @@ async function narrowedDoor() {
   check("a settling debounce chips what narrows and keeps back what shapes",
         [D.chipsOf(), db.value, D.handle.getQuery()],
         [["state:DONE"], "sort:x", "state:DONE"]);
+}
+
+/**
+ * `filterDock': WHERE a summoned box lands, told apart from WHAT summons it.
+ * The strip dock lays the box on the chip strip's own row and leaves the rest
+ * of the mount standing — the filling table, the sort marks, the hint line and
+ * its pager — where the overlay dock raises the veil over all of it. The
+ * SUMMONED LADDER travels with the summoning rather than with the veil, and
+ * every rung and every measure that are the picker's stay the picker's.
+ */
+async function dockedDoor() {
+  console.log("\n== the docked door");
+  const css = cssText();
+  /** The strip's own rhythm, spelled for every mount that hangs one. */
+  const CHIPS_ROW = ".tv-omni > .tv-chips,.tv-pal > .tv-chips,.tv-summon > .tv-chips";
+  const asked = [];
+  const D = driver(40, { filterDock: "strip", onFilter: (q) => asked.push(q) });
+  const dock = D.box, dt = D.handle, dbx = D.b(), chipsOf = D.chipsOf;
+  const root = dock.querySelector(".tv-root");
+  const typing = () => root.classList.contains("tv-typing");
+  const items = () => dock.querySelectorAll(".tv-ac-item").length;
+
+  // --- what the dock is
+  check("a docked mount marks the dock, and owns the page it is drawn on",
+        [root.classList.contains("tv-dock"), root.classList.contains("tv-summon"),
+         root.classList.contains("tv-inline"), root.classList.contains("tv-pal")],
+        [true, true, false, false]);
+  check("its box has a bar on the page beside the strip, with nothing drawn over it",
+        [root.children.map((e) => e.className),
+         dock.querySelectorAll(".tv-veil").length,
+         dock.querySelectorAll(".tv-panel").length],
+        [["tv-bar", "tv-chips", "tv-scroll", "tv-hint"], 0, 0]);
+  check("and the box lives in that bar rather than in a panel",
+        [dbx.parentNode.className, dbx.parentNode.parentNode.className],
+        ["tv-filter-wrap", "tv-bar"]);
+  check("the strip and the box share row one; the table takes the slack under them",
+        [boxOf([".tv-dock > .tv-chips"])["grid-area"],
+         boxOf([".tv-dock > .tv-bar"])["grid-area"],
+         boxOf([".tv-dock > .tv-scroll"])["grid-area"],
+         boxOf([".tv-dock.tv-summon"])["grid-template-rows"]],
+        ["1 / 1", "1 / 2", "2 / 1 / 2 / -1", "auto minmax(0,1fr) auto"]);
+  check("the strip keeps the summoned rhythm, and gives its edge to the scroller",
+        [boxOf([CHIPS_ROW, ".tv-dock > .tv-chips"])["padding-left"],
+         boxOf([CHIPS_ROW, ".tv-dock > .tv-chips"])["border-bottom"],
+         boxOf([".tv-dock > .tv-scroll"])["border-top"]],
+        ["12px", "none", "1px solid var(--tv-border)"]);
+  // The strip's own padding is the air the box is centred in, so the table under
+  // it does not jump down the moment one is summoned.
+  check("and the box is centred in that air rather than bringing its own",
+        [boxOf([".tv-dock.tv-summon > .tv-bar"])["padding-top"],
+         boxOf([".tv-dock.tv-summon > .tv-bar"])["padding-bottom"],
+         boxOf([".tv-dock.tv-summon > .tv-bar"])["padding-right"],
+         boxOf([".tv-dock"])["align-items"]],
+        ["0", "0", "12px", "center"]);
+  // Source position is the whole of that trim, these rules tying on specificity.
+  check("which is a matter of where the rules are spelled, so they are pinned in order",
+        [css.indexOf(".tv-dock > .tv-chips{") > css.indexOf(CHIPS_ROW + "{"),
+         css.indexOf(".tv-inline > .tv-chips{") > css.indexOf(".tv-dock > .tv-chips{")],
+        [true, true]);
+
+  // --- and what the dock leaves standing
+  check("the hint line is a row of its own, spanning both columns",
+        [!!dock.querySelector(".tv-hint"), boxOf([".tv-dock > .tv-hint"])["grid-area"]],
+        [true, "3 / 1 / 3 / -1"]);
+  check("the declared sort still marks the column it orders", sortMarks(dock), ["Scheduled▲"]);
+  check("the hidden arrows and the twelve-row cap are the picker's alone",
+        [/\.tv-inline th \.tv-arrow\{/.test(css), /\.tv-dock[^{]*\.tv-arrow\{/.test(css),
+         boxOf([".tv-inline .tv-scroll"])["max-height"],
+         "max-height" in boxOf([".tv-dock", ".tv-dock > .tv-scroll",
+                                ".tv-dock.tv-summon", ".tv-dock.tv-summon > .tv-scroll"])],
+        [true, false, "calc(12 * 2.05em)", false]);
+  check("and so is the small face — a docked box wears the mount's own",
+        [boxOf([".tv-inline .tv-filter"])["font-size"],
+         "font-size" in boxOf([".tv-dock.tv-summon .tv-filter"]),
+         boxOf([".tv-dock.tv-summon .tv-filter"]).flex],
+        ["12px", false, "1 1 auto"]);
+  check("its applied chips wear the summoned mount's frost, the picker's do not",
+        [css.indexOf(FROST_RULE + "{") !== -1, root.classList.contains("tv-summon")],
+        [true, true]);
+
+  // --- summoned onto the strip, and away again
+  check("nothing is drawn there before anyone asked", typing(), false);
+  dt.openFilter();
+  check("openFilter puts the box on the strip's row and takes the keyboard",
+        [typing(), dbx.focused, dock.querySelectorAll(".tv-veil").length],
+        [true, true, 0]);
+  check("the bar it lands in being hidden until that class, and shown by it",
+        [boxOf([".tv-dock > .tv-bar"]).display,
+         boxOf([".tv-dock.tv-typing > .tv-bar"]).display],
+        ["none", "flex"]);
+  check("the suggestions open under it, inside the mount's own clip",
+        [(dbx.value = "sy", dbx.dispatchEvent(new Ev("input")), items() > 0),
+         dock.querySelector(".tv-ac").parentNode.className,
+         boxOf([".tv-ac"])["max-height"], boxOf([".tv-root"]).overflow],
+        [true, "tv-filter-wrap", "min(288px,40vh)", "hidden"]);
+  dt.closeFilter();
+  check("closeFilter takes it off the strip again", [typing(), dbx.focused], [false, false]);
+
+  // --- COMMIT ALONE: the reader called the box up and is looking at it
+  dt.openFilter();
+  for (const q of ["s", "st", "sta", "state:D"]) {
+    dbx.value = q;
+    dbx.dispatchEvent(new Ev("input"));
+  }
+  await sleep(300);                       // well past any debounce there might be
+  check("typing into a docked box delivers nothing, however long it is left",
+        [asked, chipsOf(), items() > 0], [[], [], true]);
+  dbx.dispatchEvent(new Ev("keydown", { key: "Escape" }));   // the list the typing opened
+  dbx.value = "state:DONE";
+  dbx.dispatchEvent(new Ev("keydown", { key: "Enter" }));
+  await painted();
+  check("RET commits it, delivers once, and hands the table over",
+        [chipsOf(), asked, dbx.value, typing(),
+         !!dock.querySelector(".tv-table tbody tr.tv-sel")],
+        [["state:DONE"], ["state:DONE"], "", false, true]);
+
+  // --- ESCAPE IN TWO STEPS: the text first, the box second
+  dt.openFilter();
+  dbx.value = "sy";
+  dbx.dispatchEvent(new Ev("input"));
+  check("a list is open over the docked box", items() > 0, true);
+  dbx.dispatchEvent(new Ev("keydown", { key: "Escape" }));
+  check("the first Escape closes the list, and the box stands with its text",
+        [items(), typing(), dbx.value], [0, true, "sy"]);
+  dbx.dispatchEvent(new Ev("keydown", { key: "Escape" }));
+  check("the second drops the text, and the box still stands", [dbx.value, typing()], ["", true]);
+  dbx.dispatchEvent(new Ev("keydown", { key: "Escape" }));
+  check("the third takes it off the strip", typing(), false);
+
+  // --- BACKSPACE IS DEAD over the emptied box: the chip is on the page behind
+  dt.openFilter();
+  check("a chip stands on the page behind the box", chipsOf(), ["state:DONE"]);
+  const blurs = dbx.blurs || 0;
+  dbx.value = "";
+  for (let i = 0; i < 3; i++) {
+    dbx.dispatchEvent(new Ev("keydown", { key: "Backspace" }));
+    dbx.dispatchEvent(new Ev("keydown", { key: "Backspace", repeat: true }));
+  }
+  check("Backspace does not reach it, however many times it is pressed or held",
+        [chipsOf(), typing(), dbx.focused, (dbx.blurs || 0) - blurs],
+        [["state:DONE"], true, true, 0]);
+  check("and stripLastToken is the consumer's own route to it, as in the palette",
+        [dt.stripLastToken(), chipsOf()], [true, []]);
+  dt.closeFilter();
+
+  // --- THE PICKER DOCKS TOO, and keeps every rung and measure of its own
+  const P = driver(20, { inline: true });
+  const pick = P.box, pt = P.handle, pb = P.b();
+  const pRoot = pick.querySelector(".tv-root");
+  check("a picker docks on the strip without owning the page",
+        [pRoot.classList.contains("tv-dock"), pRoot.classList.contains("tv-summon"),
+         pRoot.classList.contains("tv-inline"), pRoot.classList.contains("tv-omni")],
+        [true, false, true, true]);
+  check("with no hint line and no veil, exactly as before",
+        [pick.querySelectorAll(".tv-hint").length, pick.querySelectorAll(".tv-veil").length],
+        [0, 0]);
+  // The rules were cut in two; the boxes they settle at were not. This is the
+  // cascade the picker actually reads, merged the way the browser merges it.
+  const pickBox = (el) => boxOf([CHIPS_ROW, ".tv-dock > " + el, ".tv-inline > " + el]);
+  check("and its strip, its bar and its window read byte for byte as they did",
+        [pickBox(".tv-chips")["grid-area"], pickBox(".tv-chips")["padding-top"],
+         pickBox(".tv-chips")["padding-left"], pickBox(".tv-chips")["border-bottom"],
+         pickBox(".tv-bar")["grid-area"], pickBox(".tv-bar").display,
+         pickBox(".tv-bar")["padding-right"], pickBox(".tv-bar")["padding-left"],
+         pickBox(".tv-scroll")["grid-area"], pickBox(".tv-scroll")["border-top"],
+         boxOf([".tv-dock"]).display, boxOf([".tv-dock"])["grid-template-columns"],
+         boxOf([".tv-dock"])["align-items"], boxOf([".tv-inline"])["border-width"],
+         "grid-template-rows" in boxOf([".tv-dock", ".tv-inline"])],
+        ["1 / 1", "5px", "8px", "none", "1 / 2", "none", "8px", "0",
+         "2 / 1 / 2 / -1", "1px solid var(--tv-border)",
+         "grid", "auto minmax(0,1fr)", "center", "none", false]);
+  pt.openFilter();
+  check("its box is summoned onto that same row", pRoot.classList.contains("tv-typing"), true);
+  pb.value = "zzz";
+  pb.dispatchEvent(new Ev("keydown", { key: "Escape" }));
+  await painted();
+  check("and ONE Escape drops the edit and stands the cursor on a row",
+        [pb.value, pRoot.classList.contains("tv-typing"),
+         !!pick.querySelector(".tv-table tbody tr.tv-sel")],
+        ["", false, true]);
+  pt.setQuery("state:DONE");
+  pt.openFilter();
+  pb.value = "";
+  pb.dispatchEvent(new Ev("keydown", { key: "Backspace" }));
+  check("and Backspace over its emptied box takes the box, not the chip behind it",
+        [pRoot.classList.contains("tv-typing"),
+         pick.querySelectorAll(".tv-chip[data-i]").length],
+        [false, 1]);
+  // A PICKER NARROWS AS IT IS TYPED. It is a thing to pick FROM, so the reader
+  // is watching the rows the box is filtering — the one rung of the summoned
+  // ladder the picker does not take.
+  const seen = [];
+  const L = driver(40, { inline: true, onFilter: (q) => seen.push(q) });
+  const lb = L.b();
+  L.handle.openFilter();
+  lb.value = "system ";
+  lb.dispatchEvent(new Ev("input"));
+  await sleep(300);
+  check("and it filters as the reader types, where a summoned box waits for RET",
+        seen, ["system"]);
+
+  // --- THE OVERLAY DOCK is the palette, exactly as it always was
+  const V = driver(40, { palette: true });
+  const over = V.box, vt = V.handle, vb = V.b();
+  const vRoot = over.querySelector(".tv-root");
+  const veil = () => over.querySelector(".tv-veil");
+  check("a palette docks overlay, and hangs nothing on the strip",
+        [vRoot.classList.contains("tv-pal"), vRoot.classList.contains("tv-summon"),
+         vRoot.classList.contains("tv-dock")],
+        [true, true, false]);
+  check("the page carries the chip row and the veil, and the box is in the panel",
+        [vRoot.children.map((e) => e.className), vb.parentNode.parentNode.className],
+        [["tv-chips", "tv-scroll", "tv-hint", "tv-veil"], "tv-panel"]);
+  vt.openFilter();
+  check("openFilter raises that veil rather than any strip",
+        [veil().style.display, vRoot.classList.contains("tv-typing")], ["", false]);
+  vt.closeFilter();
+  check("and closeFilter puts it away", veil().style.display, "none");
+
+  // --- the option decides where the mode is silent, and only there
+  const dockOf = (opts) => {
+    const el = new El("div");
+    TableView.mount(el, view(5), opts);
+    const r = el.querySelector(".tv-root");
+    return [r.classList.contains("tv-dock"), r.classList.contains("tv-summon"),
+            el.querySelectorAll(".tv-veil").length];
+  };
+  check("a plain mount summons nothing and docks nowhere", dockOf(undefined), [false, false, 0]);
+  check("palette defaults to the overlay dock", dockOf({ palette: true }), [false, true, 1]);
+  check("inline defaults to the strip", dockOf({ inline: true }), [true, false, 0]);
+  check("and a named dock outranks both defaults",
+        [dockOf({ palette: true, filterDock: "strip" }), dockOf({ filterDock: "overlay" })],
+        [[true, true, 0], [false, true, 1]]);
+  check("a spelling the contract does not carry is no dock at all",
+        dockOf({ filterDock: /** @type {any} */ ("panel") }), [false, false, 0]);
 }
 
 /** Cell-level selection, the action legend, chips and badge pills. */
@@ -4859,9 +5112,9 @@ async function queryKeys() {
           (css.match(/color-mix\(in srgb,var\(--tv-frost\) var\(--tv-chip-\w+\),transparent\)/g)
            || []).length, 2);
     check("and the ink is the theme's own foreground",
-          /\.tv-pal \.tv-chip\{color:var\(--tv-fg\)/.test(css), true);
+          /\.tv-pal \.tv-chip,\.tv-summon \.tv-chip\{\s*color:var\(--tv-fg\)/.test(css), true);
     check("the rule is still one rule — the strengths live with the palettes",
-          css.split(".tv-pal .tv-chip{").length, 2);
+          css.split(FROST_RULE + "{").length, 2);
     check("and the selected row is a background and nothing else",
           /\.tv-table tbody tr\.tv-sel\{background:var\(--tv-sel\)\}/.test(css), true);
     check("no stripe, no border, no shadow on it",
@@ -6128,6 +6381,7 @@ async function smoke() {
 
   await filterQuery();
   await narrowedDoor();
+  await dockedDoor();
   await cellsChipsPills();
   await queryKeys();
   await sortOrder();

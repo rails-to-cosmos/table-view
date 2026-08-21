@@ -6,6 +6,19 @@ the rails-to-cosmos ELPA archive publishes date-stamped snapshots.
 ## Unreleased
 
 ### Added
+- **`filterDock: "overlay" | "strip"` — where a summoned box LANDS, told apart
+  from what summons it.** `overlay` raises the veil the palette always did;
+  `strip` lays the box on the CHIP STRIP'S OWN ROW, the chips taking their width
+  and the box the slack, with nothing drawn over the table. `palette` docks
+  overlay and `inline` docks strip unless the option says otherwise, so every
+  existing mount is what it was. Named on a plain mount it is what makes the box
+  summoned at all: the mount keeps its filling table, its sort marks and its
+  hint line with the pager, and takes the SUMMONED LADDER — Escape in two steps,
+  a dead Backspace over an emptied box, and delivery on COMMIT alone. The
+  picker's rungs stay the picker's: one Escape, a Backspace that eats the box,
+  and rows that narrow as they are typed. The `.tv-dock` rules are the geometry
+  `inline` used to carry alone, and `.tv-inline` now wears them beside its own
+  compact furniture — the twelve-row cap, the hidden arrows, the small face.
 - **`inline: true` — a compact mount for a box someone else framed.** It implies
   `omnibox`, drops the mount's own border, title, hint line and sort marks, and
   caps the window at twelve rows. The filter box is SUMMONED rather than
