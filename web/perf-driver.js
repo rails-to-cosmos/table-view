@@ -3123,6 +3123,189 @@ async function filterQuery() {
 }
 
 /**
+ * The DATE COMPARISONS: the value forms a date column takes — `>=D', `>D',
+ * `<=D', `<D', the range `A..B' and the literal `*today*' — the laws that
+ * decide them, and the completion that helps type one.
+ */
+async function comparisons() {
+  console.log("\n== date comparisons");
+  const cols = [
+    { key: "title", header: "Headline", type: "text" },
+    { key: "scheduled", header: "Scheduled", type: "text" },
+    { key: "deadline", header: "Deadline", type: "text" },
+  ];
+  // One row per shape the laws tell apart: either side of a month's edge, a
+  // TIMED stamp inside its last day, a row nobody dated, and the pair of dates
+  // law 9 turns on — scheduled long after the range, a deadline long before it.
+  const rows = [
+    { id: "a", cells: { title: "before", scheduled: "2026-07-31", deadline: "2026-08-15" } },
+    { id: "b", cells: { title: "opens the month", scheduled: "2026-08-01", deadline: "" } },
+    { id: "c", cells: { title: "closes it, at nine", scheduled: "2026-08-31 09:00",
+                        deadline: "2026-09-01" } },
+    { id: "d", cells: { title: "after", scheduled: "2026-09-01", deadline: "" } },
+    { id: "e", cells: { title: "no day at all", scheduled: "", deadline: "" } },
+    { id: "f", cells: { title: "a > b, far apart", scheduled: "2027-01-01",
+                        deadline: "2020-01-01" } },
+  ];
+  const D = driver({ columns: cols, rows });
+  /** Commit Q from a clean box and say which rows it left, in row order. */
+  const run = (q) => { D.shown(q); return D.handle.getVisible().map((r) => r.id); };
+
+  // --- the atoms, on the month `2026-08'
+  check("< is before the literal's first instant", run("scheduled:<2026-08"), ["a"]);
+  check("and the bare literal is the interval it names",
+        run("scheduled:2026-08"), ["b", "c"]);
+  check("and > is after its last", run("scheduled:>2026-08"), ["d", "f"]);
+  // Trichotomy: for a DATED row exactly one of the three holds.
+  check("the three partition the dated rows",
+        run("scheduled:<2026-08").concat(run("scheduled:2026-08"),
+                                         run("scheduled:>2026-08")).sort(),
+        ["a", "b", "c", "d", "f"]);
+  check("the inclusives are those unions",
+        [run("scheduled:<=2026-08"), run("scheduled:>=2026-08")],
+        [["a", "b", "c"], ["b", "c", "d", "f"]]);
+
+  // --- granularity, where a TIMED stamp sits inside the day the literal names
+  check("< and >= cut at the literal's FIRST instant, so nine o'clock is after it",
+        [run("scheduled:<2026-08-31"), run("scheduled:>=2026-08-31")],
+        [["a", "b"], ["c", "d", "f"]]);
+  check("<= and > cut at its LAST, which is everything the prefix reaches",
+        [run("scheduled:<=2026-08-31"), run("scheduled:>2026-08-31")],
+        [["a", "b", "c"], ["d", "f"]]);
+  check("so the bare form is the closed interval, said with two tokens",
+        run("scheduled:>=2026-08 scheduled:<=2026-08"), run("scheduled:2026-08"));
+
+  // --- the empty cell, which sits OUTSIDE every comparison
+  check("no comparison serves the undated row",
+        ["<2026-08", "<=2026-08", ">2026-08", ">=2026-08", "2026-08-01..2026-09-01"]
+          .every((v) => run("scheduled:" + v).indexOf("e") === -1), true);
+  check("so a negated one does", run("-scheduled:<2026-08").indexOf("e") !== -1, true);
+  // Law 6: the sign is no mirror. The two differ on EXACTLY the undated rows,
+  // which is why the surface must never rewrite one into the other.
+  check("and negation is no mirror of the opposite operator",
+        [run("-scheduled:<2026-08"), run("scheduled:>=2026-08")],
+        [["b", "c", "d", "e", "f"], ["b", "c", "d", "f"]]);
+  check("the meta still widens a comparison, both being atoms",
+        run("scheduled:<2026-08 +scheduled:*empty*"), ["a", "e"]);
+
+  // --- the range
+  check("A..B is >=A and <=B on one axis",
+        run("scheduled:2026-08-01..2026-08-31"), ["b", "c"]);
+  check("which on a single-cell key two tokens also say",
+        run("scheduled:2026-08-01..2026-09-01"),
+        run("scheduled:>=2026-08-01 scheduled:<=2026-09-01"));
+  // Law 9, the whole reason `..' exists: ONE ATOM is asked of each date cell in
+  // turn, where two TOKENS let either cell answer either end. Row `f' is
+  // scheduled after the range and due before it, and lies in neither.
+  check("but on `planned' the range is ONE CELL INSIDE THE INTERVAL",
+        run("planned:2026-08-01..2026-09-01"), ["a", "b", "c", "d"]);
+  check("where the two tokens serve a row that lies in neither range",
+        run("planned:>=2026-08-01 planned:<=2026-09-01"), ["a", "b", "c", "d", "f"]);
+  check("and `planned' reads both date cells under a comparison, as under a prefix",
+        run("planned:<2026-08"), ["a", "f"]);
+
+  // --- the half-typed token, which narrows nothing and establishes no axis
+  check("an operator with no literal narrows nothing",
+        [run("scheduled:>").length, run("scheduled:>=").length,
+         run("scheduled:2026-08..").length, run("scheduled:..2026-08").length], [6, 6, 6, 6]);
+  check("and establishes no axis, so an added token beside it stands alone",
+        run("scheduled:> +scheduled:2026-08"), ["b", "c"]);
+  check("while the negated vacuum empties the table, as `-state:' does",
+        run("-scheduled:>=").length, 0);
+  check("a literal opening with no digit matches no row",
+        [run("scheduled:>banana").length, run("scheduled:>*empty*").length], [0, 0]);
+
+  // --- alternatives split first, so an OR of comparisons is free
+  check("each alternative carries its own operator",
+        run("scheduled:<2026-08|>2026-12"), ["a", "f"]);
+
+  // --- conservativity: the operator is read on the DATE columns and nowhere else
+  check("on a text column the character is body text, as it has always been",
+        [run("title:>"), run("title:> b")], [["f"], ["f"]]);
+  check("and free text carrying one is the substring it spells",
+        run(">2026-08").length, 0);
+  check("a bare prefix reads exactly as it did", run("scheduled:2026-08"), ["b", "c"]);
+  // The separator splits FIRST and a quote strips mid-value, so neither reaches
+  // the operator; a token OPENING with a quote is free text whole.
+  check("= is the same comparison, being `:''s alias",
+        run("scheduled=>=2026-08"), ["b", "c", "d", "f"]);
+  check("and a quote inside the value strips off it",
+        run('scheduled:">=2026-08"'), ["b", "c", "d", "f"]);
+  check("where a token that opens with one is free text, operator and all",
+        run('"scheduled:>=2026-08"').length, 0);
+
+  // --- the chip strip prints the token as written; the operator is value text
+  D.shown("scheduled:>=2026-08-01");
+  check("a committed comparison is one chip, spelled as it was typed",
+        D.chipsOf(), ["scheduled:>=2026-08-01"]);
+
+  // --- `*today*', the one literal the clock answers
+  {
+    const day = (delta) => {
+      const t = new Date(Date.now() + delta * 864e5);
+      const pad = (n) => String(n).padStart(2, "0");
+      return `${t.getFullYear()}-${pad(t.getMonth() + 1)}-${pad(t.getDate())}`;
+    };
+    const T = driver({ columns: cols, rows: [
+      { id: "y", cells: { title: "yesterday", scheduled: day(-1), deadline: "" } },
+      { id: "t", cells: { title: "today", scheduled: day(0), deadline: "" } },
+      { id: "m", cells: { title: "tomorrow", scheduled: day(1), deadline: "" } },
+    ] });
+    const on = (q) => { T.shown(q); return T.handle.getVisible().map((r) => r.id); };
+    check("the bare meta is the day itself, read as any other literal",
+          [on("scheduled:*today*"), on("scheduled:" + day(0))], [["t"], ["t"]]);
+    check("and it stands behind every operator",
+          [on("scheduled:<*today*"), on("scheduled:<=*today*"),
+           on("scheduled:>*today*"), on("scheduled:>=*today*")],
+          [["y"], ["y", "t"], ["m"], ["t", "m"]]);
+    check("and at either end of a range",
+          [on("scheduled:*today*..*today*"), on(`scheduled:${day(-1)}..*today*`)],
+          [["t"], ["y", "t"]]);
+    check("the empty cell stays outside it too",
+          on("scheduled:>=*today*").indexOf("e"), -1);
+  }
+
+  // --- the value stage: the grammar rides the foot of the domain
+  const dates = ["2026-07-31", "2026-08-01", "2026-08-31 09:00", "2026-09-01", "2027-01-01"];
+  check("a date column offers its cells, then `*today*', `*empty*' and the heads",
+        D.type("scheduled:"), dates.concat(["*today*", "*empty*", ">=", "<=", ">", "<"]));
+  check("and every one of those six is dimmed, being grammar rather than a cell",
+        D.box.querySelectorAll(".tv-ac-dim").length, 6);
+  check("a text column is untouched by any of it",
+        D.type("title:").filter((x) => x === "*today*" || x === ">=").length, 0);
+  check("`*today*' is reached star-free, the way every meta is",
+        [D.type("scheduled:tod"), D.type("scheduled:>=tod")], [["*today*"], [">=*today*"]]);
+  check("a typed head opens the value BEHIND it, and the offers wear it",
+        D.type("scheduled:>=2026-08"), [">=2026-08-01", ">=2026-08-31 09:00"]);
+  check("and drops `*empty*', which no comparison serves",
+        D.type("scheduled:>").indexOf("*empty*"), -1);
+  check("a head one character in offers the longer one it opens",
+        [D.type("scheduled:>").indexOf(">="), D.type("scheduled:<").indexOf("<="),
+         D.type("scheduled:>=").indexOf(">=")], [6, 6, -1]);
+  check("a value spelling rows carries their count, a comparison none",
+        [(() => { D.type("scheduled:"); return D.countOf("2026-08-01"); })(),
+         (() => { D.type("scheduled:>="); return D.countOf(">=2026-08-01"); })()],
+        [1, null]);
+
+  // --- accepting one: a head OPENS the value, a value finishes the token
+  {
+    const b = D.b();
+    D.type("scheduled:");
+    const at = D.items().indexOf(">=");
+    for (let i = 0; i < at; i++) D.press("ArrowDown");
+    D.press("Tab");
+    check("Tab on a head lands it bare, with no space to end the token",
+          b.value, "scheduled:>=");
+    check("and the list is the dates behind it",
+          D.items().slice(0, 2), [">=2026-07-31", ">=2026-08-01"]);
+    D.type("scheduled:2026-09");
+    D.press("Tab");
+    check("Tab on the literal behind it finishes the token, space and all",
+          b.value, "scheduled:2026-09-01 ");
+  }
+}
+
+/**
  * `openFilter({narrow: true})': the box that edits the FILTER half. The key
  * stage offers the narrowing keys alone, a shaping token is refused on commit
  * and left standing, and the chips already applied ride along untouched.
@@ -6380,6 +6563,7 @@ async function smoke() {
         }), [0, 1]);
 
   await filterQuery();
+  await comparisons();
   await narrowedDoor();
   await dockedDoor();
   await cellsChipsPills();

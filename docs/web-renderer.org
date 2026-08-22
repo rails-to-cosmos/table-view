@@ -93,6 +93,40 @@ the same way. Renderer-specific decisions:
 - A keyless token and =substring:= are ONE test — the key is an elision, not a
   second search; the cached joined string is the hot path.
 
+** Date comparisons
+
+A DATE column's value takes a comparison at its head — =>=D=, =>D=, =<=D=, =<D=
+— or the range =A..B=. Read on the date columns alone (=dateColumn=), so
+=title:>x= is the substring it has always been, and read below the =|= split, so
+=scheduled:<A|>B= is the OR of two comparisons. A comparison is one more ATOM
+KIND: the axis machinery above is untouched.
+
+- *Granularity.* The literal is any prefix of an ISO stamp and names the
+  interval it reaches. =<= and =>== cut at that interval's FIRST instant, =<==
+  and =>= at its LAST — the last being "everything the prefix reaches", which is
+  the prefix test itself and asks for no calendar arithmetic. The bare value is
+  the same pair said as a closed interval: =k:D= ≡ =k:>=D k:<=D=. Nothing a
+  reader could type before answers differently now — no ISO cell opens with an
+  operator, so a comparison-shaped value served nothing.
+- *The empty cell is OUTSIDE every comparison*, byte order putting it before
+  every literal. So =-scheduled:<D= keeps the undated rows where
+  =scheduled:>=D= drops them: negation is no mirror of the opposite operator,
+  and neither may be rewritten into the other. =*empty*= stays the only name for
+  that cell, and widens a comparison like any other atom.
+- *A range is ONE atom*, which is the whole of what two tokens cannot say. On
+  =planned=, which names two date cells, =planned:A..B= is ONE date cell inside
+  the interval, where =planned:>=A planned:<=B= lets either cell answer either
+  end — a row scheduled after the range and due before it passes the pair and
+  lies in neither. On a single-cell key the two are one set.
+- =*today*= is a date literal, legal bare, behind any operator and at either
+  range end. Resolved ONCE PER COMPILE (=compiledDay=), so every atom of one
+  query names one day whatever the clock does while it runs. THE CLOCK IS THE
+  PAGE'S OWN where the producer's is the server's: the two disagree for the hour
+  one of them is past midnight and the other is not. Accepted — same machine.
+- A half-typed comparison (=scheduled:>=, =scheduled:2026-08..=) narrows nothing
+  and establishes no axis, the way =state:= does; a literal opening with no
+  digit matches no row, the way =state:TOD= does.
+
 * Suggestion list
 
 Renderer-local autocomplete ([[file:../SCHEMA.md][SCHEMA.md]]); the producer is never asked. Row
@@ -127,6 +161,14 @@ bare word:
 - =*empty*= rides the foot of every column's domain; producer metas stand apart
   (dim, italic, no count — a per-value count beside a set-naming meta would
   print a misleading fraction).
+- A DATE column's value is a stage of its own: =*today*= and the four operator
+  heads ride the foot beside =*empty*=, and a typed head opens the value BEHIND
+  it — =scheduled:>=2026-0= completes dates, each offer wearing the head it was
+  typed with. A HEAD OPENS A VALUE WHERE A VALUE FINISHES ONE, so accepting one
+  lands =key:>== with no trailing space and the list stays open for the literal.
+  Behind a head =*empty*= drops out (no comparison serves it) and so do the
+  counts — the domain counts rows SPELLING a cell, and a comparison serves rows
+  that do not.
 - C-n/C-p move the list (Emacs minibuffer + vim insert-mode agree). Chrome-family
   browsers take C-n for a new window before the page sees it, so arrows are the
   fallback there; Firefox and system-webview deliver both. Outside an open list

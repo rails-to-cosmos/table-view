@@ -724,6 +724,35 @@ schedule *or* a deadline in that month. Reserved because both sides of the wire
 decide it off the cells alone — no producer set, no vocabulary, no clock — where
 the producer metas below need the producer.
 
+A **date column's value takes a comparison** at its head: `deadline:>=2026-09-01`,
+`deadline:<2026-10-01`, and the range `deadline:2026-09-01..2026-09-30`. The
+literal is any prefix of an ISO stamp — a year, a month, a day, an hour — and it
+names the interval that prefix reaches: `<` and `>=` cut at that interval's
+first instant, `<=` and `>` at its last, so `deadline:<2026-09` is *before
+September* and `deadline:<=2026-09` is *September or earlier*. The bare value is
+those two said at once, which is why `deadline:2026-09` is the month. Operators
+are read on the date columns alone, so `title:>x` is the substring it has always
+been, and each alternative carries its own: `scheduled:<A|>B` is either.
+
+**The empty cell is outside every comparison.** Byte order would put it before
+every literal, so an undated row is served by no comparison and `-scheduled:<D`
+keeps it where `scheduled:>=D` does not — the two are different questions and
+neither is the other written backwards. `+scheduled:*empty*` is how the undated
+rows come back.
+
+**A range is one atom**, and that is the one thing two tokens cannot say. On
+`planned`, which reads two date cells, `planned:2026-08-01..2026-09-01` is *one
+date cell inside those days*, where `planned:>=2026-08-01 planned:<=2026-09-01`
+lets the schedule answer one end and the deadline the other — a row scheduled
+next year and due last year passes the pair and is inside nothing. On a
+single-cell key the two spellings are the same rows.
+
+**`*today*` is a date literal**: it stands wherever a date does —
+bare (`scheduled:*today*` is today's rows), behind an operator
+(`deadline:<=*today*` is what is already due), or at either end of a range. The
+page resolves it against its own clock, once per query, so every `*today*` in
+one query means one day.
+
 A **suggestion list** under the box completes it. A bare word offers, in order:
 
 1. the **value or key it already spells** (`book` → `tag:book`, `tag` → `tag:`)
@@ -768,6 +797,15 @@ keywords in the list. `*empty*` closes every one of those lists, declared or
 not. Neither free-text offer appears here: a half-typed `key:value` is already
 an intent. `planned` has no domain to offer at all — what follows it is a date
 prefix over several columns at once.
+
+A **date column offers its grammar too**: `*today*` and the four operator heads
+ride the foot of its domain beside `*empty*`, and a head typed there opens the
+value behind it — `scheduled:>=2026-0` completes dates, each offer wearing the
+head. A head *opens* a value where a value *finishes* one, so accepting `>=`
+lands `scheduled:>=` with no trailing space and the list stays open for the
+literal. Behind a head `*empty*` drops out, no comparison serving it, and so do
+the counts: the domain counts the rows spelling a cell, and a comparison serves
+rows that spell something else.
 
 A `|` **re-opens** that domain: `state:DONE|` asks for the values again, the
 prefix is what follows the last bar, and accepting lands the alternative behind
