@@ -248,8 +248,11 @@ whitespace (`&` accepted as an alias); each token is:
   different rows, so the same token would be a predicate for one and free text
   for the other. A producer may still add a key of its OWN — one it names
   rather than derives — provided a renderer reading it as free text narrows to
-  a subset of what the producer answers (glance's `ref:ROWID`, over a link
-  graph only the store holds, is one).
+  a subset of what the producer answers. Glance's reference keys are the whole
+  family: `ref:ROWID` and `from:ROWID` read one edge from either end, and
+  `?kind=SLUG` narrows either, all of it over a link graph only the store
+  holds. The subset is exact rather than lucky — the value is an opaque row id,
+  which no cell spells, so the free-text reading finds no rows at all.
 - `"quoted text"` — free text containing spaces.
 - `-token` — negation of either form.
 - anything else — free text, case-insensitive substring over the row's cells.

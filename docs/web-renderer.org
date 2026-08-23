@@ -84,6 +84,15 @@ the same way. Renderer-specific decisions:
   empty-cell term and stays literal. A producer meta names a set only the
   producer enumerates — matched literally here, finds nothing, expected to go
   through =onFilter=.
+- *A producer's own KEY reads like its own meta*, one level up the token:
+  glance's =ref:ID= and =from:ID=, either narrowed by =?kind=SLUG=, are one
+  reference edge read from either end, off a link graph no page holds. Neither
+  reaches =queryKeys=, so the token is free text WHOLE — the key half included,
+  the =?= never cutting, since the FIRST =:= decides the key and =from= names no
+  column. The id it carries is spelled by no cell, so this side answers no rows
+  and =onFilter= is the only reading. That is also what keeps a consumer's own
+  divergence probe quiet: what such a probe searches the page for is the id half
+  of the token, and the page does not carry it.
 - Priority reads through org decoration both ways: =priority:A= and
   =priority:[#A]= are one query (both spellings worked out once, so the fold is
   a string compare, not a regex).

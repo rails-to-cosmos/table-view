@@ -2928,6 +2928,20 @@ async function filterQuery() {
         shape("state:DONE"), [[false, "state", "DONE", false]]);
   check("= is an alias for :", shape("state=DONE"), [[false, "state", "DONE", false]]);
   check("an unknown key is free text", shape("nope:x"), [[false, null, "nope:x", false]]);
+  // A PRODUCER'S OWN KEY (SCHEMA.md, Filter query): glance reads `ref:ID' and
+  // `from:ID' -- one reference edge from either end -- off a link graph no page
+  // holds, so neither reaches `queryKeys' and the token is free text WHOLE, key
+  // half included. The `?' spelling the edge's kind never cuts here: the FIRST
+  // `:' decides the key, and `from' names no column of this view.
+  check("a producer's own key is free text, key half and all",
+        shape("from:def456"), [[false, null, "from:def456", false]]);
+  check("the forward key reads the same, as it always has",
+        shape("ref:def456"), [[false, null, "ref:def456", false]]);
+  check("and the kind test rides that reading rather than a second parse",
+        shape("from:def456?kind=blocked-by"),
+        [[false, null, "from:def456?kind=blocked-by", false]]);
+  check("the existence meta rides it too — no star ever reaches a value",
+        shape("ref:*any*"), [[false, null, "ref:*any*", false]]);
   // The org-text traps: a predicate must never happen by accident.
   check("org tag text stays free text", shape(":work:"), [[false, null, ":work:", false]]);
   check("org verbatim text stays free text", shape("=code="), [[false, null, "=code=", false]]);
@@ -2997,6 +3011,20 @@ async function filterQuery() {
   check("free text and a predicate AND too",
         shown("system state:DONE") <= shown("state:DONE"), true);
   check("an unknown key filters as the free text it is", shown("nope:x"), 0);
+  // The subset SCHEMA asks a producer's key to narrow to is EXACT rather than
+  // lucky: the value is an opaque row id, which no cell spells, so both ends of
+  // the reference find nothing here whatever the store answers there. It is the
+  // same fact that keeps a consumer's divergence probe quiet -- what such a
+  // probe searches the page for is the id half, and the page does not carry it.
+  check("both reference keys answer no rows here, whatever they answer there",
+        [shown("ref:h-7"), shown("from:h-7"), shown("from:h-7?kind=blocked-by")],
+        [0, 0, 0]);
+  check("and the id half alone finds none either, which is what a probe asks",
+        shown("h-7"), 0);
+  reset();
+  Q.commit("from:h-7");
+  check("its chip spells what the token really is: free text under its own key",
+        Q.chipsOf(), ["substring:from:h-7"]);
   shown("");
 
   // The suggestion list.
@@ -3006,6 +3034,11 @@ async function filterQuery() {
   // two reserved ones — never a tag, which is a VALUE of the tags column.
   check("the prefix narrows them",
         type("s").filter((x) => x.endsWith(":")), ["state:", "scheduled:", "sort:"]);
+  // AND NEITHER REFERENCE KEY IS OFFERED, the roster being the view's own: a
+  // completion for a key this side cannot answer would promise a predicate and
+  // hand back a text search.
+  check("no offer names a key only the producer can answer",
+        type("f").concat(type("r")).filter((x) => /^(from|ref):/.test(x)), []);
   check("a word matching no key still offers the literal", type("zzz"), [`"zzz"`]);
   check("an empty box offers nothing", type(""), []);
   check("a quoted token offers nothing", type('"sta'), []);
