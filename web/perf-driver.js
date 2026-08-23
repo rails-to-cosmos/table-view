@@ -3265,6 +3265,136 @@ async function comparisons() {
           on("scheduled:>=*today*").indexOf("e"), -1);
   }
 
+  // --- THE SHIFT a date literal may carry: `BASE(+|-)N UNIT'
+  {
+    // One row per day the units and the clip land on, ascending, each ID'D BY
+    // THE DAY IT HOLDS — so a check reads as the days the query left standing.
+    // The clip cases are checked against days SPELLED OUT rather than against a
+    // second copy of the arithmetic, which would pass while the first drifts.
+    const S = driver({ columns: cols, rows: [
+      "2024-02-29", "2025-02-28", "2025-12-25", "2026-01-01", "2026-01-02",
+      "2026-01-02 09:00", "2026-01-08", "2026-01-31", "2026-02-01",
+      "2026-02-28", "2026-03-03", "2027-01-01",
+    ].map((d) => ({ id: d, cells: { title: d, scheduled: d, deadline: "" } })) });
+    const on = (q) => { S.shown(q); return S.handle.getVisible().map((r) => r.id); };
+
+    check("each unit steps the base its own way",
+          [on("scheduled:2026-01-01+1d"), on("scheduled:2026-01-01+1w"),
+           on("scheduled:2026-01-01+1m"), on("scheduled:2026-01-01+1y")],
+          [["2026-01-02", "2026-01-02 09:00"], ["2026-01-08"],
+           ["2026-02-01"], ["2027-01-01"]]);
+    check("and a week is seven days",
+          on("scheduled:2026-01-01+1w"), on("scheduled:2026-01-01+7d"));
+    // The whole law in one line: what resolves is a DAY LITERAL, and nothing
+    // below the resolution can tell a shifted spelling from a spelled one.
+    check("a shifted value is ONE MORE SPELLING of the day it lands on",
+          on("scheduled:2026-01-01+1w"), on("scheduled:2026-01-08"));
+
+    check("a month and a year CLIP to the target month's last day",
+          [on("scheduled:2026-01-31+1m"), on("scheduled:2024-02-29+1y")],
+          [["2026-02-28"], ["2025-02-28"]]);
+    check("where `Date''s own overflow would have landed three days into March",
+          on("scheduled:2026-01-31+1m").indexOf("2026-03-03"), -1);
+    check("a negative shift stands, and clips the same way",
+          [on("scheduled:2026-01-01-1w"), on("scheduled:2026-03-31-1m")],
+          [["2025-12-25"], ["2026-02-28"]]);
+
+    check("the shift stands behind every operator, the granularity law untouched",
+          [on("scheduled:<2026-01-01+1d"), on("scheduled:<=2026-01-01+1d")],
+          [["2024-02-29", "2025-02-28", "2025-12-25", "2026-01-01"],
+           ["2024-02-29", "2025-02-28", "2025-12-25", "2026-01-01",
+            "2026-01-02", "2026-01-02 09:00"]]);
+    check("and at BOTH ENDS of a range",
+          [on("scheduled:2026-01-01+1d..2026-01-01+1w"),
+           on("scheduled:2026-01-08-1w..2026-01-08")],
+          [["2026-01-02", "2026-01-02 09:00", "2026-01-08"],
+           ["2026-01-01", "2026-01-02", "2026-01-02 09:00", "2026-01-08"]]);
+    check("and each alternative carries its own",
+          on("scheduled:2026-01-01+1w|2026-01-01+1y"), ["2026-01-08", "2027-01-01"]);
+
+    check("a base naming no day leaves the whole value naming none, and it serves no row",
+          [on("scheduled:2026-01+1m"), on("scheduled:>2026-01+1m"),
+           on("scheduled:2026-02-30+1d")], [[], [], []]);
+
+    // --- the half-typed shift, which is the half-typed family one end deeper
+    check("a shift with no unit behind it narrows nothing, as an operator with no literal does",
+          [on("scheduled:*today*+").length, on("scheduled:*today*+30").length,
+           on("scheduled:2026-01-01+").length], [12, 12, 12]);
+    check("and establishes no axis, so an added token beside it stands alone",
+          on("scheduled:*today*+ +scheduled:2026-01-08"), ["2026-01-08"]);
+    check("while the negated vacuum empties the table, as `-state:' does",
+          on("-scheduled:*today*+").length, 0);
+    // Law: THE PLUS FAMILY ALONE ends mid-shift. `-' is ISO's own separator, so
+    // a rule reading the incomplete minus would read `2026-01-01' as `2026-01'
+    // moved `01' of no unit and every spelled day would narrow nothing.
+    check("THE PLUS FAMILY ALONE is half-typed: an incomplete minus is the literal it was",
+          [on("scheduled:*today*-7").length, on("scheduled:2026-01-01")],
+          [0, ["2026-01-01"]]);
+
+    // --- THE BARE SHIFT, which the planning grammar's precedent reads today-relative
+    /** The local day N calendar days off today, stepped in UTC as no zone's clock is. */
+    const day = (n) => {
+      const t = new Date();
+      const u = new Date(Date.UTC(t.getFullYear(), t.getMonth(), t.getDate() + n));
+      const pad = (x) => String(x).padStart(2, "0");
+      return `${u.getUTCFullYear()}-${pad(u.getUTCMonth() + 1)}-${pad(u.getUTCDate())}`;
+    };
+    const N = driver({ columns: cols, rows: [
+      { id: "week ago", cells: { title: "week ago", scheduled: day(-7), deadline: "" } },
+      { id: "today", cells: { title: "today", scheduled: day(0), deadline: "" } },
+      { id: "in a month", cells: { title: "in a month", scheduled: day(30), deadline: "" } },
+    ] });
+    const now = (q) => { N.shown(q); return N.handle.getVisible().map((r) => r.id); };
+    check("THE BARE SHIFT IS TODAY-RELATIVE, off the planning grammar's own precedent",
+          [now("scheduled:+30d"), now("scheduled:*today*+30d")],
+          [["in a month"], ["in a month"]]);
+    check("and its sign carries, negative as well as positive",
+          [now("scheduled:-7d"), now("scheduled:*today*-7d")],
+          [["week ago"], ["week ago"]]);
+    check("so the thirty-day agenda is ONE TOKEN",
+          now("scheduled:*today*..*today*+30d"), ["today", "in a month"]);
+    // The two signs never meet: the scanner reads a token's off its FIRST
+    // character and stops there, so the value's own is body text to it.
+    const tok = TableView.parseQuery("+scheduled:+30d", cols.map((c) => c.key))[0];
+    check("A TOKEN'S FIRST CHARACTER IS ITS SIGN and the value's own `+' is the shift's",
+          [tok.added, tok.negated, tok.key, tok.value], [true, false, "scheduled", "+30d"]);
+    check("so an added bare shift widens its axis rather than reading as two signs",
+          now("scheduled:*today* +scheduled:+30d"), ["today", "in a month"]);
+
+    // --- the QUOTED spelling, folded onto the compact one by the one pre-pass
+    check("the quoted form admits spaces and long unit words, and means the compact one",
+          [on('scheduled:"<= 2026-01-01 + 1 week"'), on('scheduled:"2026-01-01 + 1 month"'),
+           on('scheduled:"2026-01-01+1 day"')],
+          [on("scheduled:<=2026-01-01+1w"), on("scheduled:2026-02-01"),
+           on("scheduled:2026-01-02")]);
+    check("and the fold keeps the TIMED STAMP'S OWN SPACE, the one space it never drops",
+          on('scheduled:"2026-01-02 09:00"'), ["2026-01-02 09:00"]);
+    check("`today' ends in a unit word and is folded by none of it",
+          on("scheduled:today").length, 0);
+    // THE UNIT WORD IS CUT AT THE LITERAL, not at the value's end: a range
+    // carries TWO literals, so a fold reading the end alone would cut the high
+    // one and leave the low one spelling no day — and the page would then serve
+    // nothing where the producer serves rows.
+    check("the LOW end of a range folds too, nothing behind it being left to fold",
+          [on('scheduled:"2026-01-01 + 1 week .. 2026-02-01"'),
+           on("scheduled:2026-01-08..2026-02-01")],
+          [["2026-01-08", "2026-01-31", "2026-02-01"],
+           ["2026-01-08", "2026-01-31", "2026-02-01"]]);
+    check("and a range spelling a unit word at BOTH ends is the compact one, row for row",
+          [now('scheduled:"*today* - 2 days .. *today* + 2 days"'),
+           now("scheduled:*today*-2d..*today*+2d")],
+          [["today"], ["today"]]);
+
+    // --- conservativity: every form that composed before answers as it did
+    check("and every value form that composed before is the answer it was",
+          [on("scheduled:2026-01"), on("scheduled:>=2026-02-28"),
+           on("scheduled:2026-01-01..2026-01-08"), on("scheduled:*empty*")],
+          [["2026-01-01", "2026-01-02", "2026-01-02 09:00", "2026-01-08", "2026-01-31"],
+           ["2026-02-28", "2026-03-03", "2027-01-01"],
+           ["2026-01-01", "2026-01-02", "2026-01-02 09:00", "2026-01-08"],
+           []]);
+  }
+
   // --- the value stage: the grammar rides the foot of the domain
   const dates = ["2026-07-31", "2026-08-01", "2026-08-31 09:00", "2026-09-01", "2027-01-01"];
   check("a date column offers its cells, then `*today*', `*empty*' and the heads",
@@ -3287,6 +3417,29 @@ async function comparisons() {
          (() => { D.type("scheduled:>="); return D.countOf(">=2026-08-01"); })()],
         [1, null]);
 
+  // --- the SHIFT heads, which ride the foot the operator heads do
+  check("a base spelled in full offers the two SHIFT SIGNS behind it",
+        D.type("scheduled:*today*"), ["*today*", "*today*+", "*today*-"]);
+  check("reached star-free it offers them under its own canonical spelling",
+        D.type("scheduled:today"), ["*today*", "*today*+", "*today*-"]);
+  check("but merely OPENING the word offers none, a head waiting for the whole base",
+        D.type("scheduled:tod"), ["*today*"]);
+  check("a day spelled in full takes them too, where a coarser literal takes none",
+        [D.type("scheduled:2026-09-01"), D.type("scheduled:2026-09")],
+        [["2026-09-01", "2026-09-01+", "2026-09-01-"], ["2026-09-01"]]);
+  check("and every offer wears the head it was typed with",
+        [D.type("scheduled:>=*today*"), D.type("scheduled:*today*..*today*")],
+        [[">=*today*", ">=*today*+", ">=*today*-"],
+         ["*today*..*today*", "*today*..*today*+", "*today*..*today*-"]]);
+  check("a sign alone enumerates nothing, any number standing behind it",
+        D.type("scheduled:*today*+"), []);
+  check("and behind a sign and its digits the four UNITS finish the value",
+        D.type("scheduled:*today*+3"),
+        ["*today*+3d", "*today*+3w", "*today*+3m", "*today*+3y"]);
+  check("THE BARE SHIFT IS TYPED AND NOT PROPOSED: the empty base hangs no head",
+        [D.type("scheduled:").indexOf("+"), D.type("scheduled:+3")],
+        [-1, ["+3d", "+3w", "+3m", "+3y"]]);
+
   // --- accepting one: a head OPENS the value, a value finishes the token
   {
     const b = D.b();
@@ -3302,6 +3455,17 @@ async function comparisons() {
     D.press("Tab");
     check("Tab on the literal behind it finishes the token, space and all",
           b.value, "scheduled:2026-09-01 ");
+    // A SIGN HEAD IS AN OPERATOR HEAD'S TWIN at the keyboard as well as in the
+    // list: it lands bare and leaves the list open for the count and the unit.
+    D.type("scheduled:*today*");
+    for (let i = 0; i < D.items().indexOf("*today*+"); i++) D.press("ArrowDown");
+    D.press("Tab");
+    check("Tab on a sign head lands it bare, with no space to end the token",
+          b.value, "scheduled:*today*+");
+    D.type("scheduled:*today*+30");
+    D.press("Tab");
+    check("and the unit behind it finishes the token, space and all",
+          b.value, "scheduled:*today*+30d ");
   }
 }
 
