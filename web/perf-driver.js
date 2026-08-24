@@ -3310,6 +3310,15 @@ async function comparisons() {
     check("and a word the roster does not name is the literal it spells, matching nothing",
           [on("scheduled:todayy").length, on("scheduled:tod").length,
            on("scheduled:yesterday").length], [0, 0, 0]);
+    // A DAY WORD IS A DATE COLUMN'S GRAMMAR AND NOWHERE ELSE'S: a text cell
+    // spelling one is a value the rows hold, so it carries its count and is
+    // drawn plain.  Only the dimness catches this — a text column offers the
+    // word either way, its own cell being the source.
+    T.type("title:t");
+    check("a title spelling a day word is a cell: counted, and drawn as one",
+          [T.items(), T.countOf("today"), T.countOf("tomorrow"),
+           T.box.querySelectorAll(".tv-ac-dim").length],
+          [["today", "tomorrow"], 1, 1, 0]);
   }
 
   // --- THE SHIFT a date literal may carry: `BASE(+|-)N UNIT'
