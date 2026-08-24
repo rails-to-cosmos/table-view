@@ -747,11 +747,12 @@ lets the schedule answer one end and the deadline the other — a row scheduled
 next year and due last year passes the pair and is inside nothing. On a
 single-cell key the two spellings are the same rows.
 
-**`*today*` is a date literal**: it stands wherever a date does —
-bare (`scheduled:*today*` is today's rows), behind an operator
-(`deadline:<=*today*` is what is already due), or at either end of a range. The
-page resolves it against its own clock, once per query, so every `*today*` in
-one query means one day.
+**`today` and `tomorrow` are date literals**: each stands wherever a date does —
+bare (`scheduled:today` is today's rows), behind an operator
+(`deadline:<=today` is what is already due), at either end of a range, or as a
+shift's base. The page resolves them against its own clock, once per query, so
+every day word in one query means one day. `*today*` is `today`'s old spelling:
+still read, everywhere the bare word is, and offered nowhere.
 
 A **suggestion list** under the box completes it. A bare word offers, in order:
 
@@ -798,7 +799,7 @@ not. Neither free-text offer appears here: a half-typed `key:value` is already
 an intent. `planned` has no domain to offer at all — what follows it is a date
 prefix over several columns at once.
 
-A **date column offers its grammar too**: `*today*` and the four operator heads
+A **date column offers its grammar too**: the day words and the four operator heads
 ride the foot of its domain beside `*empty*`, and a head typed there opens the
 value behind it — `scheduled:>=2026-0` completes dates, each offer wearing the
 head. A head *opens* a value where a value *finishes* one, so accepting `>=`

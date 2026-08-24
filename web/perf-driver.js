@@ -3272,7 +3272,7 @@ async function comparisons() {
   check("a committed comparison is one chip, spelled as it was typed",
         D.chipsOf(), ["scheduled:>=2026-08-01"]);
 
-  // --- `*today*', the one literal the clock answers
+  // --- THE DAY WORDS, the literals the clock answers
   {
     const day = (delta) => {
       const t = new Date(Date.now() + delta * 864e5);
@@ -3285,17 +3285,31 @@ async function comparisons() {
       { id: "m", cells: { title: "tomorrow", scheduled: day(1), deadline: "" } },
     ] });
     const on = (q) => { T.shown(q); return T.handle.getVisible().map((r) => r.id); };
-    check("the bare meta is the day itself, read as any other literal",
-          [on("scheduled:*today*"), on("scheduled:" + day(0))], [["t"], ["t"]]);
+    check("the bare word is the day itself, read as any other literal",
+          [on("scheduled:today"), on("scheduled:" + day(0))], [["t"], ["t"]]);
+    check("and `tomorrow' is the day after it, off the same clock",
+          [on("scheduled:tomorrow"), on("scheduled:" + day(1))], [["m"], ["m"]]);
     check("and it stands behind every operator",
-          [on("scheduled:<*today*"), on("scheduled:<=*today*"),
-           on("scheduled:>*today*"), on("scheduled:>=*today*")],
+          [on("scheduled:<today"), on("scheduled:<=today"),
+           on("scheduled:>today"), on("scheduled:>=today")],
           [["y"], ["y", "t"], ["m"], ["t", "m"]]);
-    check("and at either end of a range",
-          [on("scheduled:*today*..*today*"), on(`scheduled:${day(-1)}..*today*`)],
-          [["t"], ["y", "t"]]);
+    check("and at either end of a range, each end its own word",
+          [on("scheduled:today..today"), on(`scheduled:${day(-1)}..today`),
+           on("scheduled:today..tomorrow")],
+          [["t"], ["y", "t"], ["t", "m"]]);
+    // THE OLD SPELLING IS READ AND NEVER OFFERED, so a stored query and a hand
+    // that still types the stars answer exactly what the bare word answers.
+    check("`*today*' is the old spelling of `today' and means the very same day",
+          [on("scheduled:*today*"), on("scheduled:<=*today*"),
+           on("scheduled:*today*..*today*")],
+          [on("scheduled:today"), on("scheduled:<=today"),
+           on("scheduled:today..today")]);
     check("the empty cell stays outside it too",
-          on("scheduled:>=*today*").indexOf("e"), -1);
+          on("scheduled:>=today").indexOf("e"), -1);
+    // A NEAR-MISS IS NO WORD: only the roster's spellings are read off the clock.
+    check("and a word the roster does not name is the literal it spells, matching nothing",
+          [on("scheduled:todayy").length, on("scheduled:tod").length,
+           on("scheduled:yesterday").length], [0, 0, 0]);
   }
 
   // --- THE SHIFT a date literal may carry: `BASE(+|-)N UNIT'
@@ -3351,17 +3365,18 @@ async function comparisons() {
 
     // --- the half-typed shift, which is the half-typed family one end deeper
     check("a shift with no unit behind it narrows nothing, as an operator with no literal does",
-          [on("scheduled:*today*+").length, on("scheduled:*today*+30").length,
-           on("scheduled:2026-01-01+").length], [12, 12, 12]);
+          [on("scheduled:today+").length, on("scheduled:today+30").length,
+           on("scheduled:*today*+").length,
+           on("scheduled:2026-01-01+").length], [12, 12, 12, 12]);
     check("and establishes no axis, so an added token beside it stands alone",
-          on("scheduled:*today*+ +scheduled:2026-01-08"), ["2026-01-08"]);
+          on("scheduled:today+ +scheduled:2026-01-08"), ["2026-01-08"]);
     check("while the negated vacuum empties the table, as `-state:' does",
-          on("-scheduled:*today*+").length, 0);
+          on("-scheduled:today+").length, 0);
     // Law: THE PLUS FAMILY ALONE ends mid-shift. `-' is ISO's own separator, so
     // a rule reading the incomplete minus would read `2026-01-01' as `2026-01'
     // moved `01' of no unit and every spelled day would narrow nothing.
     check("THE PLUS FAMILY ALONE is half-typed: an incomplete minus is the literal it was",
-          [on("scheduled:*today*-7").length, on("scheduled:2026-01-01")],
+          [on("scheduled:today-7").length, on("scheduled:2026-01-01")],
           [0, ["2026-01-01"]]);
 
     // --- THE BARE SHIFT, which the planning grammar's precedent reads today-relative
@@ -3379,20 +3394,29 @@ async function comparisons() {
     ] });
     const now = (q) => { N.shown(q); return N.handle.getVisible().map((r) => r.id); };
     check("THE BARE SHIFT IS TODAY-RELATIVE, off the planning grammar's own precedent",
-          [now("scheduled:+30d"), now("scheduled:*today*+30d")],
+          [now("scheduled:+30d"), now("scheduled:today+30d")],
           [["in a month"], ["in a month"]]);
     check("and its sign carries, negative as well as positive",
-          [now("scheduled:-7d"), now("scheduled:*today*-7d")],
+          [now("scheduled:-7d"), now("scheduled:today-7d")],
           [["week ago"], ["week ago"]]);
     check("so the thirty-day agenda is ONE TOKEN",
-          now("scheduled:*today*..*today*+30d"), ["today", "in a month"]);
+          now("scheduled:today..today+30d"), ["today", "in a month"]);
+    // THE WORD IS A BASE AT BOTH ENDS AND UNDER EITHER SPELLING: a range mixing
+    // them is the one range, so a stored query half-rewritten still answers.
+    check("and the old spelling rides either end of it, mixed ends included",
+          [now("scheduled:*today*..*today*+30d"), now("scheduled:today..*today*+30d"),
+           now("scheduled:*today*..today+30d")],
+          [["today", "in a month"], ["today", "in a month"], ["today", "in a month"]]);
+    check("`tomorrow' is a base like any other, and carries a shift of its own",
+          [now("scheduled:tomorrow+29d"), now("scheduled:tomorrow-8d")],
+          [["in a month"], ["week ago"]]);
     // The two signs never meet: the scanner reads a token's off its FIRST
     // character and stops there, so the value's own is body text to it.
     const tok = TableView.parseQuery("+scheduled:+30d", cols.map((c) => c.key))[0];
     check("A TOKEN'S FIRST CHARACTER IS ITS SIGN and the value's own `+' is the shift's",
           [tok.added, tok.negated, tok.key, tok.value], [true, false, "scheduled", "+30d"]);
     check("so an added bare shift widens its axis rather than reading as two signs",
-          now("scheduled:*today* +scheduled:+30d"), ["today", "in a month"]);
+          now("scheduled:today +scheduled:+30d"), ["today", "in a month"]);
 
     // --- the QUOTED spelling, folded onto the compact one by the one pre-pass
     check("the quoted form admits spaces and long unit words, and means the compact one",
@@ -3402,8 +3426,8 @@ async function comparisons() {
            on("scheduled:2026-01-02")]);
     check("and the fold keeps the TIMED STAMP'S OWN SPACE, the one space it never drops",
           on('scheduled:"2026-01-02 09:00"'), ["2026-01-02 09:00"]);
-    check("`today' ends in a unit word and is folded by none of it",
-          on("scheduled:today").length, 0);
+    check("`today' ends in a unit word and is THE DAY WORD, folded by none of it",
+          [now("scheduled:today"), now("scheduled:tod").length], [["today"], 0]);
     // THE UNIT WORD IS CUT AT THE LITERAL, not at the value's end: a range
     // carries TWO literals, so a fold reading the end alone would cut the high
     // one and leave the low one spelling no day — and the page would then serve
@@ -3414,9 +3438,11 @@ async function comparisons() {
           [["2026-01-08", "2026-01-31", "2026-02-01"],
            ["2026-01-08", "2026-01-31", "2026-02-01"]]);
     check("and a range spelling a unit word at BOTH ends is the compact one, row for row",
-          [now('scheduled:"*today* - 2 days .. *today* + 2 days"'),
-           now("scheduled:*today*-2d..*today*+2d")],
+          [now('scheduled:"today - 2 days .. today + 2 days"'),
+           now("scheduled:today-2d..today+2d")],
           [["today"], ["today"]]);
+    check("and the quoted spelling of the agenda is the agenda",
+          now('scheduled:"today .. today + 30 days"'), ["today", "in a month"]);
 
     // --- conservativity: every form that composed before answers as it did
     check("and every value form that composed before is the answer it was",
@@ -3430,21 +3456,30 @@ async function comparisons() {
 
   // --- the value stage: the grammar rides the foot of the domain
   const dates = ["2026-07-31", "2026-08-01", "2026-08-31 09:00", "2026-09-01", "2027-01-01"];
-  check("a date column offers its cells, then `*today*', `*empty*' and the heads",
-        D.type("scheduled:"), dates.concat(["*today*", "*empty*", ">=", "<=", ">", "<"]));
-  check("and every one of those six is dimmed, being grammar rather than a cell",
-        D.box.querySelectorAll(".tv-ac-dim").length, 6);
+  check("a date column offers its cells, then the DAY WORDS, `*empty*' and the heads",
+        D.type("scheduled:"),
+        dates.concat(["today", "tomorrow", "*empty*", ">=", "<=", ">", "<"]));
+  check("and every one of those seven is dimmed, being grammar rather than a cell",
+        D.box.querySelectorAll(".tv-ac-dim").length, 7);
   check("a text column is untouched by any of it",
-        D.type("title:").filter((x) => x === "*today*" || x === ">=").length, 0);
-  check("`*today*' is reached star-free, the way every meta is",
-        [D.type("scheduled:tod"), D.type("scheduled:>=tod")], [["*today*"], [">=*today*"]]);
+        D.type("title:").filter((x) => x === "today" || x === ">=").length, 0);
+  // THE OLD SPELLING IS NEVER PROPOSED: `today' is the one word this offers,
+  // and no prefix of `*today*' reaches an offer at all.
+  check("the day words are offered bare, and a prefix reaches the ones it opens",
+        [D.type("scheduled:tod"), D.type("scheduled:to"), D.type("scheduled:>=tod")],
+        [["today"], ["today", "tomorrow"], [">=today"]]);
+  check("and `*today*' is offered nowhere, being read alone",
+        [D.type("scheduled:").indexOf("*today*"), D.type("scheduled:*tod").length],
+        [-1, 0]);
   check("a typed head opens the value BEHIND it, and the offers wear it",
         D.type("scheduled:>=2026-08"), [">=2026-08-01", ">=2026-08-31 09:00"]);
   check("and drops `*empty*', which no comparison serves",
         D.type("scheduled:>").indexOf("*empty*"), -1);
+  // The heads ride UNDER the values, so the index is the domain's own length:
+  // five cells and the two day words.
   check("a head one character in offers the longer one it opens",
         [D.type("scheduled:>").indexOf(">="), D.type("scheduled:<").indexOf("<="),
-         D.type("scheduled:>=").indexOf(">=")], [6, 6, -1]);
+         D.type("scheduled:>=").indexOf(">=")], [7, 7, -1]);
   check("a value spelling rows carries their count, a comparison none",
         [(() => { D.type("scheduled:"); return D.countOf("2026-08-01"); })(),
          (() => { D.type("scheduled:>="); return D.countOf(">=2026-08-01"); })()],
@@ -3452,23 +3487,29 @@ async function comparisons() {
 
   // --- the SHIFT heads, which ride the foot the operator heads do
   check("a base spelled in full offers the two SHIFT SIGNS behind it",
-        D.type("scheduled:*today*"), ["*today*", "*today*+", "*today*-"]);
-  check("reached star-free it offers them under its own canonical spelling",
-        D.type("scheduled:today"), ["*today*", "*today*+", "*today*-"]);
+        [D.type("scheduled:today"), D.type("scheduled:tomorrow")],
+        [["today", "today+", "today-"], ["tomorrow", "tomorrow+", "tomorrow-"]]);
+  // THE OLD SPELLING FOLDS AT THE ONE PLACE COMPLETION CANONICALISES A BASE:
+  // typed in full it offers the shift under the bare word, never under itself.
+  check("typed in the old spelling it offers them under the canonical one",
+        D.type("scheduled:*today*"), ["today+", "today-"]);
   check("but merely OPENING the word offers none, a head waiting for the whole base",
-        D.type("scheduled:tod"), ["*today*"]);
+        D.type("scheduled:tod"), ["today"]);
   check("a day spelled in full takes them too, where a coarser literal takes none",
         [D.type("scheduled:2026-09-01"), D.type("scheduled:2026-09")],
         [["2026-09-01", "2026-09-01+", "2026-09-01-"], ["2026-09-01"]]);
   check("and every offer wears the head it was typed with",
-        [D.type("scheduled:>=*today*"), D.type("scheduled:*today*..*today*")],
-        [[">=*today*", ">=*today*+", ">=*today*-"],
-         ["*today*..*today*", "*today*..*today*+", "*today*..*today*-"]]);
+        [D.type("scheduled:>=today"), D.type("scheduled:today..today")],
+        [[">=today", ">=today+", ">=today-"],
+         ["today..today", "today..today+", "today..today-"]]);
   check("a sign alone enumerates nothing, any number standing behind it",
-        D.type("scheduled:*today*+"), []);
+        D.type("scheduled:today+"), []);
   check("and behind a sign and its digits the four UNITS finish the value",
+        D.type("scheduled:today+3"),
+        ["today+3d", "today+3w", "today+3m", "today+3y"]);
+  check("and an old-spelled base finishes under the canonical word",
         D.type("scheduled:*today*+3"),
-        ["*today*+3d", "*today*+3w", "*today*+3m", "*today*+3y"]);
+        ["today+3d", "today+3w", "today+3m", "today+3y"]);
   check("THE BARE SHIFT IS TYPED AND NOT PROPOSED: the empty base hangs no head",
         [D.type("scheduled:").indexOf("+"), D.type("scheduled:+3")],
         [-1, ["+3d", "+3w", "+3m", "+3y"]]);
@@ -3490,15 +3531,15 @@ async function comparisons() {
           b.value, "scheduled:2026-09-01 ");
     // A SIGN HEAD IS AN OPERATOR HEAD'S TWIN at the keyboard as well as in the
     // list: it lands bare and leaves the list open for the count and the unit.
-    D.type("scheduled:*today*");
-    for (let i = 0; i < D.items().indexOf("*today*+"); i++) D.press("ArrowDown");
+    D.type("scheduled:today");
+    for (let i = 0; i < D.items().indexOf("today+"); i++) D.press("ArrowDown");
     D.press("Tab");
     check("Tab on a sign head lands it bare, with no space to end the token",
-          b.value, "scheduled:*today*+");
-    D.type("scheduled:*today*+30");
+          b.value, "scheduled:today+");
+    D.type("scheduled:today+30");
     D.press("Tab");
     check("and the unit behind it finishes the token, space and all",
-          b.value, "scheduled:*today*+30d ");
+          b.value, "scheduled:today+30d ");
   }
 }
 

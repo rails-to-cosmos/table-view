@@ -127,40 +127,45 @@ KIND: the axis machinery above is untouched.
   the interval, where =planned:>=A planned:<=B= lets either cell answer either
   end — a row scheduled after the range and due before it passes the pair and
   lies in neither. On a single-cell key the two are one set.
-- =*today*= is a date literal, legal bare, behind any operator and at either
-  range end. Resolved ONCE PER COMPILE (=compiledDay=), so every atom of one
-  query names one day whatever the clock does while it runs. THE CLOCK IS THE
-  PAGE'S OWN where the producer's is the server's: the two disagree for the hour
-  one of them is past midnight and the other is not. Accepted — same machine.
+- =today= and =tomorrow= are THE DAY WORDS, each a date literal legal bare,
+  behind any operator, at either range end and as a shift's base. Resolved ONCE
+  PER COMPILE (=compiledDay=), so every atom of one query names one day whatever
+  the clock does while it runs. THE CLOCK IS THE PAGE'S OWN where the producer's
+  is the server's: the two disagree for the hour one of them is past midnight
+  and the other is not. Accepted — same machine.
+- =*today*= is =today='s OLD SPELLING: READ AND NEVER OFFERED. Every reader
+  takes it where the bare word stands, mixed ends of one range included, so a
+  stored query survives the rename; completion proposes =today= alone and folds
+  the stars onto it where it canonicalises a shift's base at all.
 - A half-typed comparison (=scheduled:>=, =scheduled:2026-08..=) narrows nothing
   and establishes no axis, the way =state:= does; a literal opening with no
   digit matches no row, the way =state:TOD= does.
 - *A date literal may carry a SHIFT*: =BASE(+|-)N UNIT=, the base a day literal,
-  =*today*= or nothing at all, N a positive decimal run and UNIT org's own
+  a DAY WORD or nothing at all, N a positive decimal run and UNIT org's own
   =d=/=w=/=m=/=y=. THE SHIFT RESOLVES AT COMPILE to a plain day (=literalIn=),
   so a shifted value is ONE MORE SPELLING OF A DAY LITERAL and no new atom kind:
   every law above — granularity, the empty cell outside, negation no mirror,
   ranges, alternatives, signs — reads it as the day it lands on and cannot tell
-  it from a spelled one. Both range ends take one, so =*today*..*today*+30d= is
+  it from a spelled one. Both range ends take one, so =today..today+30d= is
   the thirty-day agenda in ONE TOKEN.
 - =w= is seven days; =m= and =y= STEP THE CALENDAR AND CLIP to the target
   month's last day, so Jan 31 +1m is February's end and never March's third
   (=Date= would overflow there, so the clip is written out). A base naming no
-  day — a month, a timed stamp, =*today*= with no clock behind it — leaves the
+  day — a month, a timed stamp — leaves the
   whole value naming none, and it then matches no row.
-- *The BARE shift is today-relative*: =scheduled:+30d= is =*today*+30d=, off the
+- *The BARE shift is today-relative*: =scheduled:+30d= is =today+30d=, off the
   planning grammar's own precedent, which already reads a bare =+3d= that way.
   THE SHIFT'S SIGN IS THE VALUE'S AND NEVER THE TOKEN'S — the scanner reads a
   token's off its FIRST character and stops — so =+scheduled:+30d= is an added
   token carrying a bare shift.
-- *THE PLUS FAMILY ALONE ends mid-shift*: =*today*+= and =*today*+30= narrow
+- *THE PLUS FAMILY ALONE ends mid-shift*: =today+= and =today+30= narrow
   nothing and empty the table negated, joining the half-typed family. =-= is
   ISO's own separator, so the incomplete minus stays the literal it always was
-  and =*today*-7= matches no row rather than narrowing none — the rule that
+  and =today-7= matches no row rather than narrowing none — the rule that
   reads it would read =2026-08-03= as =2026-08= moved =03= of no unit.
 - *ONE PARSER, TWO SPELLINGS.* The compact form is the grammar (the token
   grammar owns the spaces); the QUOTED value form admits spaces and long unit
-  words — =scheduled:"<= *today* + 30 days"= — and is folded onto the compact
+  words — =scheduled:"<= today + 30 days"= — and is folded onto the compact
   one before any form is read. The fold has TWO SITES, and they are not the
   same one: the SPACES go above every form read (=unspaced=, on the whole
   value), dropping every space BUT THE ONE BETWEEN TWO DIGITS, which is the
@@ -168,9 +173,9 @@ KIND: the axis machinery above is untouched.
   THE LITERAL (=unitFolded=, per end), which is the one place a literal's end
   is known. A range carries two literals, so a fold reading the value's own end
   alone would cut the high end and leave the low one spelling no day —
-  =scheduled:"*today* - 2 days .. *today* + 2 days"= is the span it names.
+  =scheduled:"today - 2 days .. today + 2 days"= is the span it names.
   The cut lands ONLY WHERE A SHIFT COMES OUT OF IT — =today= ends in a unit
-  word and is the starred word's near-miss, never a =to= moved one day.
+  word and IS THE DAY WORD ITSELF, never a =to= moved one day.
 - *Conservativity.* Every value form that composed before answers byte for byte:
   an unquoted value carries no space at all (the scanner cuts a token on one),
   so the fold is invisible to it, and no ISO cell spells a =+=, so the shifted
@@ -211,17 +216,18 @@ bare word:
 - =*empty*= rides the foot of every column's domain; producer metas stand apart
   (dim, italic, no count — a per-value count beside a set-naming meta would
   print a misleading fraction).
-- A DATE column's value is a stage of its own: =*today*= and the four operator
+- A DATE column's value is a stage of its own: the DAY WORDS and the four
+  operator
   heads ride the foot beside =*empty*=, and a typed head opens the value BEHIND
   it — =scheduled:>=2026-0= completes dates, each offer wearing the head it was
   typed with. A HEAD OPENS A VALUE WHERE A VALUE FINISHES ONE, so accepting one
   lands =key:>== with no trailing space and the list stays open for the literal.
 - THE SHIFT'S HEADS RIDE THAT SAME FOOT and split the same way: behind a base
-  SPELLED IN FULL (=*today*=, star-free too, or a day) the two SIGNS open a
+  SPELLED IN FULL (a day word, or a day) the two SIGNS open a
   shift, and behind a sign and its digits the four UNITS finish one. A sign
   alone enumerates nothing — any number stands there — so nothing is offered
-  until a digit is typed, and each offer spells its base canonically, =today+30=
-  completing to =*today*+30d=. THE BARE SHIFT IS TYPED AND NOT PROPOSED: the
+  until a digit is typed, and each offer spells its base canonically,
+  =*today*+30= completing to =today+30d=. THE BARE SHIFT IS TYPED AND NOT PROPOSED: the
   empty base hangs no head, though =+3= is finished by the units like any other.
   Behind a head =*empty*= drops out (no comparison serves it) and so do the
   counts — the domain counts rows SPELLING a cell, and a comparison serves rows
