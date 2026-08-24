@@ -438,6 +438,11 @@ widest non-title cell is exactly 40 characters, so the cap is the tightest
 ceiling that clips nothing in it. The cap cannot reach the title, which has no
 width to cap.
 
+The multi-valued column is measured on **what it draws** — the middots its
+values read apart on, taken in the smaller type a tag is set in — so a run is
+paid for as it reads rather than as it is stored. 40 characters of column hold
+43 of tag, and a run the column was measured for is always drawn entire.
+
 The leading gutter is the same rule at its narrowest: `[X]` is three
 characters and 24px is the cell padding, and it is nothing over that.
 
@@ -660,6 +665,16 @@ text with no box at all, several separating on a middot. The multi-valued
 column's cells render a chip per value, split by the same splitter that builds
 that column's value domain. Presentation only: what is searched, sorted and
 measured is still the text you sent.
+
+**Whole values or none.** A run wider than the cap drops the values that do not
+fit *entire* and writes `…` in their place — `alice · document · task ·
+travelogue` becomes `alice · document · task …` — rather than cutting a value
+across the middle, since a half-word is a value no query spells. A first value
+too long for the column leaves the mark alone. What is dropped is paint: the
+cell still filters, sorts and searches whole, so a value the column could not
+draw still finds its row. Each cell of that column carries **`tv-multi`**, the
+one hook a consumer needs to reach it — a click there is the consumer's to
+read, and the renderer's own click has already selected the row under it.
 
 **A link reads as a link, wherever one is drawn.** A cell holding Org markup
 draws each `[[target][desc]]` as an anchor, and a row sent with `linked: true`

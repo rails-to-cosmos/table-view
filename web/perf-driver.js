@@ -2071,6 +2071,134 @@ async function columnWidths() {
   }
 }
 
+// A multi-valued cell is measured and cut in the TAG TYPE, which is smaller
+// than the table's: 40 characters of column hold 43 of tag. Every run below is
+// written against that number, so the boundary pair is one character apart.
+const TAG_ROOM = 43;
+/** A run of exactly `TAG_ROOM' drawn characters: 37 of letters and three middots. */
+const FITS = ":documentation:engineering:orchestration:";
+/** The same run one character over it — the last value is what will not fit. */
+const OVER = ":documentation:engineering:orchestrations:";
+/** One value too long for any column: not even the first fits whole. */
+const LONE = ":an-uncommonly-long-single-value-nobody-would-write:";
+
+/** Two rows over a multi-valued column; FILLS gives the view a `title' column,
+ *  which is what turns the fill policy — and so the 40-character cap — on. */
+const tagView = (tag, fills) => {
+  const head = fills ? "title" : "head";
+  return {
+    title: "whole values",
+    columns: [{ key: head, header: "Head", type: "text" },
+              { key: "tag", header: "Tags", type: "text" }],
+    rows: [{ id: "a", cells: { [head]: "alpha", tag } },
+           { id: "b", cells: { [head]: "bravo", tag: ":ops:" } }],
+  };
+};
+
+/**
+ * WHOLE VALUES OR NONE: a multi-valued cell too wide for its column drops the
+ * values that will not fit ENTIRE and marks their place, rather than cutting
+ * one across the middle. What is dropped is paint alone — the cell the
+ * producer sent still filters, and the column still measures what it draws.
+ */
+async function wholeValues() {
+  console.log("\n== whole values");
+
+  const cellOf = (box) =>
+    box.querySelectorAll(".tv-table tbody tr[data-id]")[0].children[1];
+  const drawn = (box) => cellOf(box).text;
+  const names = (box) => cellOf(box).querySelectorAll(".tv-tag").map((e) => e.text);
+  /** The tags column's declared width in characters. */
+  const wide = (box) => {
+    const w = box.querySelectorAll(".tv-table colgroup col")[1].style.width;
+    return Number((/^calc\((\d+)ch/.exec(w) || [])[1]);
+  };
+
+  // --- the boundary: a run the column was measured for is drawn whole
+  {
+    const F = driver(tagView(FITS, true));
+    check("a run the column pays for is drawn entire, middots and all",
+          [drawn(F.box), drawn(F.box).length], [FITS.split(":").filter(Boolean).join(" · "), TAG_ROOM]);
+    // The column is measured on the DRAWN form, so the run it was sized for
+    // always fits: the round trip through the smaller type cannot lose a
+    // character. 43 of tag is 40 of column, which is exactly the cap.
+    check("and the column it was measured for is the cap itself", wide(F.box), 40);
+  }
+
+  // --- one character over it: the last value goes, and the mark takes its place
+  {
+    const O = driver(tagView(OVER, true));
+    check("a value that will not fit whole is dropped, not cut",
+          names(O.box), ["documentation", "engineering"]);
+    check("and the mark stands where the dropped values were",
+          drawn(O.box), "documentation · engineering …");
+    // The half-word is the bug: `orchestrati…' is a value no query spells and
+    // no reader can trust.
+    check("no fragment of the dropped value is drawn anywhere in the cell",
+          drawn(O.box).indexOf("orchestrat"), -1);
+    // The mark is not a value, so it wears no value's markup — it is text
+    // inside the run's own span and takes the muted ink from it.
+    check("the mark is text in the run, never a value of its own",
+          [cellOf(O.box).querySelectorAll(".tv-tag").length,
+           cellOf(O.box).querySelector(".tv-tags").text.slice(-2)],
+          [2, " …"]);
+    // TRUNCATION IS PAINT. The cell the producer sent is what the filter reads,
+    // so the value that was not drawn still finds the row.
+    check("a value the column could not draw still filters the row in",
+          [O.shown("tag:orchestrations"), O.shown("tag:documentation")], [1, 1]);
+  }
+
+  // --- nothing fits: the mark alone, and no value beside it
+  {
+    const L = driver(tagView(LONE, true));
+    check("a first value too long for the column leaves the mark alone",
+          [drawn(L.box), names(L.box)], ["…", []]);
+    check("and the row is still there to be found by it",
+          L.shown("tag:uncommonly"), 1);
+  }
+
+  // --- the one resize the renderer has: the fill policy turning on and off
+  {
+    // With no column to fill there is no cap, so the column is exactly its own
+    // widest run and nothing is ever dropped.
+    const R = driver(tagView(OVER, false));
+    check("with no fill policy the column pays for the whole run and cuts nothing",
+          [drawn(R.box), wide(R.box)], [OVER.split(":").filter(Boolean).join(" · "), 41]);
+    // Naming the head column `title' is the whole of the difference: the cap
+    // arrives with the fill policy and the same cell is re-cut against it.
+    R.handle.setView(tagView(OVER, true));
+    await painted();
+    check("and the view that turns it on re-cuts the very same cell",
+          [drawn(R.box), wide(R.box)], ["documentation · engineering …", 40]);
+    R.handle.setView(tagView(OVER, false));
+    await painted();
+    check("turning it back off gives the dropped value back",
+          drawn(R.box), OVER.split(":").filter(Boolean).join(" · "));
+  }
+
+  // --- the rows moving under a standing column re-cut with it
+  {
+    const U = driver(tagView(FITS, true));
+    check("a run that fits stands whole while it is the widest thing there",
+          names(U.box).length, 3);
+    // An upsert is the incremental widen (`growWidths'), which has to measure
+    // the multi-valued column the way a full re-measure does or the column and
+    // the cut disagree about what a run costs.
+    U.handle.upsertRow({ id: "c", cells: { title: "charlie", tag: LONE } });
+    await painted();
+    const cut = U.box.querySelectorAll(".tv-table tbody tr[data-id]")
+      .find((tr) => tr.dataset.id === "c").children[1];
+    check("and the row arriving beside it is cut against the same column",
+          [cut.text, wide(U.box), names(U.box).length], ["…", 40, 3]);
+    // A row change re-measures from scratch; the cut has to follow it back down.
+    U.handle.setRows([{ id: "a", cells: { title: "alpha", tag: OVER } },
+                      { id: "b", cells: { title: "bravo", tag: ":ops:" } }]);
+    await painted();
+    check("a whole re-measure lands on the same reading the widen did",
+          [drawn(U.box), wide(U.box)], ["documentation · engineering …", 40]);
+  }
+}
+
 /** Two rows under a title column, one of which leads somewhere. */
 const LINK_VIEW = {
   title: "linked",
@@ -5889,9 +6017,12 @@ async function queryKeys() {
     const decl = tagRule.slice(0, tagRule.indexOf("}"));
     for (const box of ["border", "background", "padding", "border-radius"])
       check(`a tag draws no ${box}`, decl.indexOf(box) !== -1, false);
+    // The size is written from TAG_EM, the const the width arithmetic spends;
+    // 40 characters of column hold TAG_ROOM of tag because of this number.
     check("it is muted ink at a smaller size, and that is all",
           [decl.indexOf("color:var(--tv-muted)") !== -1,
-           decl.indexOf("font-size:.92em") !== -1], [true, true]);
+           decl.indexOf("font-size:0.92em") !== -1,
+           Math.floor(40 / 0.92)], [true, true, TAG_ROOM]);
     check("and the two never compound their size",
           css.indexOf(".tv-tags .tv-tag{font-size:inherit") !== -1, true);
 
@@ -6813,6 +6944,7 @@ async function smoke() {
   await comparisons();
   await narrowedDoor();
   await dockedDoor();
+  await wholeValues();
   await cellsChipsPills();
   await queryKeys();
   await sortOrder();

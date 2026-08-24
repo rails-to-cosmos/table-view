@@ -6,6 +6,18 @@ the rails-to-cosmos ELPA archive publishes date-stamped snapshots.
 ## Unreleased
 
 ### Added
+- **Whole values or none in the multi-valued column, and `tv-multi` to reach
+  them.** A run wider than the 40-character cap now drops the values that do not
+  fit *entire* and writes `…` in their place — `alice · document · task ·
+  travelogue` becomes `alice · document · task …` — where the cell used to be
+  cut mid-value by the stylesheet's ellipsis. A first value too long for the
+  column leaves the mark alone. The column is measured on what it DRAWS, in the
+  smaller type a tag is set in, so the run a column was sized for is always
+  drawn entire — the raw `:a:b:c:` measure ran short of the drawing from three
+  values up. Truncation is paint alone: the cell still filters, sorts and
+  searches whole. Each cell of that column carries `tv-multi`, the one hook a
+  consumer needs to open a door over the values; the renderer's own click has
+  already selected the row under it.
 - **`filterDock: "overlay" | "strip"` — where a summoned box LANDS, told apart
   from what summons it.** `overlay` raises the veil the palette always did;
   `strip` lays the box on the CHIP STRIP'S OWN ROW, the chips taking their width

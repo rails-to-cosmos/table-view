@@ -59,9 +59,30 @@ Measured against a 12,674-headline Org corpus.
   on the engine's 1/64px grid and rounds DOWN, so an exact allowance is a
   sixtieth short and Chromium draws an ellipsis beside an inline-block pill it
   cannot cut. The +1 keeps the rule from firing on a cell that fits.
-- A tag cell needs no allowance: =:a:b:= and =a · b= are the same length, the
-  smaller type shrinks it further; the rendering never outgrows the raw text the
-  widths were measured from.
+- *A tag cell is measured on what it DRAWS* (=tagsCh=), not on the raw text.
+  =:a:b:= and =a · b= are the same length, but a third value costs two more —
+  =:a:b:c:= is 7 and =a · b · c= is 9 — so the raw measure runs short of the
+  drawing from three values up, and short by more with every one after. The
+  drawn form is taken in the tag type's own size (=TAG_EM = 0.92=, written into
+  the sheet from the same const), which is what makes the two agree: =ceil(drawn
+  × 0.92)= characters of column, and =floor(ch ÷ 0.92)= characters of tag back
+  out of one. The round trip cannot lose a character, so a run the column was
+  sized for is always drawn entire.
+- *Whole values or none* (=tagsFit=). Past the cap a run drops the values that
+  do not fit ENTIRE and puts =TAG_MORE= where they were, one space behind the
+  last value kept; a first value too long leaves the mark alone. A value cut
+  across the middle is a word no query spells and no reader can trust, which is
+  the whole reason the arithmetic exists. THE CAP IS THE ONLY NARROWNESS: under
+  the fill policy a column is its own widest drawn cell, so nothing is dropped
+  until 40 bites, and the room only ever GROWS with the column — a repaint can
+  never turn a whole cell into a cut one except where the fill policy itself
+  turns on. Truncation is PAINT: =rowText= keeps the cell the producer sent, so
+  filtering, sorting and the value domain are untouched.
+- =tv-multi= on every cell of that column: the one hook a consumer needs to
+  reach the values. The renderer's own click has already selected the row by
+  the time a consumer's listener on the mount root sees the event, so a
+  consumer opens its own door over a row that is already the selected one. No
+  event and no option — a standalone mount that reads nothing is unaffected.
 - Header marks (sort arrows) are paid OUTSIDE the cells' measure under the fill
   policy: =.tv-hn= (word) flexes to an ellipsis, =.tv-arrow= declines to, so a
   squeezed header loses its word and keeps its mark.
