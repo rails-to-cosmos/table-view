@@ -1,0 +1,148 @@
+#+TITLE: Native-window renderer (table-view.js in a WebKitGTK window)
+#+OPTIONS: toc:2 num:nil
+
+[[file:index.org][← Wiki index]] · contract: [[file:../SCHEMA.md][SCHEMA.md]] · glossary: [[file:../CONTEXT.md][CONTEXT.md]] · hosts: [[file:web-renderer.org][web-renderer.org]]
+
+A third delivery of the [[file:../CONTEXT.md::*Renderer][renderer]]: the browser renderer
+([[file:web-renderer.org][=web/table-view.js=]]) shown in a native =WebKitWebView= filling a =GtkWindow=,
+so a [[file:../CONTEXT.md::*Producer][producer]] can put a table on screen with no browser and no server.  The
+window is a thin shell; the renderer inside it is the same file the web
+delivery ships, themed through the same =--tv-*= custom properties.
+
+Status: *in-repo, builds, runs, streams.*  =native-window/= holds the shell
+(=TableView.Window=, lifted from glance's =Glance.Desktop.WebKit=), the
+launcher (=table-view-window URL [TITLE] [--feed PATH]=), and the vendored
+bindings; =make native-window= builds it and =make dist= stages it under
+=dist/native-window/=.  Both static and streaming (=--feed=) paths are verified
+against a live GTK window.  First real producer: the xmonad session splash (see
+[[*First consumer][First consumer]]).
+
+* Why a name that is not "native"
+
+=native/= and =table-view-native.el= already name the [[file:proposals/native-accelerator.org][tvx accelerator]] — an
+optional speed process, no renderer.  This delivery IS a renderer, so it
+borrows glance's own cabal-flag spelling, =native-window=, and nothing shorter:
+=table-view-native= would read as the accelerator's binary.
+
+- source: =native-window/=
+- binary: =table-view-window=
+- artifact: =dist/native-window/table-view-window= (see [[*dist layout][dist layout]])
+
+* The shell
+
+Lifted from glance's =src-desktop-native/Glance/Desktop/WebKit.hs=, which
+imports no glance module — it is a =WebKitWebView= filling a =GtkWindow= and
+nothing else.  Its whole surface is one call:
+
+#+begin_src haskell
+nativeWindow :: (Int, Int) -> String -> String -> IO ()
+--             (zoomMin,Max)   title     url
+#+end_src
+
+It opens the window, loads =url=, and blocks in =gtk_main= until the window
+closes.  Three page→shell message handlers already exist (the page reaches them
+through =window.webkit.messageHandlers=):
+
+- =quit= :: the page asks the window to close.  This is where a producer's =q= /
+  =Escape= lands — the shell answers what a page alone cannot.
+- =zoom= :: the page names a zoom level, clamped to the band handed in.
+- =popup= / =window.open= :: a link that wants a new window opens a transient
+  child instead; ordinary off-site links go to the system browser.
+
+The generalization for table-view: drop nothing, rename the module out of the
+=Glance.*= namespace, and keep the three handlers — they are producer-agnostic
+already (a table page that never posts =quit= simply never closes itself).
+
+* The toolchain reality (why vendored bindings)
+
+This is the delivery's real cost, and it is entirely about the GTK bindings.
+
+- The machine carries *webkit2gtk-4.1* (the libsoup3 generation); Arch dropped
+  *webkit2gtk-4.0*.
+- Hackage's =gi-webkit2= demands pkgconfig =webkit2gtk-4.0=.  It will not
+  configure here.
+- glance's fix, reused verbatim: *vendored, patched* =gi-webkit2-4.0.32= and
+  =gi-javascriptcore4-4.0.29=, each upstream's tarball with a handful of marked
+  lines repointing it at the 4.1 typelibs.  Name and version stay upstream's so
+  the solver sees a local package shadowing Hackage, and =cabal get … && diff
+  -r= is the whole patch.
+- =vendored/gir/= carries the hand-written GIR files (=cairo-1.0=, =xlib-2.0=,
+  =freetype2-2.0=) that =gobject-introspection= would ship; the runtime package
+  on this machine has the typelibs and no GIR.  =HASKELL_GI_GIR_SEARCH_PATH=
+  points at it, and haskell-gi searches it first, the system path after.
+
+Measured footprint to vendor in: =gi-webkit2= 4.9M/171 files,
+=gi-javascriptcore4= 724K/31 files, =gir= 32K/3 files.  This is the reason the
+delivery lives here and not in a consumer repo (a window-manager config has no
+business carrying 5.6M of GTK bindings).
+
+** Build
+
+Mirrors glance's =make native=.  A dedicated project file (=cabal.project=
+plus the vendored packages and =+native-window=) keeps the GTK deps out of the
+plain =cabal build= that the elisp/JS suites never want:
+
+#+begin_src sh
+export HASKELL_GI_GIR_SEARCH_PATH=$PWD/native-window/vendored/gir
+cabal build --project-file=native-window/cabal.project exe:table-view-window
+#+end_src
+
+=make native-window= wraps that and copies the binary to
+=dist/native-window/=.  The plain =make test= / =make compile= (elisp) and the
+JS checks stay clear of GTK entirely — the flag is off in every other stanza.
+
+* The producer seam
+
+The window shows a producer's HTML page: a page that loads =table-view.js=,
+=TableView.mount=s a [[file:../SCHEMA.md][view]], and (for =q=) posts =quit=.  Rows cross the seam
+exactly as the browser delivery's do — the page owns them.
+
+Two directions, both built:
+
+- *page → shell*: =quit=, =zoom=, =popup= (above).
+- *shell → page* (the streaming path): =--feed PATH= installs a =g_timeout_add=
+  tick that, once the page has loaded, reads PATH whenever its mtime changes and
+  calls =webViewRunJavascript view "window.__ingest(<contents>)"=.  The page's
+  =__ingest= turns the payload into =tv.upsertRow= / =tv.deleteRow=.  The load
+  gate (a =load-changed= handler) guarantees =__ingest= exists before the first
+  push; a torn read (producer mid-write) is swallowed and retried, so the
+  producer must write the file atomically (temp + rename).
+
+The current payload is a full snapshot the page applies idempotently (upsert
+every row, prune any id that dropped out) — a reset-style [[file:../CONTEXT.md::*Delta][delta]], which is
+cheap at splash scale and needs no index bookkeeping across the wire.  A
+producer therefore ships two things and no Haskell: the HTML page, and whatever
+writes the JSON the tick reads.
+
+* Conformance
+
+Same contract as every delivery.  The window renders =table-view.js=, so it
+inherits the browser renderer's [[file:../CONTEXT.md::*Capability][capabilities]] and its [[file:../CONTEXT.md::*Vector][parity vectors]] for free —
+there is no second renderer to keep in step, only the shell around it.  The one
+new surface to test is =__ingest=: a delta pushed through =webViewRunJavascript=
+must land the same rows the browser gets from an in-page =upsertRow=.
+
+* dist layout
+
+The delivery drops its artifact into the shared consumer surface:
+
+#+begin_example
+dist/
+  native-window/
+    table-view-window        the built shell binary
+    table-view.js            copy of web/table-view.js (the shell loads it)
+#+end_example
+
+=dist/= is =make= output, gitignored; the binary loads =dist/native-window/=’s
+own copy of the renderer, so a consumer points at one directory and needs
+nothing else on disk.  See [[file:index.org::*Deliveries][index → Deliveries]] for the whole surface.
+
+* First consumer
+
+The xmonad session splash (built, in that repo's =scripts/splash*=): a shell
+boot-sequence producer — services as rows, state as a badge, captured
+=stdout/stderr= as the per-row log — writing JSON that
+=table-view-window --feed= streams into =splash.html=.  It exercises every piece
+here — the shell, the =quit= handler, the auto-close, and the =--feed= streaming
+path — which is why it is the delivery's proving ground.  A producer in *shell*
+(no Haskell) confirms the seam is language-agnostic.

@@ -1,0 +1,47 @@
+cabal-version:      2.4
+name:               table-view-window
+version:            0.1.0.0
+synopsis:           Native-window delivery of table-view (WebKitGTK host for web/table-view.js)
+description:        A WebKitWebView filling a GtkWindow, showing a producer's
+                    page that mounts web/table-view.js.  See docs/native-window.org.
+license:            MIT
+build-type:         Simple
+
+-- Off by default so a machine without GTK/WebKitGTK still configures (the
+-- library falls back to a base-only stub).  cabal.project turns it on; a build
+-- also needs HASKELL_GI_GIR_SEARCH_PATH=vendored/gir (see the Makefile).
+flag native-window
+  description:      Build the real WebKitGTK window (gi-gtk 3 + gi-webkit2).
+  default:          False
+  manual:           True
+
+library
+  exposed-modules:  TableView.Window
+  hs-source-dirs:   src
+  ghc-options:      -Wall
+  build-depends:    base >=4.7 && <5
+  if flag(native-window)
+    cpp-options:    -DNATIVE_WINDOW
+    -- gi-gtk3/gi-gdk3 are the names gi-webkit2 depends on; the other spelling
+    -- puts two packages claiming GI.Gtk in one plan.
+    build-depends:
+        gi-gdk3            >=3.0  && <3.1
+      , gi-gio             >=2.0  && <2.1
+      , gi-glib            >=2.0  && <2.1
+      , gi-gtk3            >=3.0  && <3.1
+      , gi-javascriptcore  >=4.0  && <4.1
+      , gi-webkit2         >=4.0  && <4.1
+      , haskell-gi-base    >=0.26 && <0.27
+      , text
+      , time
+      , unix
+  default-language: Haskell2010
+
+executable table-view-window
+  main-is:          Main.hs
+  hs-source-dirs:   app
+  ghc-options:      -Wall -threaded
+  build-depends:
+      base
+    , table-view-window
+  default-language: Haskell2010

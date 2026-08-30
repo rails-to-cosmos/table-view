@@ -3,7 +3,7 @@ EMACS ?= emacs
 EL   := table-view.el table-view-native.el
 TEST := table-view-test.el table-view-native-test.el
 
-.PHONY: all test compile web-check web-perf elisp-check typecheck check clean
+.PHONY: all test compile web-check web-perf elisp-check typecheck check clean native-window dist
 
 all: compile test
 
@@ -46,9 +46,39 @@ typecheck: elisp-check web-check
 ## Full quality gate (CI / pre-commit): type-check both sides, then run tests.
 check: typecheck test
 
-## Remove byte-compiled artifacts.
+## Remove byte-compiled artifacts and build output.
 clean:
 	rm -f *.elc
+	rm -rf dist native-window/dist-newstyle
+
+# --- Native-window delivery --------------------------------------------------
+# The web renderer (web/table-view.js) hosted in a WebKitGTK window.  Opt-in:
+# needs the vendored, patched GI bindings plus the GIR search path (Hackage's
+# gi-webkit2 wants webkit2gtk-4.0, which Arch dropped).  See
+# docs/native-window.org.
+NATIVE_DIR := native-window
+GIR        := $(CURDIR)/$(NATIVE_DIR)/vendored/gir
+
+## Build the native-window binary (table-view-window).  Run from inside
+## $(NATIVE_DIR) so cabal.project's `packages: .' and `vendored/...' resolve
+## against that dir (cabal takes them relative to the working directory).
+native-window:
+	cd $(NATIVE_DIR) && HASKELL_GI_GIR_SEARCH_PATH=$(GIR) \
+	  cabal build exe:table-view-window
+
+## Stage every delivery's consumable under dist/<delivery>/ (make output,
+## gitignored).  Authored single-file renderers are copied beside the built
+## binary so a producer points at one directory per delivery and never at the
+## build tree.
+dist: native-window
+	@mkdir -p dist/emacs dist/web dist/native-window
+	cp -f table-view.el     dist/emacs/table-view.el
+	cp -f web/table-view.js dist/web/table-view.js
+	@bin=`cd $(NATIVE_DIR) && HASKELL_GI_GIR_SEARCH_PATH=$(GIR) \
+	        cabal list-bin -v0 exe:table-view-window`; \
+	  cp -f "$$bin" dist/native-window/table-view-window; \
+	  cp -f web/table-view.js dist/native-window/table-view.js; \
+	  echo ">> dist/: emacs web native-window"
 
 # --- Version bumping ---------------------------------------------------------
 # `make major|minor|patch' bumps the MAJOR.MINOR.PATCH version (resetting the

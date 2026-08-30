@@ -1,0 +1,88 @@
+#+TITLE: Term renderer (table-view in a pure console TUI)
+#+OPTIONS: toc:2 num:nil
+
+[[file:index.org][← Wiki index]] · contract: [[file:../SCHEMA.md][SCHEMA.md]] · glossary: [[file:../CONTEXT.md][CONTEXT.md]]
+
+A fourth delivery of the [[file:../CONTEXT.md::*Renderer][renderer]]: the table drawn in a terminal, no
+browser and no GUI.  Where [[file:native-window.org][native-window]] hosts the browser renderer, this is a
+genuine *second implementation* — a terminal cannot run =table-view.js=, so the
+renderer is written again against the same [[file:../SCHEMA.md][contract]].  It is what a headless
+box, an =ssh= session, or a boot console can show.
+
+Status: *spiked, not yet in-repo.*  A brick + vty program was built under the
+ghcup toolchain and rendered a full-screen pebble table — header, per-row state
+badges, a selection-scoped detail pane, key navigation — captured from a fixed
+tmux/pty geometry.  This document is the design record for landing it here.
+
+* Why a rewrite, not a reuse
+
+The Emacs and web deliveries are each one file, hand-maintained, because each
+targets a runtime that already draws (redisplay; the DOM).  A terminal draws
+cells, so it needs its own renderer.  The gain is that the contract makes the
+two renderers answer alike: the [[file:../CONTEXT.md::*Vector][parity vectors]] a browser passes are the vectors
+the terminal must pass, so "written again" does not mean "free to differ".
+
+* Library
+
+*brick* over *vty*, both on Hackage, both resolving clean under the repo's ghc
+(9.6.7) — the spike compiled from a cold store.  brick is The Elm Architecture
+for terminals, the same Model/Update/View shape the web renderer runs and that
+glance's own frontend is built on, so a reader crossing from one delivery to
+the other meets one idea, not three.
+
+#+begin_src haskell
+data St = St { rows :: [Row], sel :: Int, scroll :: Int, filterQ :: Text }
+
+draw   :: St -> [Widget Name]                 -- header · table · detail pane
+handle :: BrickEvent Name Delta -> EventM Name St ()   -- keys · pushed deltas
+#+end_src
+
+* What the spike proved
+
+- brick + vty build and link under ghcup 9.6.7 (no system Haskell involved).
+- Truecolor pebble via =vty='s =rgbColor=, the palette carried as an =attrMap=
+  (the terminal analogue of the web renderer's =--tv-*= tokens).
+- A full-bleed layout that does not fight the terminal: header and progress on
+  top, the table, then a detail pane scoped to the selected row — vty owns the
+  screen buffer, so the auto-wrap / scroll hazards of hand-drawn ANSI do not
+  arise.
+- Key navigation (=↑/↓=, =j/k=, =C-n/C-p=), detail scroll, =q= / =Escape= to
+  quit.
+
+* The producer seam
+
+Deltas arrive in-process: a producer thread computes [[file:../CONTEXT.md::*Delta][deltas]] and writes them to a
+brick =BChan=; =handle= folds each into =St= the same way a key event mutates
+it.  No wire, no serialization — the terminal delivery and its producer share a
+runtime.  A file- or socket-fed producer is a later variant of the same fold.
+
+* Conformance
+
+This is the delivery that most needs the [[file:../SCHEMA.md][contract]], being a fresh renderer:
+
+- It must declare and pass the =render= and =sort= [[file:../CONTEXT.md::*Capability][capabilities]] against
+  =fixtures/parity/=, so a window computed here matches the reference byte-role
+  for byte-role (column order, delta indices count in the [[file:../CONTEXT.md::*Window][window]], nulls
+  ordering).
+- Keymap parity is a softer target: the terminal borrows Emacs/web bindings
+  where a terminal has the key, and documents where it cannot.
+
+* dist layout
+
+#+begin_example
+dist/
+  term/
+    table-view-term          the built TUI binary
+#+end_example
+
+Self-contained — a terminal renderer needs no sidecar asset, unlike
+[[file:native-window.org::*dist layout][native-window]], which ships the =.js= beside its binary.  =dist/= is =make=
+output, gitignored; see [[file:index.org::*Deliveries][index → Deliveries]].
+
+* First consumer
+
+The same xmonad session splash as [[file:native-window.org::*First consumer][native-window]]: one producer, two deliveries.
+On a graphical session it spawns =table-view-window=; on a headless boot or a
+tty it spawns =table-view-term= — same rows, same states, same detail, chosen
+by what draws.  That a producer swaps delivery without touching its rows is the
+contract earning its keep.

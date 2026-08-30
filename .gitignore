@@ -7,6 +7,9 @@ eln-cache/
 /dist/
 .package-lint/
 
+# Native-window delivery: cabal build tree (vendored/ IS tracked)
+native-window/dist-newstyle/
+
 # Rust native backend build artifacts (native/*/target)
 target/
 *.rs.bk

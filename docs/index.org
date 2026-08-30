@@ -5,6 +5,27 @@ Design notes, proposals, and reviews for =table-view=.  All documents here are
 Org-mode and cross-link each other (see [[file:../CLAUDE.md][CLAUDE.md]] for the convention).  Start
 here and follow the links.
 
+* Deliveries
+
+table-view is one renderer against one [[file:../SCHEMA.md][contract]], delivered several ways.  A
+[[file:../CONTEXT.md::*Producer][producer]] owns the rows and picks a delivery; the [[file:../CONTEXT.md::*Vector][parity vectors]] keep the
+implementations answering alike.
+
+- *Emacs* — =table-view.el= (repo root, package convention).  Shipped.
+- *Web* — =web/table-view.js=, dependency-free, no build.  Shipped; design:
+  [[file:web-renderer.org][web-renderer.org]].
+- *Native-window* — the web renderer in a WebKitGTK window, for GUI with no
+  browser.  Spiked; design: [[file:native-window.org][native-window.org]].
+- *Term* — a brick/vty console TUI, a second renderer against the same
+  contract, for terminals and headless boots.  Spiked; design: [[file:term.org][term.org]].
+
+Consumers read one generated surface, =dist/<delivery>/= (=make dist=,
+gitignored): the authored single-file renderers (=.el=, =.js=) are copied in
+beside the built binaries (=table-view-window=, =table-view-term=), so a
+producer points at one directory per delivery and never at the build tree.  The
+=.el= at root and =web/table-view.js= stay the canonical sources — =dist/=
+holds copies, never a second edited home.
+
 * Proposals (deferred work)
 
 Ideas surfaced but intentionally not built yet, each with enough design to pick
@@ -16,6 +37,12 @@ up later.
   recompute when a max-holding row changes.
 - [[file:proposals/select-all-matching.org][Bulk “select all matching” (server pagination v2)]] :: act on the
   whole filtered result set without loading it.
+- [[file:native-window.org][Native-window renderer (WebKitGTK)]] :: host =web/table-view.js= in a
+  native window via glance's WebKit shell + vendored gi bindings; a third
+  delivery of the browser renderer.  Spiked (built, ran, captured).
+- [[file:term.org][Term renderer (brick/vty console TUI)]] :: a second renderer written
+  against the contract, for terminals and headless boots.  Spiked (compiled,
+  rendered).
 
 * Design notes (shipped)
 
@@ -71,6 +98,8 @@ docs/
     select-all-matching.org          pagination v2
     nulls-ordering.org               shipped: nulls-first/last sort
   web-renderer.org                shipped: table-view.js design rationale
+  native-window.org               spiked: table-view.js in a WebKitGTK window
+  term.org                        spiked: brick/vty console renderer
   reviews/
     incremental-render.org           review of the shipped incremental render
 #+end_example

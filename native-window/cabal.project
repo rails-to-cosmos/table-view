@@ -1,0 +1,13 @@
+-- The native-window delivery's project.  Vendored, patched GI bindings satisfy
+-- the flag (Hackage's demand pkgconfig webkit2gtk-4.0, which Arch dropped;
+-- these are repointed at the 4.1 typelibs the machine carries).  Local packages
+-- shadow every Hackage version of their name.  A build also needs
+-- HASKELL_GI_GIR_SEARCH_PATH=vendored/gir -- the Makefile's `native-window'
+-- target sets it.  See docs/native-window.org.
+packages:
+  .
+  vendored/gi-javascriptcore4-4.0.29
+  vendored/gi-webkit2-4.0.32
+
+package table-view-window
+  flags: +native-window
