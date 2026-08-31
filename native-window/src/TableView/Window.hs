@@ -56,11 +56,14 @@ nativeAvailable :: Bool
 -- file-backed source; an in-process producer supplies its own.  'Nothing' is a
 -- static page.
 --
--- ON QUIT the page's reason is handed to the callback (an empty reason is a
--- plain close), then the window closes.
+-- ON QUIT the page's reason is handed to the quit callback (an empty reason is a
+-- plain close), then the window closes.  ON ACTION a page message is handed to
+-- the action callback and the window stays open — a page @postMessage@ to the
+-- @action@ handler, for things a producer does without closing.
 nativeWindow :: (Int, Int) -> String -> String
              -> Maybe (Int, IO (Maybe Text))   -- ^ streaming feed: (poll ms, next payload)
-             -> (Text -> IO ())                 -- ^ the page's quit reason
+             -> (Text -> IO ())                 -- ^ the page's quit reason (closes the window)
+             -> (Text -> IO ())                 -- ^ a page action (window stays open)
              -> IO ()
 
 -- | A feed source that re-reads PATH whenever its mtime advances — the file
@@ -88,7 +91,7 @@ zoomAsked (low, high) said = do
 
 nativeAvailable = True
 
-nativeWindow band title url feed onQuit = do
+nativeWindow band title url feed onQuit onAction = do
   hSetBuffering stdout LineBuffering
   (started, _args) <- Gtk.initCheck Nothing
   unless started (throwIO (userError "GTK could not open a display"))
@@ -110,6 +113,9 @@ nativeWindow band title url feed onQuit = do
   -- act on it (an empty reason is a plain close).
   _ <- WK.onUserContentManagerScriptMessageReceived ucm (Just quitName) (quitMessage onQuit win)
   _ <- WK.userContentManagerRegisterScriptMessageHandler ucm quitName
+  -- `action' is `quit' that does not close: a page ask the caller acts on.
+  _ <- WK.onUserContentManagerScriptMessageReceived ucm (Just actionName) (actionMessage onAction)
+  _ <- WK.userContentManagerRegisterScriptMessageHandler ucm actionName
   -- THE ZOOM IS THE VIEW'S, which only a window has: the page keeps the level
   -- and says it, and a CSS zoom in its place would put the panes' measured
   -- rects out against the styles drawn from them.
@@ -197,6 +203,9 @@ handlerName = T.pack "popup"
 quitName :: Text
 quitName = T.pack "quit"
 
+actionName :: Text
+actionName = T.pack "action"
+
 -- | And ITS presence is the page's test for "is there a window to zoom", which
 -- is what leaves @C-+@ to the browser where there is none.
 zoomName :: Text
@@ -209,6 +218,11 @@ quitMessage onQuit win result = do
   said <- WK.javascriptResultGetJsValue result >>= JSC.valueToString
   onQuit said
   Gtk.widgetDestroy win
+
+-- | Hand the page's action string to the callback; the window stays open.
+actionMessage :: (Text -> IO ()) -> WK.JavascriptResult -> IO ()
+actionMessage onAction result =
+  WK.javascriptResultGetJsValue result >>= JSC.valueToString >>= onAction
 
 -- | A level that will not read is DROPPED: nothing on this side can put a
 -- broken message right, and a window left where it was is readable.
@@ -324,7 +338,7 @@ black = do
 nativeAvailable = False
 
 -- Unreachable while 'nativeAvailable' is consulted; saying so beats failing.
-nativeWindow _band _title url _feed _onQuit =
+nativeWindow _band _title url _feed _onQuit _onAction =
   putStrLn ("  window:  no native window in this build (cabal -f native-window); open "
               <> url <> " yourself")
 

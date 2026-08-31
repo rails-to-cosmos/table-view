@@ -31,7 +31,7 @@ main = do
       feed <- case oFeed o of
         Just p  -> (\src -> Just (oPoll o, src)) <$> fileFeed p
         Nothing -> pure Nothing
-      nativeWindow band (fromMaybe "table-view" (oTitle o)) url feed onQuit
+      nativeWindow band (fromMaybe "table-view" (oTitle o)) url feed onQuit (const (pure ()))
     _ -> usage
   where
     -- Zoom clamp (min,max) percent.  A page that names a level (via the `zoom'
