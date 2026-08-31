@@ -9,10 +9,12 @@
 module TableView.Window
   ( nativeAvailable
   , nativeWindow
+  , fileFeed
     -- * The zoom the page asks for
   , zoomAsked
   ) where
 
+import Data.Text (Text)
 import Text.Read (readMaybe)
 
 #ifdef NATIVE_WINDOW
@@ -21,7 +23,6 @@ import Control.Exception (SomeException, throwIO, try)
 import Control.Monad (unless, void, when)
 import Data.GI.Base (castTo)
 import Data.IORef (IORef, newIORef, readIORef, writeIORef)
-import Data.Text (Text)
 import Data.Time.Clock.POSIX (POSIXTime)
 import Data.Word (Word32)
 import System.IO (BufferMode (LineBuffering), hSetBuffering, stdout)
@@ -49,13 +50,23 @@ nativeAvailable :: Bool
 -- THE BAND ARRIVES AS A PARAMETER: the caller's zoom clamp (the launcher's, or
 -- a hosting page's own), so this layer spells no second one.
 --
--- The last argument is an optional STREAMING FEED.  @Just (path, ms)@ polls
--- @path@ every @ms@ milliseconds and, once the page has loaded, injects
--- @window.__ingest(<contents>)@ whenever the file's contents change — a
--- producer writes rows to the file, the page turns them into 'upsertRow' calls.
--- 'Nothing' is a static page.  The producer must write the file atomically
--- (temp + rename); a torn read is swallowed and retried next tick.
-nativeWindow :: (Int, Int) -> String -> String -> Maybe (FilePath, Int) -> IO ()
+-- The STREAMING FEED is @Just (ms, next)@: every @ms@ milliseconds, once the
+-- page has loaded, @next@ is polled on the main thread and any @Just payload@ it
+-- yields is injected as @window.__ingest(payload)@.  'fileFeed' is the
+-- file-backed source; an in-process producer supplies its own.  'Nothing' is a
+-- static page.
+--
+-- ON QUIT the page's reason is handed to the callback (an empty reason is a
+-- plain close), then the window closes.
+nativeWindow :: (Int, Int) -> String -> String
+             -> Maybe (Int, IO (Maybe Text))   -- ^ streaming feed: (poll ms, next payload)
+             -> (Text -> IO ())                 -- ^ the page's quit reason
+             -> IO ()
+
+-- | A feed source that re-reads PATH whenever its mtime advances — the file
+-- variant of the streaming feed, for a producer that writes a file.  The
+-- producer must write atomically (temp + rename); a torn read is swallowed.
+fileFeed :: FilePath -> IO (IO (Maybe Text))
 
 -- | The level the page named, held inside BAND — @(minimum, maximum)@ as whole
 -- percentages, divided by 100 to the level a view wears.  Below the floor the
@@ -77,7 +88,7 @@ zoomAsked (low, high) said = do
 
 nativeAvailable = True
 
-nativeWindow band title url feed = do
+nativeWindow band title url feed onQuit = do
   hSetBuffering stdout LineBuffering
   (started, _args) <- Gtk.initCheck Nothing
   unless started (throwIO (userError "GTK could not open a display"))
@@ -94,9 +105,10 @@ nativeWindow band title url feed = do
   ucm <- WK.webViewGetUserContentManager view
   _ <- WK.onUserContentManagerScriptMessageReceived ucm (Just handlerName) (openMessage win)
   _ <- WK.userContentManagerRegisterScriptMessageHandler ucm handlerName
-  -- `q' ON THE MAIN PAGE QUITS, which only a window can answer.
-  _ <- WK.onUserContentManagerScriptMessageReceived ucm (Just quitName)
-         (\_value -> Gtk.widgetDestroy win)
+  -- `q' ON THE MAIN PAGE QUITS, which only a window can answer.  The reason the
+  -- page gives is echoed to stdout first, so whatever launched the window can
+  -- act on it (an empty reason is a plain close).
+  _ <- WK.onUserContentManagerScriptMessageReceived ucm (Just quitName) (quitMessage onQuit win)
   _ <- WK.userContentManagerRegisterScriptMessageHandler ucm quitName
   -- THE ZOOM IS THE VIEW'S, which only a window has: the page keeps the level
   -- and says it, and a CSS zoom in its place would put the panes' measured
@@ -121,19 +133,18 @@ nativeWindow band title url feed = do
 
 -- | Install the streaming feed's GLib timer, if a feed was given.  The timer
 -- runs on the main thread, so its @webViewRunJavascript@ calls are safe.
-startFeed :: WK.WebView -> IORef Bool -> Maybe (FilePath, Int) -> IO ()
+startFeed :: WK.WebView -> IORef Bool -> Maybe (Int, IO (Maybe Text)) -> IO ()
 startFeed _ _ Nothing = pure ()
-startFeed view ready (Just (path, ms)) = do
-  seen <- newIORef Nothing
-  _ <- GLib.timeoutAdd GLib.PRIORITY_DEFAULT (fromIntegral ms) (pushFeed view ready seen path)
+startFeed view ready (Just (ms, next)) = do
+  _ <- GLib.timeoutAdd GLib.PRIORITY_DEFAULT (fromIntegral ms) (tick view ready next)
   pure ()
 
--- | One feed tick, kept alive by returning 'True'.  Injects the feed's contents
--- only once the page has loaded and the file has changed.
-pushFeed :: WK.WebView -> IORef Bool -> IORef (Maybe POSIXTime) -> FilePath -> IO Bool
-pushFeed view ready seen path = do
+-- | One feed tick, kept alive by returning 'True'.  Once the page has loaded,
+-- polls the feed source and injects any payload it yields.
+tick :: WK.WebView -> IORef Bool -> IO (Maybe Text) -> IO Bool
+tick view ready next = do
   loaded <- readIORef ready
-  when loaded (readIfChanged seen path >>= mapM_ inject)
+  when loaded (next >>= mapM_ inject)
   pure True
   where
     inject payload = WK.webViewRunJavascript view
@@ -159,6 +170,10 @@ readIfChanged seen path = do
           case etxt of
             Left (_ :: SomeException) -> pure Nothing
             Right payload             -> writeIORef seen (Just m) >> pure (Just payload)
+
+fileFeed path = do
+  seen <- newIORef Nothing
+  pure (readIfChanged seen path)
 
 -- | TWO DOORS, because WebKit has two: a @target="_blank"@ anchor arrives here
 -- as a @NewWindowAction@; a scripted @window.open@ fires @create@ instead, and
@@ -186,6 +201,14 @@ quitName = T.pack "quit"
 -- is what leaves @C-+@ to the browser where there is none.
 zoomName :: Text
 zoomName = T.pack "zoom"
+
+-- | Hand the page's quit reason to the callback, then close the window.  The
+-- caller decides what a close should trigger.
+quitMessage :: (Text -> IO ()) -> Gtk.Window -> WK.JavascriptResult -> IO ()
+quitMessage onQuit win result = do
+  said <- WK.javascriptResultGetJsValue result >>= JSC.valueToString
+  onQuit said
+  Gtk.widgetDestroy win
 
 -- | A level that will not read is DROPPED: nothing on this side can put a
 -- broken message right, and a window left where it was is readable.
@@ -301,8 +324,10 @@ black = do
 nativeAvailable = False
 
 -- Unreachable while 'nativeAvailable' is consulted; saying so beats failing.
-nativeWindow _band _title url _feed =
+nativeWindow _band _title url _feed _onQuit =
   putStrLn ("  window:  no native window in this build (cabal -f native-window); open "
               <> url <> " yourself")
+
+fileFeed _ = pure (pure Nothing)
 
 #endif

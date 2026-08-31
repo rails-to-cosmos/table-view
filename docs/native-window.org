@@ -14,7 +14,7 @@ Status: *in-repo, builds, runs, streams.*  =native-window/= holds the shell
 launcher (=table-view-window URL [TITLE] [--feed PATH]=), and the vendored
 bindings; =make native-window= builds it and =make dist= stages it under
 =dist/native-window/=.  Both static and streaming (=--feed=) paths are verified
-against a live GTK window.  First real producer: the xmonad session splash (see
+against a live GTK window.  First real producer: the xmonad control panel (see
 [[*First consumer][First consumer]]).
 
 * Why a name that is not "native"
@@ -110,7 +110,7 @@ Two directions, both built:
 
 The current payload is a full snapshot the page applies idempotently (upsert
 every row, prune any id that dropped out) — a reset-style [[file:../CONTEXT.md::*Delta][delta]], which is
-cheap at splash scale and needs no index bookkeeping across the wire.  A
+cheap at control-panel scale and needs no index bookkeeping across the wire.  A
 producer therefore ships two things and no Haskell: the HTML page, and whatever
 writes the JSON the tick reads.
 
@@ -139,10 +139,10 @@ nothing else on disk.  See [[file:index.org::*Deliveries][index → Deliveries]]
 
 * First consumer
 
-The xmonad session splash (built, in that repo's =scripts/splash*=): a shell
-boot-sequence producer — services as rows, state as a badge, captured
+The xmonad control panel (built, in that repo's =control-panel/=): a shell
+service-status producer — services as rows, state as a badge, captured
 =stdout/stderr= as the per-row log — writing JSON that
-=table-view-window --feed= streams into =splash.html=.  It exercises every piece
+=table-view-window --feed= streams into =index.html=.  It exercises every piece
 here — the shell, the =quit= handler, the auto-close, and the =--feed= streaming
 path — which is why it is the delivery's proving ground.  A producer in *shell*
 (no Haskell) confirms the seam is language-agnostic.

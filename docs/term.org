@@ -81,7 +81,7 @@ output, gitignored; see [[file:index.org::*Deliveries][index → Deliveries]].
 
 * First consumer
 
-The same xmonad session splash as [[file:native-window.org::*First consumer][native-window]]: one producer, two deliveries.
+The same xmonad control panel as [[file:native-window.org::*First consumer][native-window]]: one producer, two deliveries.
 On a graphical session it spawns =table-view-window=; on a headless boot or a
 tty it spawns =table-view-term= — same rows, same states, same detail, chosen
 by what draws.  That a producer swaps delivery without touching its rows is the

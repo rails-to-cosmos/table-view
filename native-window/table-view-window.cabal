@@ -19,7 +19,11 @@ library
   exposed-modules:  TableView.Window
   hs-source-dirs:   src
   ghc-options:      -Wall
-  build-depends:    base >=4.7 && <5
+  -- `text' is unconditional: the public signatures (feed source, quit reason)
+  -- name `Text' even in the base-only stub build.
+  build-depends:
+      base >=4.7 && <5
+    , text
   if flag(native-window)
     cpp-options:    -DNATIVE_WINDOW
     -- gi-gtk3/gi-gdk3 are the names gi-webkit2 depends on; the other spelling
@@ -32,7 +36,6 @@ library
       , gi-javascriptcore  >=4.0  && <4.1
       , gi-webkit2         >=4.0  && <4.1
       , haskell-gi-base    >=0.26 && <0.27
-      , text
       , time
       , unix
   default-language: Haskell2010
@@ -44,4 +47,5 @@ executable table-view-window
   build-depends:
       base
     , table-view-window
+    , text
   default-language: Haskell2010

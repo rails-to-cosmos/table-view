@@ -10,10 +10,11 @@
 module Main (main) where
 
 import           Data.Maybe         (fromMaybe)
+import qualified Data.Text          as T
 import           System.Environment (getArgs, getProgName)
 import           System.Exit        (exitFailure)
 import           System.IO          (hPutStrLn, stderr)
-import           TableView.Window   (nativeWindow)
+import           TableView.Window   (fileFeed, nativeWindow)
 
 data Opts = Opts
   { oUrl   :: Maybe String
@@ -26,14 +27,18 @@ main :: IO ()
 main = do
   args <- getArgs
   case parse args (Opts Nothing Nothing Nothing 250) of
-    Just o | Just url <- oUrl o ->
-      nativeWindow band (fromMaybe "table-view" (oTitle o)) url (feed o)
+    Just o | Just url <- oUrl o -> do
+      feed <- case oFeed o of
+        Just p  -> (\src -> Just (oPoll o, src)) <$> fileFeed p
+        Nothing -> pure Nothing
+      nativeWindow band (fromMaybe "table-view" (oTitle o)) url feed onQuit
     _ -> usage
   where
     -- Zoom clamp (min,max) percent.  A page that names a level (via the `zoom'
     -- handler) is held inside this band; see TableView.Window.zoomAsked.
     band = (50, 300)
-    feed o = (\p -> (p, oPoll o)) <$> oFeed o
+    -- Preserve the launcher's contract: echo the quit reason to stdout.
+    onQuit reason = putStrLn ("quit " <> T.unpack reason)
     usage = do
       p <- getProgName
       hPutStrLn stderr ("usage: " <> p <> " URL [TITLE] [--feed PATH] [--poll MS]")
