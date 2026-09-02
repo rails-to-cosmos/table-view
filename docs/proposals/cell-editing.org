@@ -1,0 +1,130 @@
+#+TITLE: Proposal — Cell editing (an editable table-view)
+#+OPTIONS: toc:nil num:nil
+
+[[file:../index.org][← Wiki index]] · driven by: an embedded, editable org-table in the =glance= material doc (which today edits cells through an OVERLAY laid over the widget, because the widget offers no edit of its own)
+
+* Status
+
+*Proposed.* Web-renderer first (the consumer that needs it); Elisp and native
+parity named as follow-on. Inert until reviewed.
+
+* Background
+
+=table-view= renders and NAVIGATES; it does not EDIT. A cell shows a value, a
+row leads somewhere (=onLink=), an action fires a command (=onAction=), the
+filter box is the one =<input>= the widget owns. There is no way to change a
+cell's value THROUGH the widget.
+
+A consumer that wants cell editing — =glance='s material doc mounts a
+=table-view= per org table and lets the reader retype a cell — must build the
+editor OUTSIDE the widget: an absolutely-positioned overlay box laid over the
+=td='s rect, re-anchored on every scroll, z-indexed above the widget, and torn
+down and rebuilt whenever the widget re-renders (because the overlay is not the
+widget's and the widget owns its cell DOM). It works, but it re-implements, per
+consumer, an editor the widget is the natural home for — and it fights the
+widget's own DOM ownership the whole way.
+
+The widget already has every piece: it owns the cell DOM, it manages a
+=<input>= (the filter), it has a selection model (=select=, =getSelection=), and
+it speaks to consumers through callbacks + =CustomEvent=\s. Editing is the
+missing verb, not a missing mechanism.
+
+* Proposal
+
+An IN-CELL editor the widget owns, and an EDIT event the consumer commits.
+
+** The gesture
+
+- *Keyboard* (widget focused): =RET= (or =F2=, org-table's =C-c C-c= spelling)
+  on the selected cell opens its editor; a *plain typed character* replaces and
+  opens (spreadsheet feel), guarded so it never fights a navigation key.
+- *Mouse*: a double-click on a cell opens its editor.
+- *Programmatic* (an EXTERNAL driver, e.g. =glance='s doc, whose keys live in
+  Elm, not the widget): =tv.editCell(id, col)= opens the editor on that cell;
+  =tv.editHeader(col)= opens it on a column's header. This is the seam that lets
+  a consumer keep its own key map and still use the widget's editor.
+
+** The editor
+
+- An =<input>= placed IN the cell (the =td=/=th=), sized to it, prefilled with
+  the cell's RAW value — the same text =displayText= renders FROM, so a link
+  cell edits =[[target][desc]]=, not =desc=. The widget owns it, so a re-render
+  keeps or re-lays it; no consumer-side overlay, no z-index, no scroll
+  re-anchoring.
+- =RET= commits, =ESC= cancels (byte-identical restore), =TAB= commits and
+  opens the next cell (org-table's own move). One editor at a time.
+- The value is TEXT; the widget parses nothing. What a cell "means" (a number, a
+  date, an org link) stays the producer's, exactly as =displayText= /
+  =onFilter= already keep it.
+
+** The contract (what a consumer wires)
+
+- *Web:* =MountOptions.onEdit?: (id: string, col: number, value: string, kind:
+  "cell" | "header") => void=, and the matching =CustomEvent= =tableview-edit=
+  ={detail: {id, col, value, kind}}=. Symmetric with =onAction=/=onLink=. The
+  widget does NOT mutate its own view on commit — it reports, and the consumer
+  writes and feeds the new view back (=setView=/=upsertRow=), the same
+  producer-owns-the-data rule the rest of the API keeps. A consumer that wants
+  optimistic local editing can opt in with =editLocal: true=.
+- *Elisp:* =table-view-edit-function= (buffer-local), called =(id col value
+  kind)=; parallels =table-view-action-function=. Nil ⇒ cells are read-only, the
+  current behavior.
+- *Editable gating:* a column opts in with =editable: true= (web) /
+  =:editable t= (a column plist, Elisp); default read-only, so no existing mount
+  becomes editable by surprise.
+
+** SCHEMA / docs
+
+- =SCHEMA.md=: the =onEdit= option, the =tableview-edit= event, the column
+  =editable= flag.
+- =docs/web-renderer.org= “Interaction & rendering”: the in-cell editor, the
+  gesture table, the one-editor-at-a-time rule.
+- =CHANGELOG.md=: a minor bump (additive; read-only mounts unchanged).
+
+* How glance consumes it (and what it retires)
+
+=glance='s doc mount today carries =DCELL=/=DHEAD= overlay shapes, a
+=placeEdit= cells-mode anchor, and a =z-index= fix so the box paints above the
+widget. With this feature it instead:
+
+- calls =tv.editCell(leafId, col)= on =RET= over a cell, =tv.editHeader(col)= on
+  =RET= over a column header;
+- listens for =tableview-edit= and routes ={id, col, value}= to its existing
+  one-door write (=EditCell= → the drift-locked =POST=), then feeds the reread
+  back via =setView=;
+- DELETES the overlay shapes, the anchor, and the z-index — the editor is the
+  widget's, in the cell, where the reader looks.
+
+The other items glance works around are the same shape and worth bundling if the
+review agrees (each is a one-liner the consumer today fakes): =onSelect(id,
+col)= (glance polls =getSelection= after a click), =select(null)= /
+=clearSelection()= (glance masks the wash with CSS), an =embedded= mount that
+drops the title/filter/=N rows= furniture (glance hides them with CSS), and NOT
+falling back to the column KEY for a blank header (glance ships a space). None
+are editing, but all are "the widget as a first-class embed target," which this
+proposal opens the door to.
+
+* Trade-offs
+
+- *A new verb on a mature widget.* Kept additive: =editable= defaults off, no
+  =onEdit= means read-only, so every existing mount is unchanged. The surface is
+  one option, one event, one method pair, one column flag.
+- *Multi-surface parity.* The web renderer is the driver's need and ships first;
+  Elisp (=table-view-edit-function=) and native follow for parity, tracked here.
+  The gesture and the "producer owns the write" rule are identical across
+  surfaces, so the contract is one shape.
+- *Focus, for the programmatic path.* =editCell= must open the input WITHOUT
+  stealing the page's key handling from an external driver until the input is
+  focused — the input takes keys, everything else stays the driver's. This is
+  the one subtlety and is the filter box's own already-solved problem.
+- *Not a spreadsheet.* One editor at a time, TEXT values, the producer parses.
+  Formulas, multi-cell fill, and validation are out — the widget edits a cell's
+  bytes, nothing more.
+
+* See also
+
+- The consumer's design: =glance='s [[file:../../glance/docs/proposals/proposed/2026-08-26-an-org-table-is-a-table-view-mount.md][org-table-is-a-table-view-mount]]
+  (the mount boundary) and its bug =the-column-edit-box-paints-behind-the-table=
+  (the overlay this retires).
+- The API shape it parallels: =onAction=/=onLink= + =tableview-action=/
+  =tableview-link= (README → “Web renderer”, =SCHEMA.md=).
