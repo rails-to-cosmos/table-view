@@ -62,7 +62,8 @@ Design records for features already in the package.
 - [[file:proposals/cell-editing.org][Cell editing (an editable table-view)]] :: an in-cell editor the
   widget owns and an =onEdit= / =tableview-edit= the consumer commits, so an
   embedded table (=glance='s material doc) edits a cell IN the cell rather than
-  through a consumer-side overlay.  Proposed; web-renderer first.
+  through a consumer-side overlay.  Web renderer shipped (=glance= retired its
+  overlay); Elisp/native parity follows.
 - [[file:web-renderer.org][Web renderer (table-view.js) — design rationale]] :: the "why" behind the
   browser renderer's palette/contrast values, column geometry, filter grammar,
   suggestion tiers, and interaction hazards.  The source points here rather

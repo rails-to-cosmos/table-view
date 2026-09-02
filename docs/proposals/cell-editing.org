@@ -5,8 +5,11 @@
 
 * Status
 
-*Proposed.* Web-renderer first (the consumer that needs it); Elisp and native
-parity named as follow-on. Inert until reviewed.
+*Web renderer: shipped* (=web/table-view.js= — =editCell=/=editHeader=, =onEdit=,
+the =tableview-edit= event, the =editable= column flag, a double-click gesture,
+=.tv-cell-edit= CSS). =glance='s material doc consumes it and has RETIRED its
+=DCELL=/=DHEAD= overlay. *Elisp and native parity: follow-on* (named below, not
+yet built).
 
 * Background
 
