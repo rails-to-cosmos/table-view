@@ -294,9 +294,8 @@ foreign import ccall "webkit_website_data_get_size" webkit_website_data_get_size
 
 -- | Gets the size of the data of types /@types@/ in a t'GI.WebKit2.Structs.WebsiteData.WebsiteData'.
 -- 
--- Note that currently the data size is only known for the 'GI.WebKit2.Flags.WebsiteDataTypesDiskCache',
--- 'GI.WebKit2.Flags.WebsiteDataTypesLocalStorage', 'GI.WebKit2.Flags.WebsiteDataTypesIndexeddbDatabases' and
--- 'GI.WebKit2.Flags.WebsiteDataTypesDomCache' data types, so for all other types 0 will be returned.
+-- Note that currently the data size is only known for 'GI.WebKit2.Flags.WebsiteDataTypesDiskCache' data type
+-- so for all other types 0 will be returned.
 -- 
 -- /Since: 2.16/
 websiteDataGetSize ::
