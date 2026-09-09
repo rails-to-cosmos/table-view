@@ -3477,6 +3477,10 @@
       wantSelection = true;
       if (flagHelp) wantHint = true;
       if (selAt >= 0) easeToRow(selAt, was === undefined ? selAt : was);
+      // Stamp the selection here without a table refresh, so the row lights the
+      // same frame it moved and never blinks.  The frame loop keeps the window
+      // and ease; an off-window row waits for `tick'.
+      stampSelection();
       schedule();
     }
 
