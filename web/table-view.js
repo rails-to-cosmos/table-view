@@ -82,6 +82,8 @@
  * @typedef {{ onAction?: (command: string, id: string, row: Row) => void,
  *             onLink?: (target: string, row: Row | null) => void,
  *             onFilter?: (q: string) => void,
+ *             onFilterInput?: (value: string) => void,
+ *             onFilterKey?: (e: KeyboardEvent) => boolean,
  *             onEdit?: (id: string | null, col: number, value: string,
  *                       kind: "cell" | "header") => void,
  *             omnibox?: boolean,
@@ -4368,7 +4370,11 @@
         deliver(true);
       }, DEBOUNCE);
     }
-    input.addEventListener("input", () => { armFilter(); openAc(); });
+    input.addEventListener("input", () => {
+      if (o.onFilterInput) o.onFilterInput(input.value);
+      armFilter();
+      openAc();
+    });
 
     // suggestion tiers (renderer-local autocomplete): docs/web-renderer.org
 
@@ -4854,6 +4860,14 @@
     }
 
     input.addEventListener("keydown", (e) => {
+      // A consumer may give its filter a row cursor of its own. Ask before the
+      // completion list claims arrows and C-n/C-p, since those keys mean row
+      // movement in a chooser even while its narrowing field has focus.
+      if (o.onFilterKey && o.onFilterKey(e)) {
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
       if (ac) {
         // C-n/C-p move the list too; Chrome-family takes C-n for a new window before the page sees it, so arrows are the fallback there (Firefox/webview deliver both).
         const down = e.key === "ArrowDown" || (e.ctrlKey && e.key === "n");

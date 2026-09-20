@@ -6796,12 +6796,25 @@ async function smoke() {
 
   {
     // onFilter: the producer narrows, the renderer shows what it is given.
-    const asked = [];
+    const asked = [], filterInputs = [], filterKeys = [];
     const remote = new El("div");
-    const rt = TableView.mount(remote, view(10), { onFilter: (q) => asked.push(q) });
+    const rt = TableView.mount(remote, view(10), {
+      onFilter: (q) => asked.push(q),
+      onFilterInput: (value) => filterInputs.push(value),
+      onFilterKey: (e) => {
+        if (e.key !== "ArrowDown") return false;
+        filterKeys.push(e.key);
+        return true;
+      },
+    });
     const rbox = filterOf(remote);
+    const move = new Ev("keydown", { key: "ArrowDown" });
+    rbox.dispatchEvent(move);
+    check("onFilterKey claims movement before filter completion",
+          [filterKeys, move.defaultPrevented], [["ArrowDown"], true]);
     rbox.value = "system";
     rbox.dispatchEvent(new Ev("input"));
+    check("onFilterInput sees the field's raw text", filterInputs, ["system"]);
     await settle();
     check("onFilter takes the query", asked, ["system"]);
     check("and the rows stay as given", rt.getVisible().length, 10);
