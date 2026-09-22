@@ -40,6 +40,8 @@
 /**
  * @typedef {string|number|null} Cell  A cell value; null/missing render as "".
  * @typedef {{ value: string, color: string }} Badge
+ * @typedef {{ module: string, symbol: string }} TypeSource
+ * @typedef {{ name: string, source?: TypeSource, proposed?: boolean }} ValueType
  * @typedef {{ key: string,
  *             header?: string,
  *             type?: "text"|"number"|"badge",
@@ -49,7 +51,8 @@
  *             values?: string[],
  *             multi?: boolean,
  *             editable?: boolean,
- *             compare?: string }} Column
+ *             compare?: string,
+ *             valueType?: ValueType }} Column
  *          `editable' opts the column into cell editing (`editCell'/double-
  *          click / `onEdit'); columns are read-only by default.
  * @typedef {{ key?: string, command: string, label?: string }} Action
@@ -1437,8 +1440,7 @@
   opacity:1;
 }
 /* The pin button-badge: far edge of the strip, dim until it is true. */
-.tv-chips .tv-pin{
-  margin-left:auto;
+.tv-pin{
   cursor:pointer;
   opacity:.35;
   font-size:12px;
@@ -1446,10 +1448,10 @@
   user-select:none;
   filter:grayscale(1);
 }
-.tv-chips .tv-pin:hover{
+.tv-pin:hover{
   opacity:.7;
 }
-.tv-chips .tv-pin.tv-pinned{
+.tv-pin.tv-pinned{
   opacity:1;
   filter:none;
 }
@@ -1537,7 +1539,7 @@
    Every mount that docks wears these, the tv-inline picker included. */
 .tv-dock{
   display:grid;
-  grid-template-columns:auto minmax(0,1fr);
+  grid-template-columns:auto minmax(0,1fr) auto;
   align-items:center;
 }
 /* One hairline under the strip, and it is the scroller's own top edge. */
@@ -1551,6 +1553,10 @@
 .tv-dock > .tv-bar{
   grid-area:1 / 2;
   display:none;
+}
+.tv-dock > .tv-pin{
+  grid-area:1 / 3;
+  margin-right:12px;
 }
 .tv-dock.tv-typing > .tv-bar{
   display:flex;
@@ -1673,6 +1679,31 @@
 }
 .tv-fill th .tv-arrow{
   flex:none;
+}
+.tv-hd.tv-typed{
+  display:inline-flex;
+  position:relative;
+  padding-bottom:13px;
+}
+.tv-vt{
+  position:absolute;
+  right:0;
+  bottom:0;
+  left:0;
+  overflow:hidden;
+  color:var(--tv-muted);
+  font-size:.75em;
+  font-weight:400;
+  line-height:1.15;
+  text-align:left;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.tv-fill th.tv-badge .tv-vt{
+  left:var(--tv-pill-pad, 8px);
+}
+.tv-right .tv-vt{
+  text-align:right;
 }
 /* A flex row does not take the cell's text-align, so the one alignment a
    column can declare is restated as the row's own. The CELLS are untouched —
@@ -2289,6 +2320,7 @@
     input.placeholder = WHOLE_HINT;
     const chipsEl = document.createElement("div");
     chipsEl.className = "tv-chips";
+    const pinEl = document.createElement("span");
     const filterWrap = document.createElement("div");
     filterWrap.className = "tv-filter-wrap";
     const acEl = document.createElement("div");
@@ -2333,8 +2365,9 @@
     hint.className = "tv-hint";
 
     const hasHint = !composer && !inline;
-    if (dock !== "overlay") root.appendChild(bar);
     if (omnibox || summoned) root.appendChild(chipsEl);
+    if (dock !== "overlay") root.appendChild(bar);
+    if (dock === "strip" && onPin) root.appendChild(pinEl);
     if (!composer) root.appendChild(scroll);
     if (hasHint) root.appendChild(hint);
     if (dock === "overlay") root.appendChild(veil);
@@ -3008,6 +3041,16 @@
         arrow.className = "tv-arrow";
         hd.appendChild(label);
         hd.appendChild(arrow);
+        if (c.valueType && c.valueType.name) {
+          const vt = document.createElement("span");
+          const source = c.valueType.source;
+          const ref = source ? `${source.module}.${source.symbol}` : "proposed type";
+          vt.className = "tv-vt";
+          vt.textContent = `:: ${c.valueType.name}`;
+          vt.title = `${c.valueType.name} — ${ref}`;
+          hd.classList.add("tv-typed");
+          hd.appendChild(vt);
+        }
         th.appendChild(hd);
         headRow.appendChild(th);
         arrowEls.push(arrow);
@@ -4108,11 +4151,17 @@
         html += `<span class="tv-chip${chipClassOf(chips[i])}"`
               + ` data-i="${i}" title="remove">${esc(chipText(chips[i]))}`
               + `<i class="tv-chip-x">×</i></span>`;
-      if (onPin)
+      if (onPin && dock !== "strip")
         html += `<span class="tv-pin${pinned ? " tv-pinned" : ""}" title="${
           pinned ? "this view is the default" : "pin this view as the default"}">📌</span>`;
       chipsEl.innerHTML = html;
-      chipsEl.style.display = (crumbs.length || chips.length || onPin) ? "" : "none";
+      chipsEl.style.display = (crumbs.length || chips.length
+                               || (onPin && dock !== "strip")) ? "" : "none";
+      if (dock === "strip" && onPin) {
+        pinEl.className = `tv-pin${pinned ? " tv-pinned" : ""}`;
+        pinEl.title = pinned ? "this view is the default" : "pin this view as the default";
+        pinEl.textContent = "📌";
+      }
     }
 
     /** The one token TOK spells, parsed. @param {string} tok  @returns {Token|undefined} */
@@ -4824,9 +4873,12 @@
       const caret = t.start + ins.length;
       if (input.setSelectionRange) input.setSelectionRange(caret, caret);
       armFilter();
-      if (stage === "view") {
-        flushFilter(true);
-        if (!input.value.trim()) handOver();   // a refusal stays, and keeps the box
+      const selected = asToken(item.text);
+      if (stage === "view" || (stage === "key" && selected && selected.key === VIEW_KEY)) {
+        if (debounce) { clearTimeout(debounce); debounce = 0; }
+        chipUp(true);
+        handOver();
+        deliver();
         return;
       }
       openAc();          // a key opens its values; a finished value closes the list
@@ -4960,6 +5012,7 @@
       if (!chip || chip.dataset.i === undefined) return;
       dropChip(Number(chip.dataset.i));
     });
+    pinEl.addEventListener("click", () => { if (onPin) onPin(); });
 
 
     /**

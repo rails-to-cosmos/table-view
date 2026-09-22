@@ -2009,6 +2009,25 @@ async function columnWidths() {
           [true, true]);
   }
 
+  // --- semantic type: a second line that does not resize the column
+  {
+    const T = driver({
+      title: "typed",
+      columns: [{ key: "title", header: "Title", valueType: {
+        name: "Text", source: { module: "Data.Text", symbol: "Text" },
+      } }],
+      rows: [{ id: "a", cells: { title: "typed row" } }],
+    });
+    const th = T.box.querySelector(".tv-table thead th");
+    const valueType = th.querySelector(".tv-vt");
+    check("a semantic type is a stacked annotation inside the existing header",
+          [th.querySelector(".tv-hd").classes.has("tv-typed"), valueType.text,
+           valueType.title],
+          [true, ":: Text", "Text — Data.Text.Text"]);
+    check("semantic types do not enter column width measurement",
+          chOf(T.box), ["typed row".length]);
+  }
+
   // --- no title column: the convention's fallback, which is what it always was
   {
     const N = driver({

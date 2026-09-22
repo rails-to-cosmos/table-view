@@ -46,17 +46,18 @@ view is offered with no renderer change.
 
 ## Column object
 
-| field      | type          | default  | meaning                                             |
-|------------|---------------|----------|-----------------------------------------------------|
-| `key`      | string        | —        | cell lookup key; unique within the view             |
-| `header`   | string        | `key`    | column label                                        |
-| `type`     | enum          | `"text"` | `"text"` \| `"number"` \| `"badge"`                 |
-| `align`    | enum          | `"left"` | `"left"` \| `"right"`                               |
-| `sortable` | bool          | `false`  | column may be sorted on (opt-in: default is no)     |
-| `badges`   | array<Badge>  | —        | palette for a `"badge"` column                      |
-| `values`   | array<string> | —        | explicit categorical order (sort priority), and any filter metas |
-| `compare`  | string        | —        | comparator name: `"number"`, `"string"`, `"natural"`|
-| `multi`    | bool          | —        | cells hold a delimited value list (experimental)    |
+| field       | type            | default  | meaning                                             |
+|-------------|-----------------|----------|-----------------------------------------------------|
+| `key`       | string          | —        | cell lookup key; unique within the view             |
+| `header`    | string          | `key`    | column label                                        |
+| `type`      | enum            | `"text"` | `"text"` \| `"number"` \| `"badge"`                 |
+| `valueType` | ValueType       | —        | semantic cell type and optional source identity     |
+| `align`     | enum            | `"left"` | `"left"` \| `"right"`                               |
+| `sortable`  | bool            | `false`  | column may be sorted on (opt-in: default is no)     |
+| `badges`    | array<Badge>    | —        | palette for a `"badge"` column                      |
+| `values`    | array<string>   | —        | explicit categorical order (sort priority), and any filter metas |
+| `compare`   | string          | —        | comparator name: `"number"`, `"string"`, `"natural"`|
+| `multi`     | bool            | —        | cells hold a delimited value list (experimental)    |
 
 **Sort order of a column** resolves as: `compare` name → `values` order (else the
 `badges` order for a badge column), unlisted values last → `type: "number"` is
@@ -74,6 +75,9 @@ sort position, and a `values` list holding metas alone orders nothing.
   A renderer that guesses from cell shape must let the declaration win.
   *Experimental*: the field is new and the guessing fallback is what most
   producers still rely on.
+- `valueType` documents the value's meaning. It does not select a renderer,
+  comparator, filter grammar, or completion domain. Those remain explicit in
+  `type`, `compare`, `values`, `badges`, and `multi`.
 
 **The key `title` is a convention**, and the one place a key name means
 something past cell lookup. A renderer may treat that column as the row's
@@ -82,6 +86,19 @@ gives it the table's leftover width, sizing every other column to its own cells
 and ellipsizing a header too long for one. Layout is a renderer concern and no
 part of this contract — a producer that wants a column to fill names it
 `title`, and one that names none is conformant.
+
+### ValueType object
+
+| field      | type       | default | meaning                                      |
+|------------|------------|---------|----------------------------------------------|
+| `name`     | string     | —       | compact semantic name shown under the header |
+| `source`   | TypeSource | —       | stable source identity for an existing type  |
+| `proposed` | bool       | `false` | the named type has no source definition yet  |
+
+A `TypeSource` has string fields `module` and `symbol`. Source identities use
+stable language names; file paths and line numbers are navigation details. The
+browser renderer draws `:: name` on a second header line and leaves column
+width measurement unchanged. Renderers may ignore this additive metadata.
 
 ### Badge object
 

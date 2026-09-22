@@ -8,5 +8,5 @@
     "strictNullChecks": true,
     "skipLibCheck": true
   },
-  "include": ["table-view.js"]
+  "include": ["table-view.js", "table-view.d.ts"]
 }
