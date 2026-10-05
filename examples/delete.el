@@ -1,15 +1,5 @@
 ;;; delete.el --- Row deletion with a custom pre-delete gate -*- lexical-binding: t; -*-
 
-;; Eval this buffer for a cache-entries table where `d' deletes the row at
-;; point -- but only AFTER a custom pre-delete step succeeds.  Here that step
-;; (`delete-example--purge') stands in for removing files / database rows: it
-;; refuses to delete a `locked' entry, so the row is KEPT when cleanup fails.
-;;
-;; This is the pattern for "remove some files / DB entries and proceed only
-;; after success": your action handler does the work and calls
-;; `table-view-delete-row' ONLY on success.
-;;
-;;   d    delete the entry at point (ask, then purge, then remove the row)
 
 (require 'table-view)
 

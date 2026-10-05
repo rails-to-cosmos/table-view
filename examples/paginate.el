@@ -1,30 +1,10 @@
 ;;; paginate.el --- Server-side pagination over a fake producer -*- lexical-binding: t; -*-
 
-;; Eval this buffer for a 137-row "package registry" served ONE PAGE AT A
-;; TIME.  Only the current page lives in the buffer; sort, filter, and totals
-;; are the producer's job.  A real consumer swaps the in-memory `db' below for
-;; a database or HTTP call and delivers each page with `table-view-set-page'
-;; (or `table-view-page-error' on failure) -- from an async callback if the
-;; fetch is slow.
-;;
-;;   > / <        next / previous page
-;;   M-> / M-<    last / first page
-;;   M-g          go to page N
-;;   /            filter -- PUSHED DOWN: you page through the matches, and the
-;;                indicator counts the whole filtered set, not the loaded page
-;;   ^            sort by the column at point -- PUSHED DOWN: the server
-;;                re-orders and you jump back to page 1
-;;   m / U        mark / unmark a row.  Marks are cached, so they SURVIVE page
-;;                turns: mark a row here, page away, come back -- still marked
-;;   x            a bulk action over every marked row ACROSS ALL PAGES, not
-;;                just the ones on screen
-;;   g            refresh (re-fetch the current page)
 
 (require 'table-view)
 (require 'cl-lib)
 (require 'seq)
 
-;;; A pretend producer: an in-memory table the page-fn queries.
 
 (defconst paginate-example--words
   '("core" "lib" "utils" "http" "json" "async" "test" "cli")
@@ -66,9 +46,6 @@ sort key to SQL `ORDER BY col [ASC|DESC] NULLS FIRST|LAST'."
                           for nfirst = (eq (table-view--sort-key-nulls ka) 'first)
                           for va = (alist-get key (alist-get 'cells a))
                           for vb = (alist-get key (alist-get 'cells b))
-                          ;; A null is an empty-string or absent cell; place it
-                          ;; absolutely -- top for nulls-first, bottom for last --
-                          ;; regardless of ASC.
                           for na = (or (null va) (equal va ""))
                           for nb = (or (null vb) (equal vb ""))
                           do (cond
@@ -98,7 +75,6 @@ request and call `table-view-set-page' from the callback instead."
                                 (min (+ offset limit) total)))) ; OFFSET .. LIMIT ..
       (table-view-set-page (plist-get req :buffer) page :total total))))
 
-;;; Wire it up.
 
 (let* ((db (paginate-example--db 137))
        (spec '((title . "Packages (server-paged)")
@@ -117,7 +93,6 @@ request and call `table-view-set-page' from the callback instead."
         `(("report" . ,(lambda (rows)
                          (message "Marked across all pages: %s"
                                   (mapconcat (lambda (r) (alist-get 'id r)) rows " ")))))))
-  ;; page-fn is the 5th argument to table-view-display (fill-fn, the 4th, is nil).
   (table-view-display "*packages*" spec handlers
                       nil (paginate-example--page-fn db)))
 

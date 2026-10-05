@@ -1,23 +1,5 @@
 ;;; multi-sort.el --- Column navigation and multi-column sort -*- lexical-binding: t; -*-
 
-;; Eval this buffer to explore column navigation and multi-column sorting.
-;; The table opens in load order.  Inside it:
-;;
-;;   n / p     move between rows
-;;   f / b     move between cells (columns) in a row (char motion off the table)
-;;   M-<left> / M-<right>   move the column at point left / right (org-style)
-;;   ^         sort by the column at point; press again to toggle asc / desc
-;;   C-u ^     ADD the column at point as a secondary (tie-breaker) sort key
-;;   /         filter      g   refresh      q   quit
-;;
-;; Walkthrough:
-;;   1. Put point on the Dept column and press `^'    -> group by department.
-;;   2. Move to Score with `f' and press `C-u ^'      -> order by score within
-;;      each department (press `C-u ^' again to flip that key to descending).
-;;   3. Move to Name and press `C-u ^'                -> break the 77 / 77 score
-;;      tie in Ops alphabetically (Gil before Hugh).
-;;   The hint line shows the chain, e.g. "dept asc -> score asc -> name asc".
-;;   Press `^' on any column to collapse back to a single-column sort.
 
 (require 'table-view)
 

@@ -263,7 +263,7 @@
     { "name": "negating the whole-entry meta keeps the row that merely holds it",
       "view": { "$ref": "metas" },
       "q": "-tag:*archive*", "expect": { "ids": ["near", "word", "bare"] } },
-    { "name": "and the rule is the column's, not one tag's",
+    { "name": "and the whole-entry rule belongs to the column",
       "view": { "$ref": "metas" },
       "q": "tag:*web*", "expect": { "ids": ["arch", "word"] } },
     { "name": "two whole-entry metas AND, the way two tokens do",

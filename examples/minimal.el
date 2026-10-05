@@ -1,12 +1,5 @@
 ;;; minimal.el --- Minimal table-view example -*- lexical-binding: t; -*-
 
-;; Eval this buffer to display a table with inline rows.  It opens sorted by
-;; the spec's default sort (year, descending).
-;; Press RET on a row to see its id, ^ to re-sort, / to filter, g to refresh.
-;;
-;; A spec is a plain alist: column `key's are strings, and a row's `cells'
-;; use the matching symbols.  (If your data arrives as JSON, run it through
-;; `table-view-parse' to get this same shape.)
 
 (require 'table-view)
 

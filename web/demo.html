@@ -66,9 +66,6 @@
 
     const log = (m) => (document.getElementById("log").textContent = m);
 
-    // `?pal' summons the filter as an overlay instead of a bar; `?page=N'
-    // pages the rows N at a time. Both are mount options, so the demo reads
-    // them from the query string rather than offering a switch.
     const q = new URLSearchParams(location.search);
     const tv = TableView.mount(document.getElementById("app"), view, {
       palette: q.has("pal"),

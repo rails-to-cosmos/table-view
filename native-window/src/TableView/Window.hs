@@ -1,16 +1,10 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
--- | A @WebKitWebView@ filling a @GtkWindow@ and nothing else: the
--- native-window delivery's shell around @web/table-view.js@.  A caller hands it
--- a URL and the page owns the rows.  Lifted from glance's
--- @Glance.Desktop.WebKit@, which imports no glance module.  Built only under
--- the @native-window@ flag.
 module TableView.Window
   ( nativeAvailable
   , nativeWindow
   , fileFeed
-    -- * The zoom the page asks for
   , zoomAsked
   ) where
 
@@ -43,42 +37,14 @@ import qualified GI.WebKit2 as WK
 
 nativeAvailable :: Bool
 
--- | Open a WebKit window on the URL and block until it closes.  @sigINT@ needs
--- the handler — the main thread sits inside @gtk_main@ — and @gtk_init@ would
--- exit the process.
---
--- THE BAND ARRIVES AS A PARAMETER: the caller's zoom clamp (the launcher's, or
--- a hosting page's own), so this layer spells no second one.
---
--- The STREAMING FEED is @Just (ms, next)@: every @ms@ milliseconds, once the
--- page has loaded, @next@ is polled on the main thread and any @Just payload@ it
--- yields is injected as @window.__ingest(payload)@.  'fileFeed' is the
--- file-backed source; an in-process producer supplies its own.  'Nothing' is a
--- static page.
---
--- ON QUIT the page's reason is handed to the quit callback (an empty reason is a
--- plain close), then the window closes.  ON ACTION a page message is handed to
--- the action callback and the window stays open — a page @postMessage@ to the
--- @action@ handler, for things a producer does without closing.
 nativeWindow :: (Int, Int) -> String -> String
              -> Maybe (Int, IO (Maybe Text))   -- ^ streaming feed: (poll ms, next payload)
              -> (Text -> IO ())                 -- ^ the page's quit reason (closes the window)
              -> (Text -> IO ())                 -- ^ a page action (window stays open)
              -> IO ()
 
--- | A feed source that re-reads PATH whenever its mtime advances — the file
--- variant of the streaming feed, for a producer that writes a file.  The
--- producer must write atomically (temp + rename); a torn read is swallowed.
 fileFeed :: FilePath -> IO (IO (Maybe Text))
 
--- | The level the page named, held inside BAND — @(minimum, maximum)@ as whole
--- percentages, divided by 100 to the level a view wears.  Below the floor the
--- key line is unreadable; above the ceiling one row fills the window.
---
--- 'Nothing' is a message no window can wear: the page is the only writer, and
--- one wearing whatever arrived would have no floor to be read back from.
--- @Read Double@ takes @NaN@ and @Infinity@, which the clamp would answer with
--- an edge rather than refuse.
 zoomAsked :: (Int, Int) -> String -> Maybe Double
 zoomAsked (low, high) said = do
   level <- readMaybe said
@@ -108,17 +74,10 @@ nativeWindow band title url feed onQuit onAction = do
   ucm <- WK.webViewGetUserContentManager view
   _ <- WK.onUserContentManagerScriptMessageReceived ucm (Just handlerName) (openMessage win)
   _ <- WK.userContentManagerRegisterScriptMessageHandler ucm handlerName
-  -- `q' ON THE MAIN PAGE QUITS, which only a window can answer.  The reason the
-  -- page gives is echoed to stdout first, so whatever launched the window can
-  -- act on it (an empty reason is a plain close).
   _ <- WK.onUserContentManagerScriptMessageReceived ucm (Just quitName) (quitMessage onQuit win)
   _ <- WK.userContentManagerRegisterScriptMessageHandler ucm quitName
-  -- `action' is `quit' that does not close: a page ask the caller acts on.
   _ <- WK.onUserContentManagerScriptMessageReceived ucm (Just actionName) (actionMessage onAction)
   _ <- WK.userContentManagerRegisterScriptMessageHandler ucm actionName
-  -- THE ZOOM IS THE VIEW'S, which only a window has: the page keeps the level
-  -- and says it, and a CSS zoom in its place would put the panes' measured
-  -- rects out against the styles drawn from them.
   _ <- WK.onUserContentManagerScriptMessageReceived ucm (Just zoomName)
          (zoomMessage band view)
   _ <- WK.userContentManagerRegisterScriptMessageHandler ucm zoomName
@@ -127,7 +86,6 @@ nativeWindow band title url feed onQuit onAction = do
                 WK.UserScriptInjectionTimeStart Nothing Nothing
   WK.userContentManagerAddScript ucm override
   Gtk.widgetShowAll win
-  -- A feed may only push once the page's @__ingest@ exists; gate on load-finished.
   ready <- newIORef False
   _ <- WK.onWebViewLoadChanged view $ \ev ->
          when (ev == WK.LoadEventFinished) (writeIORef ready True)
@@ -137,16 +95,12 @@ nativeWindow band title url feed onQuit onAction = do
   Gtk.main
   void (installHandler sigINT previous Nothing)
 
--- | Install the streaming feed's GLib timer, if a feed was given.  The timer
--- runs on the main thread, so its @webViewRunJavascript@ calls are safe.
 startFeed :: WK.WebView -> IORef Bool -> Maybe (Int, IO (Maybe Text)) -> IO ()
 startFeed _ _ Nothing = pure ()
 startFeed view ready (Just (ms, next)) = do
   _ <- GLib.timeoutAdd GLib.PRIORITY_DEFAULT (fromIntegral ms) (tick view ready next)
   pure ()
 
--- | One feed tick, kept alive by returning 'True'.  Once the page has loaded,
--- polls the feed source and injects any payload it yields.
 tick :: WK.WebView -> IORef Bool -> IO (Maybe Text) -> IO Bool
 tick view ready next = do
   loaded <- readIORef ready
@@ -158,9 +112,6 @@ tick view ready next = do
       (Nothing :: Maybe Gio.Cancellable)
       Nothing
 
--- | The feed file's contents once its mtime has advanced past SEEN (which it
--- then updates), else 'Nothing'.  A missing file or a torn read (producer
--- mid-write) is swallowed as 'Nothing' and retried next tick.
 readIfChanged :: IORef (Maybe POSIXTime) -> FilePath -> IO (Maybe Text)
 readIfChanged seen path = do
   estat <- try (getFileStatus path)
@@ -181,9 +132,6 @@ fileFeed path = do
   seen <- newIORef Nothing
   pure (readIfChanged seen path)
 
--- | TWO DOORS, because WebKit has two: a @target="_blank"@ anchor arrives here
--- as a @NewWindowAction@; a scripted @window.open@ fires @create@ instead, and
--- connecting that aborts the web process, so 'openOverride' takes it first.
 elsewhere :: Gtk.Window -> WK.PolicyDecision -> WK.PolicyDecisionType -> IO Bool
 elsewhere win decision kind
   | kind /= WK.PolicyDecisionTypeNewWindowAction = pure False
@@ -199,33 +147,25 @@ elsewhere win decision kind
 handlerName :: Text
 handlerName = T.pack "popup"
 
--- | Its PRESENCE is the page's test for "is there a window to quit".
 quitName :: Text
 quitName = T.pack "quit"
 
 actionName :: Text
 actionName = T.pack "action"
 
--- | And ITS presence is the page's test for "is there a window to zoom", which
--- is what leaves @C-+@ to the browser where there is none.
 zoomName :: Text
 zoomName = T.pack "zoom"
 
--- | Hand the page's quit reason to the callback, then close the window.  The
--- caller decides what a close should trigger.
 quitMessage :: (Text -> IO ()) -> Gtk.Window -> WK.JavascriptResult -> IO ()
 quitMessage onQuit win result = do
   said <- WK.javascriptResultGetJsValue result >>= JSC.valueToString
   onQuit said
   Gtk.widgetDestroy win
 
--- | Hand the page's action string to the callback; the window stays open.
 actionMessage :: (Text -> IO ()) -> WK.JavascriptResult -> IO ()
 actionMessage onAction result =
   WK.javascriptResultGetJsValue result >>= JSC.valueToString >>= onAction
 
--- | A level that will not read is DROPPED: nothing on this side can put a
--- broken message right, and a window left where it was is readable.
 zoomMessage :: (Int, Int) -> WK.WebView -> WK.JavascriptResult -> IO ()
 zoomMessage band view result = do
   value <- WK.javascriptResultGetJsValue result
@@ -246,7 +186,6 @@ openMessage win result = do
   uri <- JSC.valueToString value
   if webby uri then popupOpen win uri else systemOpen win uri
 
--- | The page's own @followable@ rule, spelled again — this layer cannot see it.
 webby :: Text -> Bool
 webby u = any ((`T.isPrefixOf` u) . T.pack) ["http://", "https://"]
 
@@ -285,7 +224,6 @@ inPlace view decision kind
       maybe (pure ()) (WK.webViewLoadUri view) uri
       pure True
 
--- | The cast is CHECKED: a null would crash where dropping the link is honest.
 navigationUri :: WK.PolicyDecision -> IO (Maybe Text)
 navigationUri decision = do
   navigation <- castTo WK.NavigationPolicyDecision decision
@@ -296,8 +234,6 @@ navigationUri decision = do
       request <- WK.navigationActionGetRequest action
       Just <$> WK.uRIRequestGetUri request
 
--- | @gtk_show_uri_on_window@ fails by THROWING; no window failure ever takes
--- this daemon down.
 systemOpen :: Gtk.Window -> Text -> IO ()
 systemOpen win uri = do
   outcome <- try (Gtk.showUriOnWindow (Just win) uri (fromIntegral Gdk.CURRENT_TIME))
@@ -306,8 +242,6 @@ systemOpen win uri = do
     Left err -> putStrLn ("  window:  could not open " <> T.unpack uri
                             <> ": " <> show (err :: SomeException))
 
--- | @g_idle_add@ is the thread-safe door into a running loop, and a signal
--- handler runs on a thread of the RTS's choosing.
 quitLoop :: IO ()
 quitLoop = void (GLib.idleAdd GLib.PRIORITY_DEFAULT (Gtk.mainQuit >> pure False))
 
@@ -337,7 +271,6 @@ black = do
 
 nativeAvailable = False
 
--- Unreachable while 'nativeAvailable' is consulted; saying so beats failing.
 nativeWindow _band _title url _feed _onQuit _onAction =
   putStrLn ("  window:  no native window in this build (cabal -f native-window); open "
               <> url <> " yourself")

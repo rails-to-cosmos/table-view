@@ -3,7 +3,6 @@
 (require 'ert)
 (require 'table-view)
 
-;;; Helpers
 
 (defconst tv-test--spec-json
   "{ \"title\": \"Test\",
@@ -61,7 +60,6 @@ Line-number-independent -- the legend above the header is multiline."
            (with-current-buffer buf ,@body))
        (kill-buffer buf))))
 
-;;; Parse
 
 (ert-deftest tv-test-parse ()
   (let ((spec (tv-test--spec)))
@@ -69,7 +67,6 @@ Line-number-independent -- the legend above the header is multiline."
     (should (= (length (table-view--columns spec)) 3))
     (should (= (length (table-view--actions spec)) 1))))
 
-;;; Rendering
 
 (ert-deftest tv-test-render-rows ()
   (tv-test--with-table
@@ -97,7 +94,6 @@ Line-number-independent -- the legend above the header is multiline."
             (should (string-match-p "(no rows)" (buffer-string)))))
       (kill-buffer buf))))
 
-;;; Set rows / upsert
 
 (ert-deftest tv-test-set-rows ()
   (tv-test--with-table
@@ -123,7 +119,6 @@ Line-number-independent -- the legend above the header is multiline."
       (should (equal (alist-get 'name (alist-get 'cells row)) "ALPHA"))
       (should (equal (alist-get 'count (alist-get 'cells row)) 99)))))
 
-;;; Sorting
 
 (ert-deftest tv-test-toggle-help ()
   "`?' (`table-view-toggle-help') hides the action legend on the hint line;
@@ -151,21 +146,17 @@ the sort status and the spec `subtitle' stay visible."
                       (legend? ()
                         (save-excursion (goto-char (point-min))
                           (and (search-forward "x:Do" nil t) t))))
-              ;; help ON (default): status line, subtitle, then the legend
               (should (string-match-p "sort:" (hint)))
               (should (string-match-p "\\?:hide" (hint)))
               (should-not (string-match-p "x:Do" (hint)))   ; legend left the status line
               (should (legend?))
               (should (line-of "#+TODO: TODO | DONE"))
-              ;; the legend sits AFTER the subtitle
               (should (> (line-of "x:Do") (line-of "#+TODO: TODO | DONE")))
-              ;; toggle: legend gone, status + subtitle stay
               (table-view-toggle-help)
               (should-not (legend?))
               (should (string-match-p "sort:" (hint)))
               (should (string-match-p "\\?:help" (hint)))
               (should (line-of "#+TODO: TODO | DONE"))
-              ;; toggle back: legend returns
               (table-view-toggle-help)
               (should (legend?)))))
       (kill-buffer buf))))
@@ -238,8 +229,6 @@ the sort status and the spec `subtitle' stay visible."
     (should table-view--sorted)))
 
 (ert-deftest tv-test-sort-column-at-point-cycles ()
-  ;; Repeating `^' on the same column walks the 4-state cycle (nulls inner):
-  ;; asc, asc nulls-first, desc, desc nulls-first, then wraps.
   (tv-test--with-table
     (table-view--goto-id "a")
     (table-view-forward-column 2)       ; onto "count"
@@ -253,11 +242,8 @@ the sort status and the spec `subtitle' stay visible."
       (should (equal (step) '("count" . desc-nulls-first))) ; desc nulls-first
       (should (equal (step) '("count" . t))))))             ; wraps
 
-;;; Nulls-first / nulls-last placement
 
 (ert-deftest tv-test-sort-key-accessors-roundtrip ()
-  ;; The constructor and the three readers agree across all four states, and
-  ;; the cdr stays the canonical (COL . t)/(COL) shape for nulls-last.
   (dolist (c '((t   . last) (nil . last) (t . first) (nil . first)))
     (let* ((asc (car c)) (nulls (cdr c))
            (key (table-view--make-sort-key "col" asc nulls)))
@@ -284,8 +270,6 @@ load order and check the row-id order equals EXPECTED."
                    asserts)))))
 
 (ert-deftest tv-test-sort-nulls-string-column ()
-  ;; Empty-string cells are nulls: nulls-last drops them to the bottom for
-  ;; both directions, nulls-first lifts them to the top.
   (tv-test--nulls-orders
       "{ \"columns\": [ {\"key\":\"s\",\"header\":\"S\",\"sortable\":true} ],
          \"rows\": [ {\"id\":\"a\",\"cells\":{\"s\":\"beta\"}},
@@ -298,8 +282,6 @@ load order and check the row-id order equals EXPECTED."
     (("s" . desc-nulls-first) . ("b" "d" "a" "c")))) ; desc, nulls first
 
 (ert-deftest tv-test-sort-nulls-number-column ()
-  ;; In a number column an empty string is a null pulled to the end, NOT a 0
-  ;; sorted before 1.
   (tv-test--nulls-orders
       "{ \"columns\": [ {\"key\":\"n\",\"header\":\"N\",\"type\":\"number\",\"sortable\":true} ],
          \"rows\": [ {\"id\":\"a\",\"cells\":{\"n\":3}},
@@ -312,8 +294,6 @@ load order and check the row-id order equals EXPECTED."
     (("n" . desc-nulls-first) . ("b" "d" "a" "c")))) ; empties then 3,1
 
 (ert-deftest tv-test-sort-nulls-multi-key ()
-  ;; The PRIMARY key's nulls setting decides where its empties land; the
-  ;; secondary key breaks ties within each group.
   (tv-test--with-display
       "{ \"columns\": [ {\"key\":\"s\",\"header\":\"S\",\"sortable\":true},
                         {\"key\":\"n\",\"header\":\"N\",\"type\":\"number\",\"sortable\":true} ],
@@ -327,14 +307,11 @@ load order and check the row-id order equals EXPECTED."
                         table-view--sort-keys keys)
                   (table-view--sort-rows)
                   (tv-test--ids table-view--rows)))
-        ;; primary nulls-last: "x" group (c,a by n asc), then empties (b,d)
         (should (equal (order '(("s" . t) ("n" . t))) '("c" "a" "b" "d")))
-        ;; primary nulls-first: empties (b,d) first, then "x" group (c,a)
         (should (equal (order '(("s" . asc-nulls-first) ("n" . t)))
                        '("b" "d" "c" "a")))))))
 
 (ert-deftest tv-test-sort-description-nulls ()
-  ;; nulls-first is spelled out; nulls-last stays implicit.
   (tv-test--with-table
     (setq table-view--sort-keys '(("name" . t)))
     (should (equal (table-view--sort-description) "name asc"))
@@ -349,7 +326,6 @@ load order and check the row-id order equals EXPECTED."
                    "name asc -> count desc nulls-first"))))
 
 (ert-deftest tv-test-parse-sort-nulls ()
-  ;; A `nulls' spec field selects the placement; the default stays canonical.
   (should (equal (table-view--parse-sort '((column . "a") (nulls . "first")))
                  '(("a" . asc-nulls-first))))
   (should (equal (table-view--parse-sort
@@ -360,7 +336,6 @@ load order and check the row-id order equals EXPECTED."
   (should (equal (table-view--parse-sort '((column . "a")))
                  '(("a" . t)))))                          ; plain stays canonical
 
-;;; Multi-column sort (C-u ^)
 
 (defconst tv-test--tie-rows
   '(((id . "x") (cells . ((name . "same") (count . 2) (status . "ok"))))
@@ -446,8 +421,6 @@ load order and check the row-id order equals EXPECTED."
     (should (equal table-view--sort-keys '(("name" . t) ("count" . t)))))) ; flipped back
 
 (ert-deftest tv-test-secondary-toggle-map ()
-  ;; After `C-u ^', a run of plain `^' toggles the just-added key: the
-  ;; transient map binds `^' to flip that column's direction.
   (tv-test--with-table
     (setq table-view--sort-keys '(("name" . t) ("count" . t)) table-view--sorted t)
     (let ((cmd (lookup-key (table-view--secondary-toggle-map "count") "^")))
@@ -457,14 +430,11 @@ load order and check the row-id order equals EXPECTED."
       (call-interactively cmd)          ; continuous `^' keeps toggling
       (should (equal table-view--sort-keys '(("name" . t) ("count" . t)))))))
 
-;;; Default sort declared in the spec
 
 (ert-deftest tv-test-parse-sort ()
-  ;; single {column, ascending}
   (should (equal (table-view--parse-sort '((column . "a") (ascending . t))) '(("a" . t))))
   (should (equal (table-view--parse-sort '((column . "a") (ascending . nil))) '(("a"))))
   (should (equal (table-view--parse-sort '((column . "a"))) '(("a" . t))))   ; default asc
-  ;; list of them -> multi-column chain, order preserved
   (should (equal (table-view--parse-sort '(((column . "a") (ascending . t))
                                            ((column . "b") (ascending . nil))))
                  '(("a" . t) ("b"))))
@@ -506,7 +476,6 @@ load order and check the row-id order equals EXPECTED."
     (should (equal (tv-test--ids table-view--rows)
                    '("1" "2")))))                                ; load order
 
-;;; Filtering
 
 (ert-deftest tv-test-filter-matches ()
   (tv-test--with-table
@@ -558,7 +527,6 @@ load order and check the row-id order equals EXPECTED."
     (call-interactively #'table-view-revert)
     (should-not table-view--filter)))
 
-;;; Hint string
 
 (ert-deftest tv-test-hint-unsorted ()
   (tv-test--with-table
@@ -578,7 +546,6 @@ load order and check the row-id order equals EXPECTED."
       (should (string-match-p "filter: alpha" hint))
       (should (string-match-p "1/3" hint)))))
 
-;;; Dispatch
 
 (ert-deftest tv-test-dispatch ()
   (let ((called nil))
@@ -590,7 +557,6 @@ load order and check the row-id order equals EXPECTED."
       (table-view--dispatch "open")
       (should called))))
 
-;;; Cell helpers
 
 (ert-deftest tv-test-str ()
   (should (equal (table-view--str nil) ""))
@@ -607,10 +573,6 @@ load order and check the row-id order equals EXPECTED."
     (should-not (table-view--badge-color col "unknown"))))
 
 (ert-deftest tv-test-badge-group-field-is-ignored ()
-  ;; SCHEMA.md's additive rule: a producer field this renderer does not know
-  ;; renders as if it were absent.  glance emits `group' on every badge; the
-  ;; palette is read by `value', so the colour, the ink and the sort order are
-  ;; the ones a group-less palette would give.
   (tv-test--with-display
       "{ \"columns\": [ {\"key\":\"s\",\"header\":\"S\",\"type\":\"badge\",\"sortable\":true,
                          \"badges\":[ {\"value\":\"NEXT\",\"color\":\"green\",\"group\":\"active\"},
@@ -628,10 +590,6 @@ load order and check the row-id order equals EXPECTED."
                    '(:foreground "green" :weight bold)))))
 
 (ert-deftest tv-test-linked-row-field-is-ignored ()
-  ;; The additive rule one level up, on the ROW: glance sends `linked' so the
-  ;; browser renderer can underline a title, and this renderer knows nothing of
-  ;; it.  Asserted as the whole propertized buffer against the same view
-  ;; without the field, so a stray face or an extra character would show.
   (let* ((spec "{ \"columns\": [ {\"key\":\"title\",\"header\":\"Headline\"} ],
                   \"rows\": [ {\"id\":\"a\",\"cells\":{\"title\":\"alpha\"}%s},
                               {\"id\":\"b\",\"cells\":{\"title\":\"bravo\"}} ] }")
@@ -641,7 +599,6 @@ load order and check the row-id order equals EXPECTED."
     (should (string-match-p "alpha" flagged))
     (should (equal flagged plain))))
 
-;;; Navigation (f/b)
 
 (defun tv-test--col-at-point ()
   "Column key of the cell point is on, or nil."
@@ -751,7 +708,6 @@ load order and check the row-id order equals EXPECTED."
       (call-interactively #'table-view-backward)
       (should (= (point) (1- before))))))
 
-;;; Row navigation (n / p)
 
 (ert-deftest tv-test-next-line-moves-between-rows ()
   (tv-test--with-table
@@ -800,8 +756,6 @@ load order and check the row-id order equals EXPECTED."
     (should (equal (get-text-property (point) 'table-view-id) "a"))))  ; enters first row
 
 (ert-deftest tv-test-next-line-from-title-lands-on-first-cell ()
-  ;; `n' from the top of the buffer enters the first row ON the first cell,
-  ;; not the leading "|" separator (which carries no `table-view-col').
   (tv-test--with-table
     (goto-char (point-min))             ; title line, column 0
     (table-view-next-line)
@@ -825,7 +779,6 @@ load order and check the row-id order equals EXPECTED."
       (table-view-previous-line)
       (should (= (point) p)))))
 
-;;; Refresh (g) preserves ordering
 
 (ert-deftest tv-test-g-preserves-unsorted-order ()
   (tv-test--with-table
@@ -853,7 +806,6 @@ load order and check the row-id order equals EXPECTED."
     (should (equal (tv-test--ids table-view--rows)
                    '("b" "c" "a")))))
 
-;;; Cursor location preserved across re-renders (^ g /)
 
 (ert-deftest tv-test-sort-cycle-preserves-point-location ()
   (tv-test--with-table
@@ -878,7 +830,6 @@ load order and check the row-id order equals EXPECTED."
       (should (= (current-column) col)))))            ; same column (not col 0)
 
 (ert-deftest tv-test-filter-moves-to-first-row ()
-  ;; after filtering, point lands on the first matching row (not preserved)
   (tv-test--with-table
     (table-view--goto-id "c")           ; start on the last row
     (table-view-filter "l")             ; matches alpha (a) and charlie (c)
@@ -886,7 +837,6 @@ load order and check the row-id order equals EXPECTED."
                    '("a" "c")))
     (should (equal (get-text-property (point) 'table-view-id) "a"))))  ; first match, not c
 
-;;; Column reordering (M-left / M-right)
 
 (defun tv-test--col-order ()
   "Current display order of column keys."
@@ -932,8 +882,6 @@ load order and check the row-id order equals EXPECTED."
     (should (equal (tv-test--col-order) '("name" "count" "status")))))
 
 (ert-deftest tv-test-move-column-does-not-mutate-shared-spec ()
-  ;; Reordering must touch only the buffer's private copy, not the spec
-  ;; object handed to `table-view-display' (which callers may share).
   (let ((spec (tv-test--spec))
         (buf (get-buffer-create " *tv-shared*")))
     (unwind-protect
@@ -950,7 +898,6 @@ load order and check the row-id order equals EXPECTED."
                          '("name" "count" "status"))))   ; original spec intact
       (kill-buffer buf))))
 
-;;; Column schema (add / remove columns at runtime)
 
 (ert-deftest tv-test-add-column-appends ()
   (tv-test--with-table
@@ -1096,7 +1043,6 @@ This is the set-rows contract: a producer-delivered value wins over the `value-f
       (table-view-remove-column "x")
       (should (= n 2)))))
 
-;;; Comparators: compare / values / natural
 
 (ert-deftest tv-test-comparator-natural ()
   (let ((less (table-view--comparator '((key . "v") (compare . "natural")))))
@@ -1121,7 +1067,6 @@ This is the set-rows contract: a producer-delivered value wins over the `value-f
     (should (funcall less "high" "unknown"))))               ; unlisted sorts last
 
 (ert-deftest tv-test-comparator-values-coerce-number-cells ()
-  ;; values are strings, cells are numbers -> matched via `table-view--str'
   (let ((less (table-view--comparator '((key . "v") (values . ("3" "1" "2"))))))
     (should (funcall less 3 1))                              ; 3 is first in the domain
     (should (funcall less 1 2))))
@@ -1139,7 +1084,6 @@ This is the set-rows contract: a producer-delivered value wins over the `value-f
     (should-not (funcall less "a" "b"))))
 
 (ert-deftest tv-test-comparator-badge-unchanged ()
-  ;; a badge column with no `values' still sorts by palette order
   (let ((less (table-view--comparator
                '((key . "s") (type . "badge")
                  (badges . (((value . "ok")) ((value . "warn")) ((value . "err"))))))))
@@ -1174,11 +1118,8 @@ This is the set-rows contract: a producer-delivered value wins over the `value-f
     (should (equal (tv-test--ids table-view--rows)
                    '("b" "c" "a")))))                        ; low, medium, high
 
-;;; Sortable is opt-in
 
 (ert-deftest tv-test-sortable-is-opt-in ()
-  ;; SCHEMA.md: a column says `sortable' or it is not sorted on.  An omitted
-  ;; flag reads the same as an explicit false.
   (tv-test--with-display
       "{ \"columns\": [ {\"key\":\"a\",\"header\":\"A\"},
                         {\"key\":\"b\",\"header\":\"B\",\"sortable\":true},
@@ -1190,7 +1131,6 @@ This is the set-rows contract: a producer-delivered value wins over the `value-f
       (should-not (member "c" keys)))))   ; explicit false
 
 (ert-deftest tv-test-sortable-gates-the-sort-command ()
-  ;; The flag reaches `^': a view declaring none refuses to sort at all.
   (tv-test--with-display
       "{ \"columns\": [ {\"key\":\"a\",\"header\":\"A\"} ],
          \"rows\": [ {\"id\":\"x\",\"cells\":{\"a\":\"1\"}} ] }"
@@ -1198,7 +1138,6 @@ This is the set-rows contract: a producer-delivered value wins over the `value-f
     (should-not table-view--sort-keys)
     (should-not table-view--sorted)))
 
-;;; Row deletion
 
 (defun tv-test--has-id (id)
   "Non-nil when a row with ID is present."
@@ -1234,8 +1173,6 @@ This is the set-rows contract: a producer-delivered value wins over the `value-f
     (should (= (length table-view--rows) 3))))
 
 (ert-deftest tv-test-delete-row-via-gated-handler ()
-  ;; the "proceed only after success" pattern: a handler that deletes only
-  ;; when its pre-delete step succeeds
   (tv-test--with-table
     (setq table-view--handlers
           `(("delete" . ,(lambda (id _row)
@@ -1250,7 +1187,6 @@ This is the set-rows contract: a producer-delivered value wins over the `value-f
     (should (= (length table-view--rows) 2))
     (should-not (tv-test--has-id "b"))))
 
-;;; Marks and bulk
 
 (ert-deftest tv-test-mark-toggle ()
   (tv-test--with-table
@@ -1268,7 +1204,6 @@ This is the set-rows contract: a producer-delivered value wins over the `value-f
       (should (equal '("name" "count" "status")
                      (mapcar (lambda (c) (alist-get 'key c))
                              (plist-get layout :columns))))
-      ;; sort chain is a copy: mutating it must not touch the live state
       (should (equal (plist-get layout :sort) table-view--sort-keys))
       (when (plist-get layout :sort)
         (should-not (eq (plist-get layout :sort) table-view--sort-keys))))))
@@ -1290,7 +1225,6 @@ This is the set-rows contract: a producer-delivered value wins over the `value-f
     (should-not table-view--marks)))
 
 (ert-deftest tv-test-mark-all-respects-filter ()
-  ;; With a filter active, `M' marks only the visible (matching) rows.
   (tv-test--with-table
     (table-view-filter "Alpha")
     (table-view-mark-all)
@@ -1310,7 +1244,6 @@ This is the set-rows contract: a producer-delivered value wins over the `value-f
     (should (equal (get-text-property (point) 'table-view-id) "b"))))
 
 (ert-deftest tv-test-mark-move-preserves-column ()
-  ;; The post-mark advance must keep the cell column (not drop to column 0).
   (tv-test--with-table
     (table-view--goto-id "a") (table-view-mark-toggle)   ; gutter active, "a" marked
     (table-view--goto-id "b")
@@ -1322,7 +1255,6 @@ This is the set-rows contract: a producer-delivered value wins over the `value-f
       (should (equal (tv-test--col-at-point) cell)))))
 
 (ert-deftest tv-test-mark-last-row-stays-on-row ()
-  ;; Marking the last row must not walk point off the data rows.
   (tv-test--with-table
     (table-view--goto-id "c")
     (table-view-mark-toggle)
@@ -1382,7 +1314,6 @@ This is the set-rows contract: a producer-delivered value wins over the `value-f
     (should (equal (get-text-property (point) 'table-view-id) "b"))))
 
 (ert-deftest tv-test-unmark-current-last-while-narrowed-widens ()
-  ;; unmarking the last mark via `u' while narrowed must widen the view
   (tv-test--with-table
     (table-view--goto-id "a") (table-view-mark-toggle)
     (table-view-narrow-toggle)
@@ -1450,8 +1381,6 @@ This is the set-rows contract: a producer-delivered value wins over the `value-f
     (should-not table-view--marks)))
 
 (ert-deftest tv-test-unmark-last-while-narrowed-widens ()
-  ;; Regression: unmarking the last mark while narrowed must widen the view,
-  ;; not leave it narrowed to an empty set showing "(no rows)".
   (tv-test--with-table
     (table-view--goto-id "a") (table-view-mark-toggle)
     (table-view-narrow-toggle)
@@ -1470,7 +1399,6 @@ This is the set-rows contract: a producer-delivered value wins over the `value-f
     (table-view--render)
     (should (table-view--marked-p "a"))))         ; mark survives the re-sort
 
-;;; Pagination (server-side)
 
 (defvar tv-test--fetches nil
   "Requests the fake producer received during a paged test (newest first).")
@@ -1592,7 +1520,6 @@ push-down can be tested)."
 (defun tv-test--visible-ids ()
   (tv-test--ids (table-view--visible-rows)))
 
-;; -- setup / offset basics --
 
 (ert-deftest tv-test-page-enabled ()
   (tv-test--with-paged 10 3
@@ -1676,7 +1603,6 @@ push-down can be tested)."
     (table-view-next-page)
     (should (string-match-p "page 2/4 · 4-6 of 10" (table-view--hint-string)))))
 
-;; -- filter push-down --
 
 (ert-deftest tv-test-page-filter-pushdown ()
   (tv-test--with-paged 12 3
@@ -1703,7 +1629,6 @@ push-down can be tested)."
     (should (= table-view--total 12))
     (should (equal (tv-test--visible-ids) '("r1" "r2" "r3")))))
 
-;; -- sort push-down --
 
 (ert-deftest tv-test-page-sort-pushdown ()
   (tv-test--with-paged 10 3
@@ -1716,14 +1641,12 @@ push-down can be tested)."
 
 (ert-deftest tv-test-page-does-not-sort-loaded-page-locally ()
   (tv-test--with-paged 10 3
-    ;; a page arrives already ordered; the client must not re-sort the slice
     (setq table-view--sort-keys '(("num" . t)))
     (table-view--sort-rows)                      ; no-op on the rows in paged mode
     (should (equal (tv-test--ids table-view--rows)
                    '("r1" "r2" "r3")))
     (should table-view--sorted)))                ; but the sort still counts as active
 
-;; -- marks & bulk across pages --
 
 (ert-deftest tv-test-page-marks-span-pages ()
   (tv-test--with-paged 10 3
@@ -1775,7 +1698,6 @@ push-down can be tested)."
     (should-not table-view--mark-cache)
     (should-not (table-view-marked-rows))))
 
-;; -- set-page metadata: totals / has-next --
 
 (ert-deftest tv-test-page-unknown-total-full-page-implies-more ()
   (let ((buf (get-buffer-create " *tv-nt*")))
@@ -1818,7 +1740,6 @@ push-down can be tested)."
             (should-not table-view--has-next)))
       (kill-buffer buf))))
 
-;; -- error handling --
 
 (ert-deftest tv-test-page-error-keeps-rows-and-shows-message ()
   (tv-test--with-paged 10 3
@@ -1829,7 +1750,6 @@ push-down can be tested)."
     (should (equal (tv-test--visible-ids) '("r1" "r2" "r3")))   ; old page still shown
     (should (string-match-p "error: boom" (table-view--hint-string)))))
 
-;; -- keyset --
 
 (ert-deftest tv-test-keyset-initial-and-next ()
   (tv-test--with-keyset 5 2
@@ -1860,7 +1780,6 @@ push-down can be tested)."
       (table-view-goto-page 2)                   ; unavailable in keyset
       (should (= (length tv-test--fetches) n)))))  ; neither fetched
 
-;; -- page-request accessor (v2 seam) --
 
 (ert-deftest tv-test-page-request-exposes-query ()
   (tv-test--with-paged 10 3
@@ -1873,7 +1792,6 @@ push-down can be tested)."
       (should (eq (plist-get q :strategy) 'offset))
       (should (= (plist-get q :page-size) 3)))))
 
-;; -- backward compatibility: client buffers are untouched --
 
 (ert-deftest tv-test-client-not-paged ()
   (tv-test--with-table
@@ -1881,9 +1799,6 @@ push-down can be tested)."
     (should-not (table-view-page-request))))
 
 (ert-deftest tv-test-client-keeps-buffer-motion-keys ()
-  ;; Page keys are bound only in paged buffers, so a client table keeps its
-  ;; inherited motion keys: M-< / M-> stay beginning/end-of-buffer (global),
-  ;; and < / > stay beginning/end-of-buffer (from `special-mode-map').
   (tv-test--with-table
     (should-not (eq (lookup-key (current-local-map) (kbd "M-<"))
                     #'table-view-first-page))
@@ -1896,16 +1811,12 @@ push-down can be tested)."
     (should (eq (lookup-key (current-local-map) (kbd "M-<")) #'table-view-first-page))))
 
 (ert-deftest tv-test-page-comma-dot-aliases ()
-  ;; `.' aliases `>' (next page) and `,' aliases `<' (previous page)
   (tv-test--with-paged 10 3
     (should (eq (lookup-key (current-local-map) ".") #'table-view-next-page))
     (should (eq (lookup-key (current-local-map) ",") #'table-view-prev-page))))
 
-;; -- point preservation on sort (paged) --
 
 (ert-deftest tv-test-page-sort-preserves-point-location ()
-  ;; `^' in a paged buffer keeps the cursor on the same on-screen line and
-  ;; column (e.g. the column header just used), not the beginning of the line.
   (tv-test--with-paged 10 3
     (tv-test--goto-header)
     (table-view-forward-column)         ; onto the "num" header
@@ -1918,15 +1829,12 @@ push-down can be tested)."
       (should (equal (tv-test--col-at-point) "num")))))
 
 (ert-deftest tv-test-page-filter-moves-to-first-row ()
-  ;; after a pushed-down filter, point lands on the first matching row
   (tv-test--with-paged 12 3
     (table-view-next-page)              ; leave page 1 / the first row
     (table-view-filter "user-1")        ; matches r1,r10,r11,r12
     (should (equal (get-text-property (point) 'table-view-id) "r1"))))  ; first match
 
 (ert-deftest tv-test-page-nav-preserves-point-location ()
-  ;; a page turn keeps the cursor on the same on-screen line and column, so a
-  ;; column can be scanned straight across pages instead of snapping to the top.
   (tv-test--with-paged 20 5
     (table-view--goto-id "r3")          ; 3rd row of page 1
     (table-view-forward-column 1)       ; onto its "num" cell
@@ -1939,8 +1847,6 @@ push-down can be tested)."
       (should (equal (get-text-property (point) 'table-view-id) "r8")))))  ; 3rd row of page 2
 
 (ert-deftest tv-test-page-nav-point-clamps-on-short-last-page ()
-  ;; when the last page has fewer rows, the preserved line clamps in-buffer
-  ;; rather than erroring or landing off the table.
   (tv-test--with-paged 7 3
     (table-view--goto-id "r3")          ; last row of page 1
     (table-view-next-page)              ; page 2 -> r4,r5,r6
@@ -1948,7 +1854,6 @@ push-down can be tested)."
     (should (equal (tv-test--visible-ids) '("r7")))
     (should (<= (point) (point-max)))))              ; no error, point valid
 
-;; -- secondary (multi-key) sort pushes the full chain down --
 
 (ert-deftest tv-test-page-multi-key-sort-pushdown ()
   (let ((buf (get-buffer-create " *tv-multi*"))
@@ -1968,7 +1873,6 @@ push-down can be tested)."
             (should (equal (tv-test--visible-ids) '("z" "y" "x")))))  ; ties broken by num
       (kill-buffer buf))))
 
-;; -- g refreshes the current page (keeps filter + position), recovers errors --
 
 (ert-deftest tv-test-page-g-refetches-current-keeps-filter ()
   (tv-test--with-paged 12 3
@@ -1989,7 +1893,6 @@ push-down can be tested)."
     (should (= table-view--offset 3))
     (should (equal (tv-test--visible-ids) '("r4" "r5" "r6")))))
 
-;; -- page navigation is refused while narrowed --
 
 (ert-deftest tv-test-page-nav-blocked-while-narrowed ()
   (tv-test--with-paged 10 3
@@ -2003,7 +1906,6 @@ push-down can be tested)."
       (should (= table-view--offset 0))          ; underlying page unchanged
       (should (equal (tv-test--visible-ids) '("r1"))))))  ; still the marked set
 
-;;; Org links
 
 (defmacro tv-test--with-links (rows &rest body)
   "Display a two-column table (name, n) and set it to ROWS, then run BODY."
@@ -2063,7 +1965,6 @@ push-down can be tested)."
       (should (eq (get-text-property pos 'follow-link) t)))))
 
 (ert-deftest tv-test-link-width-uses-display ()
-  ;; the column is sized to the DESCRIPTION, not the raw [[...]] markup
   (tv-test--with-links
       '(((id . "a")
          (cells . ((name . "[[https://very-long-url.example.com/deep/path][Hi]]") (n . 1)))))
@@ -2080,7 +1981,6 @@ push-down can be tested)."
                    '("a")))))
 
 (ert-deftest tv-test-link-sort-by-description ()
-  ;; a link column orders by the visible description, not the URL
   (tv-test--with-links
       '(((id . "a") (cells . ((name . "[[https://zzz.com][Apple]]") (n . 1))))
         ((id . "b") (cells . ((name . "[[https://aaa.com][Banana]]") (n . 2)))))
@@ -2117,15 +2017,11 @@ push-down can be tested)."
       (should (string-match-p (regexp-quote "[[https://x.com][Homepage]]")
                               (buffer-string))))))
 
-;; -- empty description [[t][]] is not a valid Org link, so it's shown verbatim --
 
 (ert-deftest tv-test-delink-empty-desc-left-verbatim ()
-  ;; `org-link-bracket-re' does not match an empty description, so the cell
-  ;; degrades to visible raw text rather than an invisible/unfollowable blank
   (should (equal (table-view--delink "[[https://x.com][]]") "[[https://x.com][]]"))
   (should (equal (table-view--linkify "[[https://x.com][]]") "[[https://x.com][]]")))  ; followable
 
-;; -- sort by description for number and values (categorical) link columns --
 
 (ert-deftest tv-test-link-sort-values-column-by-description ()
   (let ((buf (get-buffer-create " *tv-link-values*")))
@@ -2163,7 +2059,6 @@ push-down can be tested)."
                            '("small" "big")))))         ; 9 < 100 numerically, by description
       (kill-buffer buf))))
 
-;; -- badge cells never link-render: raw everywhere, so the column stays aligned --
 
 (ert-deftest tv-test-badge-cell-with-link-markup-stays-raw ()
   (let ((buf (get-buffer-create " *tv-badge-link*")))
@@ -2176,22 +2071,16 @@ push-down can be tested)."
            nil)
           (table-view-set-rows buf '(((id . "a") (cells . ((s . "[[x][Y]]"))))))
           (with-current-buffer buf
-            ;; width measured from the RAW markup, matching what's shown
             (let ((widths (table-view--widths table-view--spec table-view--rows)))
               (should (= (alist-get "s" widths nil nil #'equal)
                          (string-width "[[x][Y]]"))))
             (should (string-match-p (regexp-quote "[[x][Y]]") (buffer-string)))
-            ;; filter also sees the raw markup, matching the display
             (setq table-view--filter "[[x")
             (should (= (length (table-view--visible-rows)) 1))))
       (kill-buffer buf))))
 
-;;; Width cache (perf)
 
 (ert-deftest tv-test-width-cache-stays-consistent ()
-  ;; The cached widths must always equal a fresh computation over the visible
-  ;; rows -- if any mutation seam forgot to invalidate, the cache would be
-  ;; stale here and the columns would render misaligned.
   (tv-test--with-table
     (cl-flet ((chk () (should (equal table-view--widths-cache
                                      (table-view--widths table-view--spec
@@ -2223,7 +2112,6 @@ push-down can be tested)."
       (chk))))                                       ; column removed
 
 (ert-deftest tv-test-width-cache-reused-on-sort ()
-  ;; sorting must NOT recompute widths (same cells) -- the cache object persists
   (tv-test--with-table
     (let ((cache table-view--widths-cache))
       (should cache)
@@ -2232,8 +2120,6 @@ push-down can be tested)."
       (should (eq table-view--widths-cache cache)))))  ; identical object, not recomputed
 
 (ert-deftest tv-test-width-cache-kept-on-fitting-append ()
-  ;; appending a row that fits the current widths keeps the cache (O(1) render),
-  ;; and the kept cache still equals a fresh computation
   (tv-test--with-table
     (let ((cache table-view--widths-cache))
       (should cache)
@@ -2244,7 +2130,6 @@ push-down can be tested)."
                      (table-view--widths table-view--spec (table-view--visible-rows)))))))
 
 (ert-deftest tv-test-width-cache-recomputed-on-widening-append ()
-  ;; appending a WIDER row invalidates and recomputes, widening the column
   (tv-test--with-table
     (table-view-upsert-row (current-buffer)
       '((id . "wide") (cells . ((name . "a-really-really-wide-name") (count . 1) (status . "ok")))))
@@ -2253,8 +2138,6 @@ push-down can be tested)."
     (should (>= (alist-get "name" table-view--widths-cache nil nil #'equal) 25))))
 
 (ert-deftest tv-test-width-cache-kept-on-non-max-update ()
-  ;; updating a row that is NOT a column max, with a value that fits, keeps the
-  ;; cache -- and the kept cache still matches a fresh computation
   (tv-test--with-table            ; names alpha(5) bravo(5) charlie(7): charlie is max
     (let ((cache table-view--widths-cache))
       (table-view-upsert-row (current-buffer)   ; update bravo (not the max) -> "bravo"
@@ -2264,7 +2147,6 @@ push-down can be tested)."
                      (table-view--widths table-view--spec (table-view--visible-rows)))))))
 
 (ert-deftest tv-test-width-cache-recomputed-on-max-row-update ()
-  ;; updating the row that HOLDS a column's max must recompute (it may shrink)
   (tv-test--with-table            ; names alpha(5) bravo(5) charlie(7): charlie is max
     (table-view-upsert-row (current-buffer)   ; shrink charlie -> "cee"
       '((id . "c") (cells . ((name . "cee") (count . 2) (status . "warn")))))
@@ -2272,7 +2154,6 @@ push-down can be tested)."
                    (table-view--widths table-view--spec (table-view--visible-rows))))
     (should (= (alist-get "name" table-view--widths-cache nil nil #'equal) 5))))  ; max = alpha/bravo
 
-;;; Incremental render (perf) -- differential oracle vs full render
 
 (defun tv-test--fingerprint ()
   "Text + full text-property list at every buffer position."
@@ -2292,7 +2173,6 @@ this proves that output is byte- and text-property-identical to a full redraw."
     (should (equal actual (tv-test--fingerprint)))))
 
 (ert-deftest tv-test-incremental-render-matches-full ()
-  ;; Every mutation's incremental (or in-place) render must match a full redraw.
   (tv-test--with-table
     (tv-test--render-equals-full)                 ; initial
     (table-view-upsert-row (current-buffer)       ; update in place
@@ -2329,14 +2209,11 @@ this proves that output is byte- and text-property-identical to a full redraw."
     (tv-test--render-equals-full)))
 
 (ert-deftest tv-test-incremental-render-chained-streaming ()
-  ;; Many upserts in a row without a full render between them (chained
-  ;; incrementals) must still converge to the correct full-render output.
   (tv-test--with-table
     (dotimes (i 15)
       (table-view-upsert-row (current-buffer)
         `((id . ,(format "s%d" i))
           (cells . ((name . ,(format "stream-%02d" i)) (count . ,i) (status . "ok"))))))
-    ;; update a few existing streamed rows in place
     (table-view-upsert-row (current-buffer)
       '((id . "s7") (cells . ((name . "stream-07-upd") (count . 99) (status . "err")))))
     (table-view-delete-row (current-buffer) "s3")
@@ -2344,9 +2221,6 @@ this proves that output is byte- and text-property-identical to a full redraw."
     (should (= (length table-view--rows) (+ 3 15 -1)))))   ; a,b,c + 15 streamed - 1 deleted
 
 (ert-deftest tv-test-incremental-render-links-toggle ()
-  ;; Regression: toggling `table-view-render-links' between renders must not
-  ;; leave stale (eq-unchanged) rows rendered under the old flag, nor a stale
-  ;; width cache.  The flip forces a full redraw.
   (let ((table-view-render-links t))
     (tv-test--with-display
         "{ \"columns\": [ {\"key\":\"u\",\"header\":\"U\"} ],
@@ -2362,8 +2236,6 @@ this proves that output is byte- and text-property-identical to a full redraw."
       (tv-test--render-equals-full))))                                       ; == a full redraw
 
 (ert-deftest tv-test-render-multiline-cell ()
-  ;; Regression: a cell value with a newline is flattened to one line, so the
-  ;; row occupies a single buffer line and incremental line-counting stays correct.
   (tv-test--with-table
     (table-view-upsert-row (current-buffer)
       '((id . "b") (cells . ((name . "line1\nline2") (count . 1) (status . "ok")))))
@@ -2375,8 +2247,6 @@ this proves that output is byte- and text-property-identical to a full redraw."
     (tv-test--render-equals-full)))
 
 (ert-deftest tv-test-incremental-render-reuses-lines ()
-  ;; An upsert that fits the current column widths must rewrite ONLY the changed
-  ;; row -- an unchanged row's line stays byte-identical (not repadded).
   (tv-test--with-table
     (cl-flet ((line-of (id) (save-excursion (table-view--goto-id id)
                                             (buffer-substring (line-beginning-position)
@@ -2401,7 +2271,6 @@ this proves that output is byte- and text-property-identical to a full redraw."
                                          '((id . "b") (cells . ((name . "b") (count . 10))))
                                          '((id . "c") (cells . ((name . "c") (count . 20))))))
           (with-current-buffer buf
-            ;; set-rows keeps insertion order -- the seeded sort has not applied
             (should (equal (tv-test--ids table-view--rows) '("a" "b" "c")))
             (table-view-apply-sort)
             (should (equal (tv-test--ids table-view--rows) '("b" "c" "a")))))
@@ -2451,14 +2320,6 @@ a small one, or one with a fill-fn, is rendered in elisp as usual."
           (should-not calls))
       (dolist (b '(" *tvr-a*" " *tvr-b*" " *tvr-c*")) (when (get-buffer b) (kill-buffer b))))))
 
-;;; Parity vectors (fixtures/parity)
-;;
-;; The conformance vectors both renderers' suites execute -- this file and
-;; web/perf-driver.js -- off one manifest.  A capability the manifest lists for
-;; this harness must have a runner below, so the manifest cannot claim one that
-;; is missing; the capabilities it lists for the other harness are that
-;; harness's, and `query' is deliberately not among ours (`/' here is a plain
-;; substring over the row, with no grammar to hold to).
 
 (defconst tv-test--parity-dir
   (expand-file-name "fixtures/parity"

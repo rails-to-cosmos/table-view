@@ -1,4 +1,3 @@
-//! Columnar storage; string columns are dictionary-encoded with a precomputed `rank[]`.
 
 use crate::wire::{json_i64, json_to_string};
 use serde_json::{json, Value};
@@ -6,8 +5,6 @@ use std::collections::HashMap;
 
 const WORDS: [&str; 8] = ["core", "lib", "utils", "http", "json", "async", "test", "cli"];
 
-/// Dictionary-encoded string column; `rank[code]` is the codepoint-sorted
-/// position, stale exactly when `rank.len() != values.len()` (see CLAUDE.md).
 pub struct StrCol {
     pub codes: Vec<u32>,
     pub values: Vec<String>,          // unique display strings, by code
@@ -24,7 +21,6 @@ impl StrCol {
         c.rebuild_rank();
         c
     }
-    /// Code for VALUE, interning a new unique if unseen.
     pub fn code_of(&mut self, value: String) -> u32 {
         if let Some(&code) = self.lookup.get(&value) {
             return code;
@@ -35,7 +31,6 @@ impl StrCol {
         self.values.push(value);
         code
     }
-    /// Rebuild rank[code] = codepoint-sorted position; Rust byte-Ord = elisp `string<`.
     pub fn rebuild_rank(&mut self) {
         let mut order: Vec<u32> = (0..self.values.len() as u32).collect();
         order.sort_by(|&a, &b| self.values[a as usize].cmp(&self.values[b as usize]));
@@ -58,15 +53,12 @@ impl Col {
             Col::Str(c) => json!(c.values[c.codes[r] as usize]),
         }
     }
-    /// Total-ordered u64 key matching the elisp comparator (signed ints, codepoint strings via rank).
     pub fn order_key(&self, r: usize) -> u64 {
         match self {
             Col::Int(v) => (v[r] as u64) ^ (1u64 << 63),
             Col::Str(c) => c.rank[c.codes[r] as usize] as u64,
         }
     }
-    /// Dictionary code of the empty-string ("null") cell, if any; always None for
-    /// a `Col::Int` (missing ingests as 0, so the nulls flag is inert there).
     pub fn empty_code(&self) -> Option<u32> {
         match self {
             Col::Int(_) => None,
@@ -89,7 +81,6 @@ impl Col {
         match self {
             Col::Int(col) => col.push(json_i64(v)),
             Col::Str(c) => {
-                // A missing (Null) string cell stores "" (matching the build path).
                 let s = if v.is_null() { String::new() } else { json_to_string(v) };
                 let code = c.code_of(s);
                 c.codes.push(code);
@@ -98,7 +89,6 @@ impl Col {
     }
 }
 
-/// Synthetic column for the `gen` source; the elisp benchmark replicates this formula.
 pub fn gen_col(key: &str, num: bool, n: usize) -> Col {
     if num {
         if key == "num" {

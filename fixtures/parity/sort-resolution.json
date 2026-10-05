@@ -21,7 +21,7 @@
     },
     {
       "name": "without one the value order rules",
-      "doc": "The same view with `compare' dropped sorts by the declared order, which is not alphabetical.",
+      "doc": "The same view with `compare' dropped sorts by its declared nonalphabetical order.",
       "view": {
         "title": "values order",
         "columns": [
@@ -75,7 +75,7 @@
       "expect": { "order": ["n", "t", "d"] }
     },
     {
-      "name": "a number column sorts by value, not by digit",
+      "name": "a number column sorts numerically",
       "view": {
         "title": "number type",
         "columns": [

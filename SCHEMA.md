@@ -61,15 +61,15 @@ view is offered with no renderer change.
 
 **Sort order of a column** resolves as: `compare` name → `values` order (else the
 `badges` order for a badge column), unlisted values last → `type: "number"` is
-numeric → otherwise lexicographic. A starred meta in `values` is filter
-vocabulary rather than a cell value (see the filter query below), so it takes no
+numeric → otherwise lexicographic. A starred meta in `values` is filter-only
+vocabulary (see the filter query below), so it takes no
 sort position, and a `values` list holding metas alone orders nothing.
 
 - `"number"` right-aligns and sorts numerically by convention.
 - `"badge"` colours each cell from `badges`; palette order doubles as sort priority.
-- `sortable` is opt-in: a column says so or it is not sorted on. Both renderers
-  read it that way. It gates what the *user* may sort by — a view's declared
-  `sort` opens as written whether or not its column opts in.
+- `sortable` is opt-in and gates what the *user* may sort by. Both renderers
+  require a column to declare it. A view's declared `sort` opens as written
+  regardless of the column's setting.
 - `multi` declares the column's cells delimited value lists, which the filter's
   whole-entry meta reads (below).
   A renderer that guesses from cell shape must let the declaration win.
@@ -155,7 +155,7 @@ extends this with null placement: `"asc-nulls-first"`, `"desc-nulls-first"`
 **Empty cells** are settled per key and *outside* the direction: a key's blanks
 gather at one end (last by default) and reversing that key does not drag them
 along. A row with a blank in the first key is at that key's end whatever the
-later keys say — nulls are a fact about a cell, not about a row.
+later keys say. Null placement belongs to each cell and key.
 
 **Conformance note**: `direction` is the browser renderer's. `table-view.el`
 spells null placement with a `nulls` field of its own — `"first"` or `"last"`
@@ -187,9 +187,9 @@ opens the view and stays invisible until a reader diverges from it.
 
 `cells` maps each column `key` to a value. A missing key renders empty.
 
-`linked` is **sparse**: send `true` or send nothing — never `false`. It says the
-row's subject holds a link a consumer can follow, which is a producer's
-knowledge rather than anything the cells spell. A renderer may mark the row and
+`linked` is **sparse**: send `true` or send nothing — never `false`. It carries
+the producer's knowledge that the row's subject holds a link a consumer can
+follow. A renderer may mark the row and
 one that ignores it is conformant, by the unknown-fields rule. The browser
 renderer draws the `title` column's cell as a link — link colour and underline,
 the whole cell, the one treatment it gives an Org link inside a cell — and marks
@@ -263,13 +263,12 @@ whitespace (`&` accepted as an alias); each token is:
   it used to be spelled as is the two tokens `tag:course text`. A key derived
   from the ROWS is not available to either side: producer and renderer hold
   different rows, so the same token would be a predicate for one and free text
-  for the other. A producer may still add a key of its OWN — one it names
-  rather than derives — provided a renderer reading it as free text narrows to
-  a subset of what the producer answers. Glance's reference keys are the whole
-  family: `ref:ROWID` and `from:ROWID` read one edge from either end, and
-  `?kind=SLUG` narrows either, all of it over a link graph only the store
-  holds. The subset is exact rather than lucky — the value is an opaque row id,
-  which no cell spells, so the free-text reading finds no rows at all.
+  for the other. A producer may still add an explicitly named key, provided a
+  renderer reading it as free text narrows to a subset of what the producer
+  answers. Glance's reference keys are the whole family: `ref:ROWID` and
+  `from:ROWID` read one edge from either end, and `?kind=SLUG` narrows either,
+  all of it over a link graph only the store holds. The opaque row-id value
+  appears in no cell, so the free-text reading yields the exact empty subset.
 - `"quoted text"` — free text containing spaces.
 - `-token` — negation of either form.
 - anything else — free text, case-insensitive substring over the row's cells.

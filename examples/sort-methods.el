@@ -1,24 +1,5 @@
 ;;; sort-methods.el --- Per-column sort methods: values / compare -*- lexical-binding: t; -*-
 
-;; Eval this buffer for a release dashboard that shows the per-column sort
-;; controls added to table-view.  It opens already sorted by the spec's
-;; multi-column default (Env, then Version descending).  Put point on any
-;; column -- a header cell or a data cell -- and press `^' to sort by it:
-;;
-;;   Env      sorts dev < staging < prod  -- a categorical `values' order,
-;;            NOT alphabetical (which would give dev < prod < staging).
-;;   Version  sorts 1.9 < 1.10 < 2.10     -- `(compare . "natural")' (number
-;;            aware), NOT lexicographic (which would give 1.10 < 1.9).
-;;   Size     sorts by real byte count    -- a CUSTOM comparator: the column's
-;;            `compare' is a predicate FUNCTION, `sort-methods--size-lessp'
-;;            (1500KB < 128MB < 2GB), which neither natural nor lexicographic
-;;            order gets right.  (From a JSON spec you would register it by
-;;            name in `table-view-comparators' and use "compare": "bytes".)
-;;   Status   an unchanged colored `badges' column, sorting by palette order.
-;;
-;; `values' is ordering only -- colours still live in `badges'.  Other built-in
-;; `compare' methods are "number" (coerces number-strings) and "string".
-;; C-u ^ adds a column as a tie-breaker; M-<left> / M-<right> move a column.
 
 (require 'table-view)
 

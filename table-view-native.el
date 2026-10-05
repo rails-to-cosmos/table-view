@@ -7,17 +7,7 @@
 ;; SPDX-License-Identifier: MIT
 
 ;;; Commentary:
-;; Optional accelerator: a Rust subprocess (`tvx') owns the table data model
-;; (sort, filter, window) so Emacs stays a thin view past ~20k rows.  It speaks
-;; JSON-RPC over stdio via the built-in `jsonrpc.el' and plugs into the existing
-;; `table-view' paged mode as a `page-fn' -- no core rewrite.
-;;
-;; Distribution is compile-on-install: the Rust source ships under native/ and
-;; is built with cargo via `M-x table-view-native-compile'.  When the binary is
-;; absent or unbuildable, table-view runs the pure-elisp path and warns.
-;;
-;; Phase 1: initialize / open / window / close (discrete paged windows).  The
-;; live-update layer ($/delta, `table-view-apply-delta') lands later.
+;; Optional Rust accelerator over JSON-RPC; see docs/proposals/native-accelerator.org.
 
 ;;; Code:
 
@@ -30,7 +20,6 @@
 Must equal the binary's `open' reply :protocol and the N in
 \"tvx X.Y.Z protocol N\" from `tvx --version'.")
 
-;;; Customization
 
 (defgroup table-view-native nil
   "Native accelerator for `table-view'." :group 'table-view :prefix "table-view-native-")
@@ -47,7 +36,6 @@ Must equal the binary's `open' reply :protocol and the N in
 (defcustom table-view-native-warn t
   "When non-nil, warn the first time the pure-elisp fallback is used." :type 'boolean)
 
-;;; Paths / resolution
 
 (defvar table-view-native--source-dir
   (let ((d (or (and load-file-name (file-name-directory load-file-name))
@@ -87,7 +75,6 @@ Order: custom, cache, PATH, cargo bin."
                   (let ((c (expand-file-name (format "~/.cargo/bin/%s" (table-view-native--exe)))))
                     (and (file-executable-p c) c)))))
 
-;;; Fallback + warning
 
 (defvar table-view-native--warned (make-hash-table)
   "Reasons already warned about this session, for dedupe.")
@@ -113,7 +100,6 @@ Order: custom, cache, PATH, cargo bin."
     (display-warning 'table-view (table-view-native--warn-text reason detail) :warning))
   nil)
 
-;;; Build (compile-on-install)
 
 (defvar table-view-native--build-in-progress nil)
 
@@ -176,7 +162,6 @@ Does not prompt or build -- `table-view-native-display' owns the build
 decision; this is the best-effort resolver for the connection/respawn path."
   (and table-view-native-enabled (table-view-native--resolve)))
 
-;;; Connection
 
 (defvar table-view-native--connection nil "Shared jsonrpc connection, or nil.")
 (defvar table-view-native--handles (make-hash-table) "Handle -> buffer, for respawn.")
@@ -218,7 +203,7 @@ Idempotent; safe to call for an already-dead connection."
   (or (and table-view-native--connection
            (jsonrpc-running-p table-view-native--connection)
            table-view-native--connection)
-      (when-let ((prog (table-view-native--ensure)))
+      (when-let* ((prog (table-view-native--ensure)))
         (setq table-view-native--connection (table-view-native--make-connection prog)))))
 
 (defun table-view-native--dispatch (_conn method params)
@@ -244,7 +229,6 @@ re-subscribes and re-bases, so the view self-heals instead of corrupting."
                               (or table-view--total 0)))))
             (table-view--refetch-current)))))))
 
-;;; Row conversion (jsonrpc plist <-> table-view alist)
 
 (defun table-view-native--row (r)
   "Convert a reply row plist R to table-view's ((id . ID) (cells . ALIST)) shape."
@@ -266,7 +250,6 @@ re-subscribes and re-bases, so the view self-heals instead of corrupting."
               op))
           (append ops nil)))
 
-;;; The page-fn closure
 
 (defun table-view-native--columns (spec)
   "Accelerator column schema from SPEC.
@@ -291,8 +274,7 @@ transparently, after a respawn re-opens the source on a fresh connection."
                       :pageSize (or table-view--page-size 50)
                       :protocol table-view-native-protocol)))
          (handle (plist-get open :handle)))
-    ;; Drop the previous handle (dead after a respawn) so its registry entry and
-    ;; accelerator table do not leak.
+    ;; Close the dead pre-respawn handle to release its registry and table.
     (when table-view-native--conn-handle
       (table-view-native--close (car table-view-native--conn-handle)
                                 (cdr table-view-native--conn-handle)))
@@ -327,8 +309,6 @@ survives a accelerator respawn; CONN0/HANDLE0 bootstrap the first fetch."
          (list :handle (table-view-native--live-handle buf conn conn0 handle0)
                :offset (or (plist-get req :offset) 0)
                :limit (plist-get req :limit)
-               ;; [COL ASC NULLS]: direction covers all four states; NULLS is
-               ;; "first"/"last" (a 2-element vector, absent NULLS, means last).
                :sort (vconcat (mapcar (lambda (ka)
                                         (vector (table-view--sort-key-col ka)
                                                 (table-view--sort-key-asc ka)
@@ -351,7 +331,6 @@ survives a accelerator respawn; CONN0/HANDLE0 bootstrap the first fetch."
          :timeout-fn
          (lambda () (table-view-page-error buf "native accelerator timeout")))))))
 
-;;; Public entry
 
 (defun table-view-native--wire-source (source)
   "SOURCE with a `rows' payload converted from table-view rows to wire shape.
@@ -364,10 +343,9 @@ Other source kinds (e.g. \"gen\", \"file\") pass through untouched."
 
 (defun table-view-native--display-now (buffer source spec handlers)
   "Open SOURCE on the accelerator and display SPEC in BUFFER (the native path)."
-  (if-let ((conn (table-view-native--ensure-connection)))
+  (if-let* ((conn (table-view-native--ensure-connection)))
       (let* ((buf (get-buffer-create buffer))
-             ;; Capture any prior handle before `table-view-mode' wipes the
-             ;; buffer-locals, so re-displaying can close it (no leak).
+             ;; Capture the prior handle before `table-view-mode' clears buffer locals.
              (prior (buffer-local-value 'table-view-native--conn-handle buf))
              (wire (table-view-native--wire-source source))
              (pg (alist-get 'pagination spec))
@@ -379,7 +357,6 @@ Other source kinds (e.g. \"gen\", \"file\") pass through untouched."
                           :pageSize page-size
                           :protocol table-view-native-protocol)))
              (handle (plist-get open :handle))
-             ;; force a paged buffer even if the spec omitted `pagination'
              (spec (if pg spec (append spec (list (cons 'pagination
                                                         (list (cons 'page-size page-size)
                                                               (cons 'strategy 'offset))))))))
@@ -454,19 +431,16 @@ unavailable and no build happens, falls back to the pure-elisp path with a
 warning (a \"rows\" source still renders; others need the accelerator).  Returns
 the buffer."
   (cond
-   ;; Ready now: a live connection, or a validated binary to connect to.
    ((or (and table-view-native--connection (jsonrpc-running-p table-view-native--connection))
         (and table-view-native-enabled (table-view-native--resolve)))
     (table-view-native--display-now buffer source spec handlers))
    ((not table-view-native-enabled)
     (table-view-native--display-fallback buffer source spec handlers))
-   ;; A build is already running (e.g. a second table): join it, then load.
    (table-view-native--build-in-progress
     (table-view-native--display-deferred buffer source spec handlers))
    ((not (table-view-native--cargo))
     (table-view-native--fallback 'no-cargo)
     (table-view-native--display-fallback buffer source spec handlers))
-   ;; Buildable: decide per policy, and on a build defer the display.
    (t (pcase table-view-native-auto-compile
         ('nil (table-view-native--fallback 'no-binary)
               (table-view-native--display-fallback buffer source spec handlers))
@@ -476,7 +450,6 @@ the buffer."
              (table-view-native--fallback 'no-binary)
              (table-view-native--display-fallback buffer source spec handlers)))))))
 
-;;; Live mutation + queries
 
 (defun table-view-native-patch (buffer &rest args)
   "Upsert and delete rows in native table-view BUFFER.
@@ -522,7 +495,6 @@ OP is one of \"sum\", \"min\", \"max\", \"avg\", \"count\" (a string)."
   (setq table-view-native--connection nil)
   (table-view-native-compile t))
 
-;;; Auto-routing from `table-view-display'
 
 (defun table-view-native-available-p ()
   "Return non-nil when the native accelerator is enabled and its binary resolves."
@@ -540,8 +512,6 @@ displayed natively; nil (after recommending a build) to let the elisp path run."
     (table-view-native--fallback 'recommend-build (length (alist-get 'rows spec)))
     nil))
 
-;; Loading table-view-native opts every large `table-view-display' into the
-;; native accelerator (when its binary is available); the core stays standalone.
 (setq table-view--native-display-function #'table-view-native--auto-display)
 
 (provide 'table-view-native)

@@ -28,7 +28,7 @@
     },
     {
       "name": "a key carries its own direction",
-      "doc": "The same chain with the tie-breaker descending. Only the members within a department move; the departments keep their ascending order, so direction is per key rather than per chain.",
+      "doc": "The same chain with the tie-breaker descending. Only the members within a department move; the departments keep their ascending order because each key carries its own direction.",
       "view": {
         "title": "dept asc, score desc",
         "columns": [

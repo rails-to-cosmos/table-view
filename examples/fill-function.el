@@ -1,13 +1,5 @@
 ;;; fill-function.el --- Populate a table via a fill function -*- lexical-binding: t; -*-
 
-;; Eval this buffer to see a table whose rows come from a fill function
-;; rather than the spec itself.  Press r to re-run the fill function.
-;;
-;; `g' (`table-view-revert') re-renders what the buffer already holds; it is
-;; `table-view-refresh' that calls the fill function again, so the example
-;; binds that.  A fill function must also apply the spec's declared sort
-;; itself: the core seeds the sort keys at display time but sorts only the
-;; rows that arrived with the spec.
 
 (require 'table-view)
 
@@ -34,7 +26,6 @@
                                       (pid . ,(or (process-id proc) 0))
                                       (status . ,(symbol-name (process-status proc)))))))))
     (table-view-set-rows buffer rows)
-    ;; Rows that arrive after display are unsorted until this is called.
     (with-current-buffer buffer (table-view-apply-sort))))
 
 (table-view-display "*processes*" fill-example--spec

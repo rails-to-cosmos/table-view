@@ -28,7 +28,7 @@ descending, nulls-last), so default sorts, =table-view--parse-sort= output, the
 paged =:sort= payload, and every stored key stay backward-compatible.  Only the
 two nulls-first stages use the symbol cdrs.
 
-Read a key through the accessors rather than the raw cdr:
+Read a sort key through these accessors:
 
 - =table-view--sort-key-col= — the column name;
 - =table-view--sort-key-asc= — non-nil for ascending;

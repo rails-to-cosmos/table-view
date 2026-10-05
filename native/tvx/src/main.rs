@@ -1,4 +1,3 @@
-//! tvx — table-view native accelerator (JSON-RPC 2.0 over stdio); see docs/proposals/native-accelerator.org.
 
 mod column;
 mod delta;
@@ -136,7 +135,6 @@ fn main() {
             other => Err((-32601, format!("unknown method: {other}"))),
         };
 
-        // Push the $/delta first, then the request reply.
         if let Some(n) = notify {
             write_frame(&n);
         }

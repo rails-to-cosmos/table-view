@@ -1,7 +1,5 @@
 ;;; table-view-native-test.el --- Tests for the native accelerator -*- lexical-binding: t; -*-
 
-;; Guarded: every test skips unless the tvx binary is present/buildable, so the
-;; pure-elisp suite (table-view-test.el) stays independent of cargo.
 
 (require 'ert)
 (require 'cl-lib)
@@ -22,8 +20,6 @@ Returns nil when cargo is unavailable and no valid binary exists."
          (src (directory-files (expand-file-name "native/tvx/src" root) t "\\.rs\\'"))
          (newest (apply #'max 0 (delq nil (mapcar #'tvn-test--mtime src))))
          (bin (tvn-test--mtime built)))
-    ;; Rebuild if the binary is missing or older than any source file, so tests
-    ;; never silently run against a stale accelerator.
     (when (and (table-view-native--cargo) (or (not bin) (> newest bin)))
       (call-process (table-view-native--cargo) nil nil nil "build" "--release"
                     "--manifest-path" (expand-file-name "native/tvx/Cargo.toml" root)))
@@ -123,7 +119,6 @@ Returns nil when cargo is unavailable and no valid binary exists."
         (warned nil)
         (buf (get-buffer-create " *tvn-fb*")))
     (unwind-protect
-        ;; Force "no accelerator" regardless of any binary cached in this user's env.
         (cl-letf (((symbol-function 'display-warning) (lambda (&rest _) (setq warned t)))
                   ((symbol-function 'table-view-native--resolve) (lambda () nil)))
           (table-view-native-display buf (list :kind "rows" :rows (tvn-test--rows 5))
@@ -132,7 +127,6 @@ Returns nil when cargo is unavailable and no valid binary exists."
           (with-current-buffer buf (should (string-match-p "core-00000" (buffer-string)))))
       (kill-buffer buf))))
 
-;;; Live layer: core `table-view-apply-delta' (pure, no accelerator needed)
 
 (defconst tvn-test--client-spec
   '((title . "x") (columns . (((key . "name") (header . "N"))))))
@@ -190,7 +184,6 @@ Returns nil when cargo is unavailable and no valid binary exists."
                                           :key (lambda (r) (alist-get 'id r)) :test #'equal))))))
       (kill-buffer buf))))
 
-;;; Live layer end-to-end (accelerator): patch -> $/delta -> apply-delta
 
 (defun tvn-test--settle ()
   "Pump process output so pending $/delta notifications are dispatched."
@@ -302,7 +295,6 @@ Returns nil when cargo is unavailable and no valid binary exists."
        (kill-buffer buf)
        (should-not (gethash handle table-view-native--handles))))))
 
-;;; Deferred build path (accept build -> wait -> load or error)
 
 (ert-deftest tvn-test-deferred-build-then-load ()
   "A deferred display shows a placeholder, then loads the table once built."
@@ -310,7 +302,6 @@ Returns nil when cargo is unavailable and no valid binary exists."
    (let ((buf (get-buffer-create " *tvn-defer*")))
      (unwind-protect
          (cl-letf (((symbol-function 'display-buffer) #'ignore)
-                   ;; Simulate a build that completes successfully with BIN.
                    ((symbol-function 'table-view-native-compile)
                     (lambda (_force cb) (funcall cb bin))))
            (table-view-native--display-deferred
@@ -335,17 +326,14 @@ Returns nil when cargo is unavailable and no valid binary exists."
             (should-not (string-match-p "core-00000" (buffer-string)))))
       (kill-buffer buf))))
 
-;;; Auto-routing from basic table-view-display
 
 (ert-deftest tvn-test-seam-registered ()
   "Loading table-view-native registers the display seam in the core."
   (should (eq table-view--native-display-function #'table-view-native--auto-display)))
 
 (ert-deftest tvn-test-available-p ()
-  ;; Unavailable when the binary does not resolve (deterministic, no binary needed).
   (cl-letf (((symbol-function 'table-view-native--resolve) (lambda () nil)))
     (should-not (table-view-native-available-p)))
-  ;; Available when the binary resolves.
   (tvn-test--skip-unless-binary (should (table-view-native-available-p))))
 
 (ert-deftest tvn-test-auto-display-routes-when-available ()

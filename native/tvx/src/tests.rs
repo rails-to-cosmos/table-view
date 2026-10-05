@@ -1,4 +1,3 @@
-//! Accelerator unit tests: collation parity with elisp, patch/tombstones, aggregates, delta/subscribe.
 
 use crate::delta::{diff_ops, RowSnap, Sub};
 use crate::table::Table;
@@ -11,12 +10,10 @@ fn rows(specs: &[(&str, &str, i64)]) -> Value {
     json!({"kind":"rows","rows": specs.iter().map(|(id, name, num)|
         json!({"id": id, "cells": {"name": name, "num": num}})).collect::<Vec<_>>()})
 }
-/// View row ids for a 2-element (column, ascending) sort, defaulting to nulls-last.
 fn ids(t: &mut Table, sort: &[(String, bool)], filter: &str) -> Vec<String> {
     let sort: Vec<(String, bool, bool)> = sort.iter().map(|(k, a)| (k.clone(), *a, false)).collect();
     ids_nf(t, &sort, filter)
 }
-/// View row ids for a full (column, ascending, nulls_first) sort chain.
 fn ids_nf(t: &mut Table, sort: &[(String, bool, bool)], filter: &str) -> Vec<String> {
     t.view(sort, filter).unwrap().iter().map(|&i| t.ids[i as usize].clone()).collect()
 }
@@ -55,20 +52,17 @@ fn nullable_names() -> Value {
 #[test]
 fn nulls_last_default_both_directions() {
     let mut t = Table::build(&cols(), &nullable_names()).unwrap();
-    // Empties sink to the bottom for BOTH asc and desc; the desc reversal must not flip that.
     assert_eq!(ids_nf(&mut t, &[("name".into(), true, false)], ""),  ["c", "a", "e", "b", "d"]);
     assert_eq!(ids_nf(&mut t, &[("name".into(), false, false)], ""), ["e", "a", "c", "b", "d"]);
 }
 #[test]
 fn nulls_first_both_directions() {
     let mut t = Table::build(&cols(), &nullable_names()).unwrap();
-    // Empties float to the top for BOTH asc and desc.
     assert_eq!(ids_nf(&mut t, &[("name".into(), true, true)], ""),  ["b", "d", "c", "a", "e"]);
     assert_eq!(ids_nf(&mut t, &[("name".into(), false, true)], ""), ["b", "d", "e", "a", "c"]);
 }
 #[test]
 fn nulls_flag_is_primary_keys_on_multi_key() {
-    // Empties honor the PRIMARY key's nulls flag; the secondary key breaks ties among them.
     let mut t = Table::build(&cols(), &rows(&[("a", "", 2), ("b", "", 1), ("c", "x", 5), ("d", "", 3)])).unwrap();
     assert_eq!(ids_nf(&mut t, &[("name".into(), true, true), ("num".into(), true, false)], ""),
                ["b", "a", "d", "c"]);
@@ -81,7 +75,6 @@ fn wire_sort_backcompat_two_element() {
     assert_eq!(parse_sort(&json!([["name", true]])),          vec![("name".to_string(), true, false)]);
     assert_eq!(parse_sort(&json!([["name", false, "last"]])), vec![("name".to_string(), false, false)]);
     assert_eq!(parse_sort(&json!([["name", true, "first"]])), vec![("name".to_string(), true, true)]);
-    // The back-compat 2-element form sorts empties LAST.
     let mut t = Table::build(&cols(), &rows(&[("a", "b", 1), ("b", "", 2), ("c", "a", 3)])).unwrap();
     let sort = parse_sort(&json!([["name", true]]));
     let order: Vec<String> = t.view(&sort, "").unwrap().iter().map(|&i| t.ids[i as usize].clone()).collect();
@@ -144,7 +137,6 @@ fn subscribe_then_patch_emits_delta() {
 
 #[test]
 fn patch_outside_window_still_refreshes_counts() {
-    // Delete outside the window: the slice is unchanged but must still emit an empty-ops delta with new counts.
     let mut t = Table::build(&cols(), &rows(&[("a", "aaa", 1), ("b", "bbb", 2), ("c", "ccc", 3)])).unwrap();
     subscribe(&mut t, vec![("name".into(), true)], "", 1); // window = [aaa(a)]
     t.patch(&[], &[json!("c")]); // delete a row outside the window
@@ -154,7 +146,6 @@ fn patch_outside_window_still_refreshes_counts() {
     assert_eq!(d["total"], json!(2));
     assert_eq!(d["baseRev"], json!(0));
     assert_eq!(d["rev"], json!(1));
-    // a second identical-count patch (no-op delete of the same id) emits nothing
     t.patch(&[], &[json!("c")]);
     assert!(t.delta_after_patch().is_none());
 }
@@ -163,7 +154,6 @@ fn patch_outside_window_still_refreshes_counts() {
 fn append_missing_string_cell_is_empty_not_null() {
     let mut t = Table::build(&cols(), &rows(&[("a", "x", 1)])).unwrap();
     t.patch(&[json!({"id":"z","cells":{"num":5}})], &[]); // no "name"
-    // The appended missing string cell is "" (a null cell), so it sinks below "x".
     let order = ids(&mut t, &[("name".into(), true)], "");
     assert_eq!(order, ["a", "z"]);
     assert_eq!(ids(&mut t, &[], "null"), Vec::<String>::new()); // no spurious "null"

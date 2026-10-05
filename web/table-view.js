@@ -1,39 +1,5 @@
-/*
- * table-view.js — browser renderer for the table-view contract (../SCHEMA.md).
- *
- * Renders a View object as an interactive HTML table: badges, alignment,
- * sortable columns, a filter with suggestions, Org-link cells, action dispatch
- * and streaming updates.  Dependency-free, theme-aware, no build step.
- *
- *   const tv = TableView.mount(el, view, { onAction, onLink, onFilter });
- *
- * THE HANDLE AND THE RENDERING RULES ARE IN ../README.md under `## Browser
- * renderer'; the geometry, the filter grammar and the suggestion ordering are
- * also in ../docs/web-renderer.org.  What is below is what those do not hold.
- *
- * - `composer: true' — the bar and the chips ARE the widget, with no table
- *   behind them; the query still commits to `onFilter' and reads back off
- *   `getQuery'.
- * - `inline: true' — the mount is a small box inside someone else's chrome: the
- *   chips stay, the filter box is summoned by `openFilter' onto the chips' own
- *   line, and the title, the hint line, the sort marks and the page furniture
- *   go. The window is capped rather than filling, Escape out of the filter is
- *   ONE step, and Backspace over an emptied box puts that box away rather than
- *   taking a chip. What a picker hung at a caret wants.
- * - `filterDock: "overlay" | "strip"' — WHERE a summoned box lands: over the
- *   page behind the veil, or on the chip strip's own row. `palette' docks
- *   overlay and `inline' docks strip unless the option says otherwise; on a
- *   plain mount it is what makes the box summoned at all, and the rest of that
- *   mount — the filling table, the sort marks, the hint line — stays.
- * - `setPinned(on)' — the chip strip's pin badge, drawn only under `onPin'.
- * - Emits DOM CustomEvents on the container: `tableview-action'
- *   ({detail:{command,id,row}}) and `tableview-link' ({detail:{target,row}}).
- * - Selection is drawn as GROUNDS on the cells.  An absolutely positioned
- *   highlight bar was tried and thrown away: it duplicates row geometry it
- *   cannot own, so collapsed borders and sub-pixel metrics drift it off the row.
- *
- * Type-checked by `// @ts-check' and the @typedefs below; `make web-check'.
- * `make web-perf' benchmarks a 13k-row view headlessly (web/perf-driver.js).
+/* Renderer contract: ../SCHEMA.md; interaction rules: ../docs/web-renderer.org.
+ * Cell-ground selection avoids overlay geometry drift.
  */
 // @ts-check
 
@@ -53,32 +19,14 @@
  *             editable?: boolean,
  *             compare?: string,
  *             valueType?: ValueType }} Column
- *          `editable' opts the column into cell editing (`editCell'/double-
- *          click / `onEdit') AND into header editing; columns are read-only by
- *          default, and a `producer' row is editable whole.
  * @typedef {{ key?: string, command: string, label?: string }} Action
  * @typedef {{ column: string, ascending?: boolean, direction?: string,
  *             nullsFirst?: boolean }} Sort
- *          `nullsFirst' is read only where `direction' is absent; it is what
- *          `getSort' answers with, so a chain survives a read and a put back.
  * @typedef {{ column: string, ascending: boolean, nullsFirst: boolean }} SortKey
- *          A normalized sort key (internal).
  * @typedef {{ id: string, cells?: Record<string, Cell>, linked?: boolean,
  *             producer?: boolean, under?: string|null,
  *             refused?: string }} Row
- *          `linked' says the row leads somewhere; its `title' cell is
- *          underlined, and a view with no such column shows nothing.
- *          `producer' says the row is the PRODUCER'S OWN and is no data: it
- *          stands where `under' names — after that row, or first where it is
- *          null — through every sort, filter, page and delta; it is dressed
- *          `tv-producer', never marked, never stepped onto, and its cells are
- *          editable whatever their column declares.  `refused' DRESSES that row
- *          `tv-refused' and says nothing of its own: what it was refused FOR is
- *          the producer's to say, wherever it says such things.
  * @typedef {{ name: string, query?: string }} SavedView
- *          A view the producer has named, which `view:NAME' completes from.
- *          What applying one MEANS is the producer's: this side offers the
- *          vocabulary and narrows nothing.
  * @typedef {{ title?: string,
  *             columns: Column[],
  *             actions?: Action[],
@@ -89,16 +37,8 @@
  *        | { op: "delete", index: number }
  *        | { op: "reset", rows: Row[] }} Op
  * @typedef {{ label: string, query: string }} Crumb
- *          One step of a drill-down trail: what to show, and the query that
- *          gets back to it. The renderer draws the label and never reads the
- *          query — applying one is the consumer's, who owns the fetching.
  * @typedef {{ id: string | null, col: number, key: string, value: string,
  *             raw: string, token: number }} OpenCell
- *          THE OPEN CELL AS THE PRODUCER SEES IT. `value' is what stands in the
- *          box now; `raw' is what the editor OPENED on, which a repaint carries
- *          across unchanged; `token' counts the opens, so a producer tells one
- *          edit from the next where the id and the column repeat, and a repaint's
- *          re-open is the SAME open wearing the same number.
  * @typedef {{ onAction?: (command: string, id: string, row: Row) => void,
  *             onLink?: (target: string, row: Row | null) => void,
  *             onFilter?: (q: string) => void,
@@ -122,12 +62,6 @@
  *             onPin?: () => void,
  *             onRefused?: (token: string) => void,
  *             pinned?: boolean }} MountOptions
- *          `onCellKey' is asked at the HEAD of an open cell's keydown, before
- *          the widget's own reading of it; `true' means the producer took the
- *          key. An open input stops propagation, so a key typed in a cell
- *          reaches no other dispatch — a `producer' row can bind its keys here
- *          and nowhere else. The cell carries the column's `key' beside its
- *          index, so a producer reads its own cells by name.
  * @typedef {{ el: HTMLElement,
  *             setView: (v: View) => void,
  *             setRows: (rows: Row[]) => void,
@@ -176,7 +110,6 @@
  *             getMarked: () => string[],
  *             clearMarks: () => void,
  *             markedCount: () => number }} Handle
- *   What `mount' returns.
  * @typedef {{ ids: Set<string>,
  *             shows: (id: string) => boolean,
  *             toggle: (id: string) => boolean,
@@ -184,11 +117,7 @@
  *             addAll: (rows: Row[]) => number,
  *             clear: () => void,
  *             list: () => string[] }} RowState
- *   One id-keyed row state — a mark or a flag — and everything done to it.
  * @typedef {{ search: string, len: number[], cells: string[] }} RowText
- *   A row's cached display data: every cell's text lowercased and joined with
- *   \x1f (free-text filtering searches it), each cell's length (column widths),
- *   and the same per-cell strings (field predicates test one column).
  * @typedef {{ negated: boolean,
  *             added: boolean,
  *             key: string|null,
@@ -197,8 +126,6 @@
  *             start: number,
  *             end: number,
  *             sep: number }} Token  One filter-query token; see `parseQuery'.
- *   `negated' is the `-' sign and `added' the `+' one; `start' sits AT the sign,
- *   so a raw slice carries it.
  */
 
 /** @param {*} root  The global object (`window`, or CommonJS `this`). */
@@ -216,7 +143,6 @@
   function displayText(val) {
     if (val === null || val === undefined) return "";
     let s = typeof val === "string" ? val : String(val);
-    // the scan is the hot path; skip the link rewrite for strings that can't hold one.
     if (s.indexOf("[[") !== -1)
       s = s.replace(ORG_LINK, (_, target, desc) => desc || target);
     return s.replace(/[\u0000-\u001f\u007f]+/g, " ");
@@ -224,27 +150,18 @@
 
   // badge ink (hue kept, lightness moved to WCAG AA): docs/web-renderer.org
 
-  /**
-   * Does this browser take C-n and C-p before the page sees them?  Chrome's
-   * family binds them to new-window and print; Firefox and the webview shells
-   * deliver both.  Read per render, so a test can reach it.
-   */
+  // Chrome reserves C-n/C-p; Firefox and webviews deliver them to the page.
   function swallowsCtrlN() {
     const ua = typeof navigator === "object" && navigator ? navigator.userAgent || "" : "";
     return /Chrom(e|ium)\//.test(ua) && !/Firefox|Electron\//.test(ua);
   }
 
   /**
-   * The values CELL spells, org-style: `:a:b:' is a and b.  THE ONE SPLITTER —
-   * the vocabulary is built with it and the cells rendered with it, so a chip
-   * and a query key cannot disagree about where a value begins.
    * @param {string} cell
    */
   function tagsIn(cell) { return cell.split(":").filter(Boolean); }
 
-  /** What drawn values read apart on; the colons are the storage. */
   const TAG_SEP = " · ";
-  /** The mark standing in for values the column had no room to draw whole. */
   const TAG_MORE = "…";
 
   /** The characters TAGS take drawn, middots and all. @param {string[]} tags */
@@ -255,10 +172,6 @@
   }
 
   /**
-   * How many of TAGS fit WHOLE in ROOM characters — a value is drawn entire or
-   * not at all, `TAG_MORE' standing behind the last one kept.  The whole run
-   * fitting answers `tags.length', and a room too narrow for the first value
-   * answers 0, which draws the mark alone.  See `tagsCh' for ROOM's measure.
    * @param {string[]} tags  @param {number} room  @returns {number}
    */
   function tagsFit(tags, room) {
@@ -273,7 +186,6 @@
     return kept;
   }
 
-  /** A delimited value list, org-style: `:a:b:'. What makes a column multi-valued. */
   const ORG_TAGS = /^:[^:]+(:[^:]+)*:$/;
 
   const HEX = /^#?([0-9a-f]{3}|[0-9a-f]{6})$/i;
@@ -301,9 +213,6 @@
   const inkCache = new Map();
 
   /**
-   * COLOR made legible on the pill it tints.  Stepped toward black on light and
-   * white on dark — a scale of the same hue — until the label clears 4.5:1
-   * against the 15% wash it sits on.  Cached per colour and theme.
    * @param {string} color  @param {boolean} dark  @returns {string}
    */
   function inkFor(color, dark) {
@@ -328,7 +237,6 @@
 
   /** @param {Column} col  @param {Cell|undefined} val  @param {boolean} [dark]
    *  @param {number|null} [room]  Characters a MULTI-VALUED cell may draw in,
-   *  `Infinity' where nothing caps it; null where the column is not that one.
    *  @returns {string} */
   function cellHTML(col, val, dark, room) {
     if (room !== null && room !== undefined) {
@@ -365,7 +273,6 @@
 
   // filter micro-syntax, exported as TableView.parseQuery: docs/web-renderer.org (mirrors SCHEMA.md)
 
-  /** Is C a token separator? `&' is an alias for whitespace. */
   const isSep = (c) => c === "&" || c === " " || c === "\t" || c === "\n";
 
   /** The first `:' or `=' in S, or -1. @param {string} s */
@@ -374,22 +281,14 @@
     return a === -1 ? b : (b === -1 ? a : Math.min(a, b));
   }
 
-  /** The alternation bar: what a predicate's VALUE splits on. */
   const ALT = "|";
 
   /**
-   * VALUE's alternatives — `A|B' is either; an EMPTY one is dropped, so a value
-   * that is bars alone is left with none, which is the `key:' rule.  Quotes are
-   * gone by here, so a bar inside a predicate is always the operator.
    * @param {string} value  @returns {string[]}
    */
   const alternatives = (value) => value.split(ALT).filter((v) => v !== "");
 
   /**
-   * Split Q into raw tokens: quotes removed, a leading sign taken off, and the
-   * whole token's offsets kept so a caret can be placed inside one — `start'
-   * sits AT the sign, so the raw slice a chip keeps still spells it.  Separators
-   * inside quotes are ordinary characters.
    * @param {string} q
    */
   function scanQuery(q) {
@@ -409,9 +308,8 @@
         inQ = !inQ;
       } else if (!inQ && isSep(c)) {
         flush(i);
+      // Only the first sign is syntax; later signs belong to the token body.
       } else if (!seen && (c === "-" || c === "+")) {
-        // SEEN GUARDS THE SIGN, so a second one lands in the body: `+-x' is an
-        // added free-text token spelling `-x'.
         start = i; seen = true;
         if (c === "-") neg = true; else add = true;
       } else {
@@ -426,11 +324,6 @@
   }
 
   /**
-   * Q as tokens, against the column KEYS of the view it filters.  `key:value'
-   * is a field predicate only when KEY names a column, so org cell text like
-   * `:work:' stays free text; a quoted token is always free text; a leading `-'
-   * negates either form and a leading `+' widens its key's axis
-   * (`queryMatcher').
    * @param {string} q  @param {string[]} keys  @returns {Token[]}
    */
   function parseQuery(q, keys) {
@@ -453,9 +346,6 @@
   }
 
   /**
-   * How TOK's sign is written: `+' added, `-' negated, and the empty string
-   * where it opens with neither.  ONE reading, so a chip and a completion
-   * cannot spell the same token two ways.
    * @param {Token} tok  @returns {string}
    */
   const signMark = (tok) => (tok.added ? "+" : tok.negated ? "-" : "");
@@ -475,146 +365,72 @@
     return null;
   }
 
-  /** A meta value, which SCHEMA spells `*empty*' / `*active*'. */
   const META = /^\*.+\*$/;
 
-  /**
-   * A meta without its stars — its WORD, which is what a rule reading one needs
-   * and what completion matches through, so `act' reaches `*active*'.  What is
-   * drawn and inserted keeps the stars, and a query MEANS them.
-   */
   const starless = (v) => (META.test(v) ? v.slice(1, -1) : v);
 
-  /** Org's priority decoration, which a cell WEARS rather than means: `[#A]'. */
   const DECORATED = /^\[#(.*)\]$/;
 
-  /**
-   * V with that decoration off.  DISPLAY WEARS THE DECORATION, MATCHING READS
-   * THROUGH IT: `[#A]' is what the table shows and `A' what a reader means, so
-   * a whole-value predicate answers both spellings (`cellTest').
-   */
   const undecorated = (v) => {
     const m = DECORATED.exec(v);
     return m ? m[1] : v;
   };
 
-  /** V with its reading notation off, whichever of the two it wears. */
   const meant = (v) => undecorated(starless(v));
-  /** Does the lowercased value LOWER open with P, notation either way? */
   const opensWith = (lower, p) => lower.startsWith(p) || meant(lower).startsWith(p);
-  /** Is LOWER what P spells, notation either way? */
   const spells = (lower, p) => lower === p || meant(lower) === p;
 
-  /**
-   * The one PRODUCER meta this renderer can partly answer: SCHEMA puts the EMPTY
-   * cell in the active group, and an empty cell needs no keyword set to
-   * recognise.
-   */
   const ACTIVE_META = "*active*";
 
-  /**
-   * The meta every key answers: SCHEMA's empty cell, on any column and on
-   * `planned'.  A cell is empty or it is not, so no producer set, vocabulary or
-   * clock is needed and the two halves of the wire cannot disagree.  It
-   * replaced the bare word `none', which reserved a spelling a cell could hold.
-   */
   const EMPTY_META = "*empty*";
 
   // date comparisons (the value forms, the day words): docs/web-renderer.org
 
-  /** The canonical clock word, and the head of `DAY_WORDS'. */
   const TODAY = "today";
 
   /**
-   * THE DAY WORDS, each with how far off the day the query is read on it
-   * stands: `scheduled:today', `deadline:>=tomorrow'.  Legal wherever a date
-   * literal stands — bare, behind any operator, at either range end, as a
-   * shift's base — and resolved once per compile (`queryMatcher').  OFFERED IN
-   * THIS ORDER at a date column's foot.
    * @type {[string, number][]}
    */
   const DAY_WORDS = [[TODAY, 0], ["tomorrow", 1]];
 
-  /** Just the words, which is what a date column's domain carries. */
   const DAY_WORD_LIST = DAY_WORDS.map((p) => p[0]);
 
   /**
-   * Is V RESERVED VOCABULARY rather than a value the rows hold — a starred meta
-   * always, a day word ON A DATE COLUMN?  Reserved offers carry NO ROW COUNT,
-   * nothing spelling one in a cell, and are drawn dim.  THE DAY WORDS ARE
-   * SCOPED TO THE COLUMN THAT JOINED THEM: `DAY_WORD_LIST' rides a date
-   * column's domain and no other (`acItems'), so a title cell spelling `today'
-   * is a cell like any other.
-   * The stars carry no such scope, `*empty*' riding every column's foot.
    * @param {string} v  @param {boolean} onDate  @returns {boolean}
    */
   const reserved = (v, onDate) =>
     META.test(v) || (onDate && DAY_WORD_LIST.indexOf(v) !== -1);
 
-  /**
-   * `today''s OLD SPELLING, READ AND NEVER OFFERED: stored queries and typed
-   * habit still carry it, so every reader below takes it where `today' stands
-   * while completion, the chips and the docs spell the bare word.  Completion
-   * FOLDS it onto `today' where it canonicalises a base at all (`shiftBase').
-   */
   const TODAY_META = "*today*";
 
-  /**
-   * The four comparisons, each spelled ONCE: a fifth is owed a `cmpTest' arm,
-   * where the compiler would ask a producer for one.
-   */
   const CMP_GE = ">=", CMP_LE = "<=", CMP_GT = ">", CMP_LT = "<";
 
-  /** The comparisons a date value may open with, read LONGEST FIRST. */
   const CMPS = [CMP_GE, CMP_LE, CMP_GT, CMP_LT];
 
-  /** The range separator inside a date value: `A..B'. */
   const RANGE = "..";
 
-  /** A date literal opens with a digit; anything else is no date at all. */
   const DATE_LIT = /^\d/;
 
   // date shifts and the quoted spelling: docs/web-renderer.org
-  //
-  // THE SHIFT a date literal may carry, as GRAMMAR: `BASE(+|-)N UNIT', the base
-  // a day literal, a DAY WORD or nothing at all.  A SHIFTED VALUE IS ONE MORE
-  // SPELLING OF A DAY LITERAL and no new atom kind — `dateValue' gains no field,
-  // the shift being read below the forms, at the literal.
 
-  /** Org's own units, which is the whole charset a shift may spell. */
   const UNITS = ["d", "w", "m", "y"];
 
-  /** The SHIFT's own signs, which are the VALUE's and never the token's. */
   const SHIFT_SIGNS = ["+", "-"];
 
-  /**
-   * THE LONG UNIT WORDS the quoted value form admits, each folded onto org's
-   * own letter, LONGEST FIRST so `days' is read before `day'.
-   */
   const UNIT_WORDS = [["days", "d"], ["day", "d"], ["weeks", "w"], ["week", "w"],
                       ["months", "m"], ["month", "m"], ["years", "y"], ["year", "y"]];
 
-  /** A date value's trailing SHIFT: `(+|-)N UNIT', read off the END. */
   const SHIFT = /([+-])(\d+)([dwmy])$/;
 
-  /** A shift ending MID-TYPING: a `+' with nothing but digits behind it. */
   const HALF_SHIFT = /\+\d*$/;
 
-  /** A shift's sign and count as far as one has been TYPED, for completion. */
   const AC_SHIFT = /([+-])(\d+)$/;
 
-  /** A day spelled in full, which is the only base `dayIn' can read. */
   const DAY_LIT = /^(\d{4})-(\d{2})-(\d{2})$/;
 
-  /** One decimal digit, which is what a space the fold KEEPS stands between. */
   const DIGIT = /\d/;
 
   /**
-   * L as its BASE and the SIGNED COUNT and UNIT it moves that base by, or null
-   * where L carries no shift.  READ FROM THE END, which is what keeps ISO's own
-   * separator out of the sign's reach: `2026-08-03' ends in a digit where a
-   * shift ends in one of org's unit letters.  AN EMPTY BASE IS THE BARE SHIFT,
-   * which `dayIn' reads today-relative.
    * @param {string} l
    * @returns {{base: string, n: number, unit: string}|null}
    */
@@ -626,22 +442,11 @@
   }
 
   /**
-   * Does L END MID-SHIFT — a `+' with nothing but digits behind it?  THE PLUS
-   * FAMILY ALONE, because `+' appears in no date a cell carries where `-' is
-   * ISO's own separator: a rule reading the incomplete minus would read
-   * `2026-08-03' as `2026-08' moved `03' of no unit.  An incomplete minus stays
-   * the literal it always was, and `today-7' matches no row rather than
-   * narrowing none.
    * @param {string} l  @returns {boolean}
    */
   const halfShift = (l) => HALF_SHIFT.test(l);
 
   /**
-   * The shift BASE P spells, CANONICALLY, or null where it spells none: the
-   * empty base is the BARE shift's own, a day word is its bare spelling, and a
-   * day is itself.  THE OLD SPELLING FOLDS HERE — `*today*+30' is offered as
-   * `today+30d' — which is the one place completion canonicalises it; matching
-   * takes either and rewrites neither.
    * @param {string} p  @returns {string|null}
    */
   function shiftBase(p) {
@@ -652,21 +457,12 @@
   }
 
   /**
-   * V with every space dropped BUT THE ONE BETWEEN TWO DIGITS, which is the
-   * timed stamp's own: `2026-08-01 09:30' keeps its space where `<= 2026-08-01'
-   * loses one it never meant.  ONE PARSER, TWO SPELLINGS: the quoted form is
-   * the one that may carry spaces (`scheduled:"<= today + 30 days"') and
-   * folds here onto the space-free one (`scheduled:<=today+30d') ABOVE every
-   * form read.  An unquoted value carries no space at all — the scanner cuts a
-   * token on one — so the fold is invisible to the compact spelling.
    * @param {string} v  @returns {string}
    */
   function unspaced(v) {
     let out = "", last = "";
     for (let i = 0; i < v.length; i++) {
       const c = v[i];
-      // A SPACE IS WEIGHED AGAINST WHAT WAS KEPT, so a run of them collapses to
-      // the one the digits on either side of it earn.
       if (c === " " && !(DIGIT.test(last) && DIGIT.test(v[i + 1] || ""))) continue;
       out += c;
       last = c;
@@ -675,9 +471,6 @@
   }
 
   /**
-   * LITERAL L's long unit word cut to org's letter, AND ONLY WHERE A SHIFT
-   * COMES OUT OF IT: `today' ends in a unit word and is THE DAY WORD ITSELF,
-   * never a `to' moved one day.
    * @param {string} l  @returns {string}
    */
   function unitFolded(l) {
@@ -690,25 +483,11 @@
   }
 
   /**
-   * V read as a date value: `op' is the comparison it opens with, `RANGE' where
-   * it names one and "" for the bare prefix; `lo' and `hi' are the literals
-   * compared, EMPTY where one is owed and missing.  THE THREE FIELDS ARE THE
-   * WHOLE READING: whether the value is an atom at all (`atomsIn') and what
-   * stands before a literal still being typed (`suggestFor') are read off them
-   * at the two places that ask, so this stays the split and nothing more.
    * @param {string} v
    * @returns {{op: string, lo: string, hi: string}}
    */
   function dateValue(v) {
-    // THE QUOTED SPELLING'S SPACES GO ABOVE EVERY FORM READ, so one parser
-    // answers both and every law behind this sees the space-free one.  THE LONG
-    // UNIT WORD IS FOLDED BELOW THE SPLIT, AT THE LITERAL, which is the one
-    // place a literal's END is known: a range carries two of them, and a fold
-    // reading the value's own end would leave the low one spelling no day.
     const s = unspaced(v);
-    // THE OPERATOR IS READ FIRST and the range behind it, so `>=A..B' is a
-    // comparison against a literal holding a separator — no cell spells one, so
-    // it serves nothing — where `A..B' is the range it looks like.
     for (const op of CMPS)
       if (s.startsWith(op)) return { op, lo: unitFolded(s.slice(op.length)), hi: "" };
     const at = s.indexOf(RANGE);
@@ -719,10 +498,6 @@
   }
 
   /**
-   * V as the COMPACT spelling, reassembled from the reading: the quoted form's
-   * spaces dropped and EACH literal's unit word cut, so a value carrying two of
-   * them lands compact at both ends.  A space-free value spelling no unit word
-   * folds to itself, which is every unquoted value.
    * @param {string} v  @returns {string}
    */
   function compacted(v) {
@@ -731,24 +506,11 @@
   }
 
   /**
-   * P asked of a NON-EMPTY cell alone.  THE EMPTY CELL SITS OUTSIDE EVERY
-   * COMPARISON AND EVERY RANGE: "" is below every literal in byte order, so an
-   * unguarded `<' would serve every undated row.  `*empty*' stays the one name
-   * for that cell, which is why `-k:<D' and `k:>=D' differ and NEGATION IS NO
-   * MIRROR.  Worn ONCE PER AXIS — the range wraps its pair rather than each end
-   * — and the bare prefix wears none and needs none, a non-empty literal being
-   * the prefix of no empty cell.
    * @param {(c: string) => boolean} p  @returns {(c: string) => boolean}
    */
   const dated = (p) => (c) => c !== "" && p(c);
 
   /**
-   * THE GRANULARITY LAW, one arm per operator: `<' and `>=' cut at literal D's
-   * FIRST instant, `<=' and `>' at its LAST.  The last instant is spelled as
-   * "everything the prefix reaches", which is the prefix test the bare form
-   * already runs — so NO DATE ARITHMETIC is owed anywhere, and `k:D' is exactly
-   * `k:>=D' and `k:<=D' together.  OP comes off the `CMPS' roster; ANYTHING
-   * ELSE IS NO COMPARISON AND SERVES NO CELL, which is the guard's own refusal.
    * @param {string} op  @param {string} d  @param {string} c  @returns {boolean}
    */
   function cmpTest(op, d, c) {
@@ -760,10 +522,6 @@
   }
 
   /**
-   * Today as ISO `YYYY-MM-DD' in the reader's own zone, which is what the day
-   * words resolve against.  THE CLOCK IS THE PAGE'S OWN: a producer resolves the same
-   * word against its day, so the two disagree for the hour one of them is past
-   * midnight and the other is not.  The skew is accepted — same machine.
    * @param {Date} [now]  @returns {string}
    */
   function localDay(now) {
@@ -771,29 +529,17 @@
     return `${t.getFullYear()}-${pad2(t.getMonth() + 1)}-${pad2(t.getDate())}`;
   }
 
-  /** N as two digits, which is how every ISO field but the year is written. */
   const pad2 = (n) => String(n).padStart(2, "0");
 
-  /**
-   * Y, M and D as the ISO day they spell.  ONE FORMATTER SPELLS BOTH SIDES of a
-   * date comparison: a literal written here and a cell the producer wrote are
-   * the same shape, so the two cannot drift into two spellings of one day.
-   */
   const isoDay = (y, m, d) => `${String(y).padStart(4, "0")}-${pad2(m)}-${pad2(d)}`;
 
-  /** Is Y a leap year, by the proleptic Gregorian rule an ISO day names? */
   const leapYear = (y) => (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0;
 
-  /** Each month's length, February's in a common year. */
   const MONTH_DAYS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
 
-  /** The last day of month M in year Y. */
   const lastDay = (y, m) => (m === 2 && leapYear(y) ? 29 : MONTH_DAYS[m - 1]);
 
   /**
-   * Does L spell a day that EXISTS?  The shape alone is not enough — `2026-02-30'
-   * is four fields and no date — and the producer reads its own literals with a
-   * parser that refuses one, so this refuses it too.
    * @param {string} l  @returns {boolean}
    */
   function validDay(l) {
@@ -804,19 +550,14 @@
   }
 
   /**
-   * BASE moved N units, as an ISO day — ORG'S OWN CALENDAR ARITHMETIC.  `d' and
-   * `w' COUNT DAYS, a week being seven; `m' and `y' STEP THE CALENDAR AND CLIP:
-   * a day past the target month's last becomes that last day, so Jan 31 moved
-   * one month lands on February's last and never on March's third.  The clip is
-   * spelled out because `Date' would overflow into the next month instead.
    * @param {string} base  @param {number} n  @param {string} unit
    * @returns {string}
    */
   function shiftDay(base, n, unit) {
+    // UTC arithmetic avoids daylight-saving transitions adding or losing a day.
     const y = Number(base.slice(0, 4)), m = Number(base.slice(5, 7));
     const d = Number(base.slice(8, 10));
     if (unit === "d" || unit === "w") {
-      // UTC THROUGHOUT, so no zone's daylight step can lose or gain a day.
       const t = new Date(0);
       t.setUTCFullYear(y, m - 1, d);      // set whole: a two-digit year stays itself
       t.setUTCDate(t.getUTCDate() + n * (unit === "w" ? 7 : 1));
@@ -828,12 +569,6 @@
   }
 
   /**
-   * The ISO day W names against TODAY, or "" where W is no clock word at all.
-   * ONE READER for every position a day word may stand in — bare, behind an
-   * operator, at either range end and as a shift's base — so a spelling one
-   * takes is a spelling all take, the old starred one included.  THE HEAD OF
-   * THE ROSTER STEPS BY NOTHING AND IS STEPPED ANYWAY: `shiftDay' spells a
-   * canonical day back byte for byte.
    * @param {string} w  @param {string} today  @returns {string}
    */
   function dayWord(w, today) {
@@ -843,25 +578,12 @@
   }
 
   /**
-   * The DAY a shift's BASE names, or "" where it names none.  A DAY WORD AND
-   * THE EMPTY BASE are both read off the clock: THE BARE SHIFT IS
-   * TODAY-RELATIVE, decided off the planning grammar's own precedent, which
-   * already reads a bare `+3d' that way, consistency being the tiebreaker.  Any
-   * other base is the day it spells, so a base naming none — a month, a timed
-   * stamp — leaves the whole value naming none.
    * @param {string} base  @param {string} today  @returns {string}
    */
   const dayIn = (base, today) =>
     base === "" ? today : dayWord(base, today) || (validDay(base) ? base : "");
 
   /**
-   * Date literal L as the literal every law below compares, or "" where L NAMES
-   * NO DAY.  A DAY WORD is the day it names, a SHIFT is stepped off its base and
-   * spelled back as a plain day, and every other literal is itself.  THE SHIFT
-   * RESOLVES HERE, ONCE PER COMPILE — behind this a shifted value is one more
-   * spelling of a day literal and every law reads it as one.  A shift off a base
-   * naming no day leaves the value naming none, and it then matches no row the
-   * way `state:TOD' matches none.
    * @param {string} l  @param {string} today  @returns {string}
    */
   function literalIn(l, today) {
@@ -871,71 +593,30 @@
     return base ? shiftDay(base, s.n, s.unit) : "";
   }
 
-  /**
-   * SCHEMA's virtual key over a view's DATE columns together: a row is planned
-   * when any of them holds anything.  Answered here in full — the cells are all
-   * it takes, so the two sides cannot disagree about a row.
-   */
   const PLANNED_KEY = "planned";
 
-  /**
-   * FREE TEXT'S OWN KEY: `substring:V' is what `V' alone means, so the grammar
-   * is `KEY:VALUE' throughout, one matcher serving both.  The key buys a value
-   * that may spell a separator under quotes without being read as one.
-   */
   const SUBSTRING_KEY = "substring";
 
-  /**
-   * SCHEMA's ORDER key: `sort:COL', `sort:COL:desc'.  No predicate — written
-   * order is precedence, and any replaces the view's declared `sort'.
-   */
   const SORT_KEY = "sort";
 
-  /**
-   * The COLUMN SET: `columns:State,Title,Tags'.  The sort key's twin, narrowing
-   * nothing; which columns a name resolves to is the producer's answer.
-   */
   const COLUMNS_KEY = "columns";
 
-  /**
-   * `view:NAME' — a SAVED VIEW the producer named, narrowing nothing here.
-   * `VIEW_KEYS' is the one list, so `queryKeys' and `queryMatcher' cannot come
-   * to disagree about which keys skip narrowing.
-   */
   const VIEW_KEY = "view";
 
   const VIEW_KEYS = [SORT_KEY, COLUMNS_KEY, VIEW_KEY];
 
   /**
-   * Whether KEY SHAPES the view rather than NARROWING it.  THE GRAMMAR HAS TWO
-   * HALVES: every other key answers which rows, and these three answer the
-   * table around them.  One test, so a door that edits the narrowing half alone
-   * draws the line where every reader of a query already draws it.
    * @param {string|null} key  @returns {boolean}
    */
   const shapesView = (key) => key !== null && VIEW_KEYS.indexOf(key) !== -1;
 
-  /** The directions a sort token may spell; the empty one ascends. */
   const SORT_DIRS = { "": true, asc: true, desc: false };
 
-  /**
-   * The separator that CHAINS one sort token's columns:
-   * `sort:title->priority:desc' is `sort:title sort:priority:desc' written once.
-   * A token's segments are read as exactly the tokens they compose.
-   */
   const SORT_ARROW = "->";
 
-  /**
-   * The meta that spells the EMPTY CHAIN.  `sort:*none*' NAMES a sort key, so it
-   * replaces the view's declared `sort' with nothing.  It admits no companions,
-   * and a renderer, having nobody to refuse to, drops it and lets them stand.
-   */
   const NONE_META = "*none*";
 
   /**
-   * SEGMENT as a sort key, or null where nothing orderable is spelled.
-   * An alternation, an unknown column and a direction that is neither `asc' nor
-   * `desc' each yield null; a negation is the whole token's (`sortSegments').
    * @param {string} seg  @param {(k: string) => boolean} known
    * @returns {SortKey|null}
    */
@@ -949,10 +630,6 @@
   }
 
   /**
-   * The segments TOK chains, in written order.  A SIGNED token chains none: the
-   * sign covers everything after it, so a refusal reaches every segment.  ORDER
-   * NARROWS NOTHING AND SO HAS NOTHING TO WIDEN — the producer answers `+sort:'
-   * with a refusal, and this side reads no chain out of it.
    * @param {Token} tok  @returns {string[]}
    */
   function sortSegments(tok) {
@@ -960,12 +637,6 @@
   }
 
   /**
-   * The chain Q names, highest priority first: [] where it names the EMPTY one
-   * and null where it names no chain at all — a reader asking for no order and
-   * a reader saying nothing are different readers.  Written order is precedence
-   * and repeats compose; a column named twice keeps its FIRST spelling, so the
-   * answer can always be handed to `applyChain'.  `*none*' takes no companions:
-   * a key that resolves outranks it.
    * @param {string} q  @param {string[]} keys  @param {(k: string) => boolean} known
    * @returns {SortKey[]|null}
    */
@@ -991,26 +662,18 @@
   }
 
   /**
-   * CHAIN as the ONE token that spells it — the CANONICAL form, and what every
-   * door that writes an order into a query emits. `:asc' is not written, an
-   * unspelled direction already meaning it.
    * @param {SortKey[]} chain  @returns {string}
    */
   function sortToken(chain) {
     return SORT_KEY + ":" + chain.map(sortSegment).join(SORT_ARROW);
   }
 
-  /** The superscript digits, so a precedence mark is one character per digit. */
   const SUPERS = "⁰¹²³⁴⁵⁶⁷⁸⁹";
   /** N in superscript. @param {number} n  @returns {string} */
   const superscript = (n) =>
     String(n).split("").map((d) => SUPERS[Number(d)] || d).join("");
 
   /**
-   * The values a column offers for completion: its declared `values' in their
-   * own order, then any badge value they did not already name.  Merged rather
-   * than shadowed, or a producer adding meta-values to a badge column would
-   * delete that column's concrete keywords from the list.
    * @param {Column} col  @returns {string[]|null}
    */
   function domainValues(col) {
@@ -1024,16 +687,12 @@
   }
 
   /**
-   * The metas COL declares: producer vocabulary, which no cell of it holds.  A
-   * column whose values are DERIVED takes them from here too, so a declared
-   * meta is offered whether or not the domain came from the rows.
    * @param {Column} col  @returns {string[]}
    */
   function declaredMetas(col) {
     return (col.values || []).map(String).filter((v) => META.test(v));
   }
 
-  // Less-than over raw cell values for a column (mirrors table-view.el).
   /**
    * @param {Column} col
    * @returns {(a: Cell|undefined, b: Cell|undefined) => number}
@@ -1083,9 +742,6 @@
   const CRUMB_MAX = 4;         // crumb chips drawn before the oldest collapse
 
   /**
-   * The COLUMN width a multi-valued CELL's drawn form needs, in characters of
-   * the table's own type: the middots it reads apart on, taken in the tag
-   * type's smaller measure.  A cell spelling no value is drawn as it stands.
    * @param {string} cell  @returns {number}
    */
   function tagsCh(cell) {
@@ -1093,15 +749,13 @@
     return tags.length ? Math.ceil(tagsWide(tags) * TAG_EM) : cell.length;
   }
 
-  /** Characters a multi-valued cell may draw in, given the CH its column was
+  /**
    *  written at — `tagsCh' read the other way. @param {number} ch */
   const tagRoom = (ch) => Math.floor(ch / TAG_EM);
 
-  /** Run CB when nothing else is pending (or soon, where there is no idle). */
   const idle = (cb) =>
     typeof requestIdleCallback === "function" ? requestIdleCallback(cb) : setTimeout(cb, 0);
 
-  /** Run CB on the next frame (or soon, where there are no frames). */
   const frame = (cb) =>
     typeof requestAnimationFrame === "function" ? requestAnimationFrame(cb)
                                                 : setTimeout(cb, 16);
@@ -2103,7 +1757,6 @@
   }
 
   /**
-   * Mount a table-view into CONTAINER; return a live handle (the streaming API).
    * @param {Element} container
    * @param {View} view
    * @param {MountOptions} [opts]
@@ -2113,59 +1766,20 @@
     injectStyle();
     const o = opts || {};   // narrowing sticks in closures (a reassigned param would not)
     const composer = o.composer === true;
-    // INLINE: the mount IS a small box someone else has drawn, so it keeps the
-    // rows and summons the filter, dropping the page furniture — no title, no
-    // hint line, no sort marks, and a capped window.  It is what a PICKER hung
-    // at a caret wants, where the ordinary mount wants the page.
     const palette = o.palette === true;
-    // PALETTE WINS the pair: it draws its own overlay, and the two modes give
-    // Backspace and Escape opposite answers.  One flag decides, so no branch
-    // has to agree with another about which came first.
     const inline = o.inline === true && !palette;
     /**
-     * THE DOCK IS WHERE A SUMMONED BOX LANDS.  `"overlay"' raises it over the
-     * page behind the veil; `"strip"' lays it on the chip strip's own row, the
-     * chips taking their width and the box the slack.  Named, the option
-     * decides; absent, the mode does — `palette' summons over the page,
-     * `inline' onto the strip, and a plain mount summons nothing at all.
      * @type {"overlay"|"strip"|"none"}
      */
     const dock = o.filterDock === "overlay" || o.filterDock === "strip" ? o.filterDock
                : palette ? "overlay" : inline ? "strip" : "none";
-    /**
-     * THE SUMMONED LADDER IS THE PAGE'S OWN BOX, whichever dock it landed in:
-     * Escape in two steps (the typed text, then the box), Backspace closing an
-     * already-empty box, and a
-     * query delivered on COMMIT alone, since narrowing as each character lands
-     * animates a table the typist is looking away from.  The picker (`inline')
-     * summons a box too and answers with its own rungs: one Escape, a Backspace
-     * that eats the box, and rows that narrow as it is typed, because a compact
-     * table is a thing to pick FROM.  So it is spelled out of this predicate,
-     * and the sites that are its own name it.
-     */
     const summoned = dock !== "none" && !inline;
     const omnibox = o.omnibox === true || composer || inline;
     const marks = o.marks === true;
-    /**
-     * Whether the FLAG state is drawn.  Absent it follows `marks', the one
-     * opt-in flags shipped under.  Named, it is its own answer: `flags: true'
-     * alone draws the flag ground gutterless, `flags: false' under
-     * `marks: true' takes the flag drawing back off.
-     */
     const flags = o.flags === undefined ? marks : o.flags === true;
     const actionHints = o.actionHints !== false;   // absent means the legend shows
-    /**
-     * What to offer about a flagged row, in the consumer's own words — e.g.
-     * `"d/D archive · u unflag"'. Shown only while the cursor sits on a
-     * flagged row; absent, the segment is the plain count it always was.
-     */
     const flagHelp = typeof o.flagHelp === "string" && o.flagHelp.trim()
       ? o.flagHelp.trim() : "";
-    /**
-     * FLAGHELP marked up like the action legend: the token before each label
-     * is a key, the rest is words. Split once at mount rather than per render,
-     * since a hint line is rewritten on every selection move.
-     */
     const flagHelpHTML = flagHelp.split("·").map((part) => {
       const t = part.trim();
       if (!t) return "";
@@ -2174,47 +1788,23 @@
         : `<b class="tv-key">${esc(t.slice(0, at))}</b> ${esc(t.slice(at + 1).trim())}`;
     }).filter(Boolean).join(" · ");
     /**
-     * How a live chip should read — `(token) => string|null', anything but a
-     * non-empty string leaving the token raw.  Display only.
      * @type {((token: string) => string|null)|null}
      */
     const chipLabel = typeof o.chipLabel === "function" ? o.chipLabel : null;
     /**
-     * The PIN: a button-badge at the chip strip's far edge, present only under
-     * `onPin'.  The renderer reports the click and wears the boolean; the
-     * consumer decides both, knowing what the query is compared against.
      * @type {(() => void)|null}
      */
     const onPin = typeof o.onPin === "function" ? o.onPin : null;
     /**
-     * What a NARROWED session says about a token it will not take —
-     * `(token) => void', handed the source text as the reader wrote it, once
-     * per spelling.  This side refuses; naming the other door is the
-     * consumer's sentence, in the consumer's own words.
      * @type {((token: string) => void)|null}
      */
     const onRefused = typeof o.onRefused === "function" ? o.onRefused : null;
     let pinned = !!o.pinned;
-    /**
-     * How many chrome cells lead a row; what a column index has to skip.  The
-     * gutter is the CHECKBOX's alone — the flag's edge rides the row's first
-     * cell — so a mount that flags without marking pays no leading column.
-     */
     const chrome = marks ? 1 : 0;
-    /** Rows per page, or 0 for the whole set at once — which is every consumer
-     *  that has not asked otherwise. */
     const pageSize = Math.max(0, Math.trunc(Number(o.pageSize) || 0));
-    /** The page on show, counted from zero. */
     let page = 0;
-    /**
-     * Which of the two presentations a paged view is in.  PAGED (false) is the
-     * slice, the virtualizer running inside one page.  CONTINUOUS (true) runs
-     * the window over the whole ordered set; stepping off the end of a page
-     * switches at that moment, and any explicit turn snaps back.
-     */
     let continuous = false;
 
-    /** Is the table being drawn dark? The page's choice outranks the system's. */
     function darkNow() {
       const root$ = document.documentElement;
       const asked = root$ && root$.getAttribute ? root$.getAttribute("data-theme") : null;
@@ -2237,43 +1827,30 @@
       sortKeys: normalizeSort(view && view.sort),
     };
 
-    /** The producer's own rows among the store's, in the order they were
-     * handed over. They are no data: a `setRows' replaces the data and leaves
-     * these standing, and every pass puts each back where its `under' names. */
     const ownRows = () => state.rows.filter((r) => !standing(r));
 
-    // two row lists between store and window: 'sorted' (all, in sort order) and 'order'
-    // ('sorted' under the filter). Filter re-derives 'order' only; upsert/delete splice both; rows/sort drops both.
 
     /** @type {Row[]|null} */
     let sorted = null;
     /** @type {Row[]|null} */
     let order = null;
+    // sorted holds all rows; order applies the current filter.
     /**
-     * The compiled query `order' was filtered by; null when unfiltered. An
-     * upsert asks it whether the row still belongs.
      * @type {((r: Row) => boolean)|null}
      */
     let orderTest = null;
     /**
-     * The comparator `sorted' is in, for binary-inserting an upsert.
      * @type {((a: Row, b: Row) => number)|null}
      */
     let orderCmp = null;
     /**
-     * THE VIEW'S FITTED COLUMNS: per column, max display length in characters
-     * and the ground its cells sit on in px.  FITTED ONCE PER VIEW and never
-     * from content again — `fitColumns' is the one door that drops them.
      * @type {{ch: number, ground: number}[]|null}
      */
     let widths = null;
-    /** A pending refit, so a burst of resize events costs one measure. */
     let fitWait = 0;
     /** @type {Map<string, RowText>} */
     const texts = new Map();
     /**
-     * A column's distinct cell values, for the suggestion list — computed on
-     * demand and thrown away with the text cache it was read off.
      * @type {Map<string, {list: string[], counts: Map<string, number>}>}
      */
     const domains = new Map();
@@ -2295,31 +1872,17 @@
       return t;
     }
 
-    /** Forget the cached display data, and the value domains read off it. */
     function clearTexts() { texts.clear(); dropDomains(); }
 
-    /**
-     * Forget what was read off the rows: value domains, the tag vocabulary and
-     * the title index. The index is the expensive one, so its rebuild is queued
-     * for an idle moment rather than left for whoever types next.
-     */
     function dropDomains() {
       domains.clear();
       vocab = null;
       wordIndex = null;
-      // the list-column and date-ness verdicts are read off the rows and die with them:
-      // cached, an empty or early mount would decide "no such column" and never look again.
       multiAt = undefined;
       dateAt = undefined;
       queueIndex();
     }
 
-    /**
-     * Build the word index once the rows have stopped moving, off the path a
-     * keystroke takes.  An edit burst re-queues it, so only the quiet at the
-     * end pays.  A keystroke arriving first builds one itself, which is the
-     * cost this avoids and the worst case it cannot exceed.
-     */
     let idleAt = 0, idleGen = 0;
     function queueIndex() {
       const mine = ++idleGen;          // anything already queued is now stale
@@ -2331,19 +1894,11 @@
     }
 
     /**
-     * The multi-valued column's VALUE DOMAIN: every distinct tag its cells
-     * spell, and the rows behind each.  What `tag:' completes against — a raw
-     * `:a:b:' cell can never prefix-match a bare word.  Thrown away with the
-     * text cache it was read off.
      * @type {{list: string[], ids: Map<string, Set<string>>}|null}
      */
     let vocab = null;
 
     /**
-     * Does column I hold cells of a shape, read off up to `SAMPLE' non-empty
-     * ones?  `SHAPED' cells carrying the shape and none arguing against it
-     * settle it.  A cell that merely fails to be the shape ABSTAINS — asking
-     * every sampled cell to carry it lets one stray decide a whole column.
      * @param {number} i
      * @param {(s: string) => boolean} shapedBy
      * @param {(s: string) => boolean} contraryTo
@@ -2360,11 +1915,6 @@
       return shaped >= SHAPED && !contrary;
     }
 
-    /**
-     * The multi-valued column's index, or -1.  Decided by looking at the CELLS
-     * rather than the column's name: glance's key has been `tags' and is `tag',
-     * and neither spelling is the renderer's business.
-     */
     function multiColumn() {
       if (multiAt !== undefined) return multiAt;
       const cols = columns();
@@ -2377,14 +1927,8 @@
     /** @type {number|undefined} */
     let multiAt;
 
-    /** The `title' column's index, or -1; where a whole-title offer is read. */
     function titleColumn() { return columns().findIndex((c) => c.key === "title"); }
 
-    /**
-     * The tag vocabulary, derived once per row set: the tags themselves, sorted,
-     * and the rows each holds. The rows are what the count beside an offer
-     * counts, so they are kept rather than recounted per keystroke.
-     */
     function tagVocab() {
       if (vocab) return vocab;
       const at = multiColumn();
@@ -2401,13 +1945,9 @@
       return vocab;
     }
 
-    /** Drop the filtered list.  THE WIDTHS STAND: they are the VIEW's, not the
-     * set's, and only `fitColumns' drops them. */
     function dropOrder() { order = null; cancelEase(); }
-    /** Drop the sort too: the rows, the columns or the sort keys moved. */
     function dropSorted() { dropOrder(); sorted = null; orderCmp = null; }
 
-    // chrome built once; the filter input is never recreated, so it keeps focus and caret across updates.
 
     const calm = typeof matchMedia === "function"
               && matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -2429,11 +1969,6 @@
     input.className = "tv-filter";
     input.type = "search";
     input.setAttribute("aria-label", "Filter");
-    /**
-     * WHAT THE BOX TAKES, spelled in the grammar it takes.  The whole door
-     * offers the grammar; the narrowed one names the half it edits first, the
-     * keys it refuses being spelled nowhere in what it offers.
-     */
     const WHOLE_HINT = `key:value · status:open|closed · -word · "some phrase"`;
     const NARROW_HINT = `filter rows · ${WHOLE_HINT}`;
     input.placeholder = WHOLE_HINT;
@@ -2452,9 +1987,6 @@
     filterWrap.appendChild(filterNeg);
     filterWrap.appendChild(input);
     filterWrap.appendChild(acEl);
-    // A SUMMONED MOUNT DRAWS NO TITLE and hangs its chips in a row of their
-    // own: the bar it would sit in belongs to the box, which is away until it
-    // is called for, and a title that comes and goes with the box is no title.
     if (!omnibox && !summoned) { bar.appendChild(titleEl); bar.appendChild(chipsEl); }
     if (dock !== "overlay") bar.appendChild(filterWrap);
 
@@ -2503,25 +2035,14 @@
 
     const geom = { row: ROW_H, head: ROW_H };
     /**
-     * The window in the tbody: its half-open span, and the display order it was
-     * DRAWN from.  `renderRows' is the only writer, so the k-th data row is
-     * `rows[first + k]' by construction — which is how `stampSelection' gets
-     * back to the row behind a `tr' without asking the state a second time.
      * @type {{ first: number, last: number, rows: Row[] }}
      */
     const win = { first: -1, last: -1, rows: [] };
     let remeasuring = false;
-    /** The selected row's index in display order, or -1; what the bar reads. */
     let selAt = -1;
 
     /**
-     * Read SCHEMA's sort list into sort keys.  A `direction' string wins over
-     * `ascending': bare "asc" and "desc" put empty cells last whatever the
-     * column type.  With no `direction' a boolean `nullsFirst' is read instead,
-     * which is the shape `getSort' answers in, so a chain read out and handed
-     * back to `setSort' is the chain that was read.
      * @param {Sort|Sort[]|null} [sort]  falsy is the empty chain; a `SortKey'
-     *   satisfies `Sort', so `getSort''s answer goes back in unchanged
      * @returns {SortKey[]}
      */
     function normalizeSort(sort) {
@@ -2542,23 +2063,17 @@
 
     function columns() { return state.view.columns || []; }
     /**
-     * The SAVED VIEWS the producer named, each a `{name, query}'. The
-     * vocabulary `view:' completes from, and the whole of what this side knows
-     * about them: a view is APPLIED by whoever owns the fetching, so a producer
-     * that grows one needs nothing here.
      * @returns {{name: string, query?: string}[]}
      */
     function savedViews() { return state.view.views || []; }
     function actions() { return state.view.actions || []; }
     function colByKey(k) { return columns().find((c) => c.key === k); }
-    /** The columns a sort key may name: every one the view carries, `sortable'
+    /**
      *  gating the reader's gesture rather than the token. @param {string} k */
     const namesColumn = (k) => !!colByKey(k);
 
 
     /**
-     * One comparator for the whole sort chain, built once per re-sort: each
-     * column's comparator is resolved here, then reused for every comparison.
      * @returns {((a: Row, b: Row) => number)|null}
      */
     function chainComparator() {
@@ -2575,11 +2090,6 @@
           });
       }
       if (!keys.length) return null;
-      /**
-       * Rank one key.  Empty cells are settled before the comparator runs and
-       * outside the direction sign, so reversing the sort does not drag the
-       * blanks along with it.
-       */
       const rank = (k, a, b) => {
         const av = (a.cells || {})[k.key];
         const bv = (b.cells || {})[k.key];
@@ -2600,10 +2110,6 @@
     }
 
     /**
-     * The sort chain as something to read, highest priority first. The hint
-     * line's description is derived from this one walk, so nothing can name a
-     * key the rows are not actually ordered by. A key naming no column is
-     * dropped, the way `chainComparator' drops it.
      * @returns {{key: SortKey, header: string}[]}
      */
     function sortChain() {
@@ -2615,12 +2121,6 @@
       return out;
     }
 
-    /**
-     * The chain as the hint line spells it: `dept asc → score desc'. Column
-     * KEYS rather than headers, and the same words `table-view.el' prints, so
-     * the two renderers describe one order alike. Empty cells sort last by
-     * default and that is left implicit; nulls-first is spelled out.
-     */
     function sortText() {
       return sortChain()
         .map(({ key }) => `${key.column} ${key.ascending ? "asc" : "desc"}`
@@ -2628,23 +2128,8 @@
         .join(" → ");
     }
 
-    /** The column keys `parseQuery' resolves predicates against. */
     const columnKeys = () => columns().map((c) => c.key);
 
-    /**
-     * Every key a token may name: the view's columns, then `planned' and `sort'
-     * where no column already carries the name.  One spelling for the two places
-     * that ask.  The view's own, and nothing the rows imply — an org tag names
-     * no key, or the same token would mean two things on one wire.
-     *
-     * A KEY THE PRODUCER OWNS STAYS OUT for a nearer reason: glance's `ref:ID'
-     * and `from:ID' — either narrowed by `?kind=SLUG' — read one reference edge
-     * off a link graph no page holds.  Keying them here would promise a
-     * predicate over cells that cannot hold the answer, so the token is free
-     * text WHOLE, key half included, and the opaque id it carries is spelled by
-     * no cell: this side finds nothing, which is the subset SCHEMA asks a
-     * producer's key to narrow to.
-     */
     function queryKeys() {
       const keys = columnKeys();
       for (const k of [PLANNED_KEY, SUBSTRING_KEY])
@@ -2654,10 +2139,6 @@
     }
 
     /**
-     * The keys a KEY-STAGE offer may name: every key, or the narrowing half
-     * alone while the box is narrowed.  `queryKeys' stays whole either way — a
-     * shaping token has to PARSE as one to be refused rather than read as free
-     * text — so these two answers are one list and its subset.
      * @returns {string[]}
      */
     function offeredKeys() {
@@ -2665,9 +2146,6 @@
     }
 
     /**
-     * The order in force under query Q: the chain Q names, else the order the
-     * view was STATED in.  `sort:*none*' names the EMPTY chain, a divergence
-     * like any other rather than a fall back to the declared order.
      * @param {string} q  @returns {SortKey[]}
      */
     function chainFor(q) {
@@ -2676,25 +2154,14 @@
     }
 
     /**
-     * The order this view opens in: its declared `sort', or the last one a
-     * producer stated through `sortBy'/`setSort'. What `chainFor' falls back to,
-     * and the whole of what a query naming no sort key leaves standing.
      * @type {SortKey[]}
      */
     let stated = state.sortKeys;
 
-    /** An ISO-ish date cell, which SCHEMA gives prefix matching. */
     const DATEISH = /^\d{4}-\d{2}(-\d{2})?([ T]\d{2}:\d{2})?$/;
-    /** A cell that might be meant as a date: org brackets it, or it opens with
-     *  a year. Not proof of one, but not evidence of prose either. */
     const COULD_BE_DATE = /^[<[]?\d/;
 
     /**
-     * Does column I hold dates? Weighed by `sampledShape', the way the
-     * multi-valued column is weighed: an ISO date is the evidence for, and a
-     * cell that could not be a date at all is the evidence against. Decided
-     * once per query off the sample rather than per cell, so a date column
-     * costs no regex in the filter loop.
      * @param {number} i
      */
     function dateColumn(i) {
@@ -2702,11 +2169,6 @@
     }
 
     /**
-     * Which columns hold dates, for the one predicate that reads them all at
-     * once.  Sampled by `dateColumn' rather than named, so a page carrying
-     * fewer than two dated rows finds none and `planned' narrows where a
-     * producer's own would not (SCHEMA, Filter query).  Cached like
-     * `multiColumn''s verdict and thrown away with it.
      * @returns {number[]}
      */
     function dateColumns() {
@@ -2718,16 +2180,9 @@
     /** @type {number[]|undefined} */
     let dateAt;
 
-    /**
-     * The day the DAY WORDS resolve against: ONE CLOCK READ PER QUERY, taken
-     * at the head of `queryMatcher' before any row.  Every atom of one query
-     * then names one day, whatever the clock does while that query is applied.
-     */
     let compiledDay = localDay();
 
     /**
-     * Does KEY name DATE cells alone?  The comparison forms are read there and
-     * nowhere else, so `title:>x' is the substring it has always been.
      * @param {string} key  @returns {boolean}
      */
     function datedKey(key) {
@@ -2737,19 +2192,11 @@
     }
 
     /**
-     * VALUE's alternatives that name an ATOM on KEY.  A comparison left with no
-     * literal — `scheduled:>', `scheduled:2026-08..' — is half-typed and drops,
-     * so it narrows nothing and establishes no axis, the way `state:' does.
      * @param {string} key  @param {string} value  @returns {string[]}
      */
     function atomsIn(key, value) {
       const alts = alternatives(value);
       if (!datedKey(key)) return alts;
-      // A LITERAL IS OWED AT EVERY END THE VALUE NAMES: behind the operator, and
-      // on both sides of the separator — which is the whole of what `dateValue'
-      // leaves empty.  A SHIFT WITH NO UNIT BEHIND IT is the same vacuum one end
-      // deeper, so `scheduled:today+' rides `vacuousHere' the way `scheduled:>'
-      // does.  THE ATOMS ARE THE COMPACT SPELLINGS, folded once here.
       return alts.map(compacted).filter((v) => {
         const d = dateValue(v);
         const owed = d.lo !== "" && (d.op !== RANGE || d.hi !== "");
@@ -2758,9 +2205,6 @@
     }
 
     /**
-     * The atoms TOK offers its axis: a predicate's alternatives that name one
-     * HERE, or free text's own word.  The bar is a PREDICATE's, so free text
-     * reads its whole value and `+|' is one atom.
      * @param {Token} tok  @returns {string[]}
      */
     function atomsOf(tok) {
@@ -2769,14 +2213,6 @@
     }
 
     /**
-     * Does TOK narrow nothing and establish no axis?  AN UNSIGNED OR ADDED
-     * TOKEN NAMING NO ATOM — `state:', `+state:', `+state:|', a lone `+' — is
-     * dropped ahead of the grouping: left standing it saturates its axis's
-     * disjunction, so `state: +state:DONE' would serve every row where it must
-     * serve the DONE ones.  A NEGATED one keeps its own law, and `-state:'
-     * still empties the table.  A date key rides the same rule while it is
-     * being typed, its half-typed comparison naming no atom, so `+scheduled:>'
-     * saturates nothing.  ATOMS is TOK's own, read once by `queryMatcher'.
      * @param {Token} tok  @param {string[]} atoms  @returns {boolean}
      */
     function vacuousHere(tok, atoms) {
@@ -2784,11 +2220,6 @@
     }
 
     /**
-     * TOK as a row test, negation aside — `queryMatcher' applies that.  Free
-     * text is a substring of the whole row, bar and all: alternation is a
-     * PREDICATE's rule.  A predicate passes on ANY of ATOMS, which is what its
-     * value left (`atomsOf') and is read once by `queryMatcher'.  Built once per
-     * query, never per row.
      * @param {Token} tok  @param {string[]} atoms  @returns {(r: Row) => boolean}
      */
     function tokenTest(tok, atoms) {
@@ -2804,17 +2235,11 @@
       };
     }
 
-    /** V as a substring of the row as it displays; an empty V narrows nothing. */
     function freeTest(v) {
       return v ? (r) => rowText(r).search.includes(v) : () => true;
     }
 
     /**
-     * The cells KEY names, by index — a column's own, or every date column for
-     * `planned'.  Null is "no such key", a different answer from "no cells":
-     * `planned' over a page carrying no date column names NOTHING and finds
-     * nothing, where an unknown key narrows nothing at all.  A column of that
-     * name shadows the reserved key.
      * @param {string} key  @returns {number[]|null}
      */
     function fieldCells(key) {
@@ -2824,10 +2249,6 @@
     }
 
     /**
-     * `KEY:V' as a row test for ONE alternative; V is lowercased and non-empty.
-     * ONE reading over the cells the key names: `*empty*' asks that they ALL be
-     * empty, any other value that ANY of them pass by its own column's
-     * semantics (`cellTest').
      * @param {string} key  @param {string} v  @returns {(r: Row) => boolean}
      */
     function valueTest(key, v) {
@@ -2844,7 +2265,6 @@
     }
 
     /**
-     * V as a test of cell I alone, by SCHEMA's semantics for that column's
      * type. @param {number} i  @param {string} v  @returns {(r: Row) => boolean}
      */
     function cellTest(i, v) {
@@ -2863,36 +2283,15 @@
     }
 
     /**
-     * V as a test of DATE cell I: the bare prefix, one of the four comparisons,
-     * or the range `A..B'.  A DAY WORD stands for its day off `compiledDay'
-     * wherever a literal may, and a SHIFT off either resolves to a plain day HERE
-     * (`dayOf'), before any law below reads one.  THREE PIECES, ONE GUARD:
-     * `cmpTest' carries the granularity law, `dated' the empty cell, and the
-     * range is the two inclusives composed under ONE guard rather than a table
-     * arm of its own.
      * @param {number} i  @param {string} v  @returns {(r: Row) => boolean}
      */
     function stampTest(i, v) {
       const d = dateValue(v);
       const lo = literalIn(d.lo, compiledDay), hi = literalIn(d.hi, compiledDay);
-      // A VALUE NAMING NO DAY SERVES NO ROW — a shift off a base that spells
-      // none — and the BARE arm is asked here, where the guards below never
-      // reach it.
       if (lo === "") return () => false;
-      // THE BARE ARM CARRIES NO `dated' GUARD and needs none — a non-empty
-      // literal is the prefix of no empty cell — which is what keeps it byte
-      // for byte the arm it was.
       if (d.op === "") return (r) => rowText(r).cells[i].startsWith(lo);
-      // A LITERAL THAT DOES NOT OPEN WITH A DIGIT IS NO DATE and matches no
-      // row, the reading `state:TOD' has — where byte order would happily
-      // serve every dated row against `>*empty*'.  The day words and any shift
-      // resolved above, so this asks of a plain literal.
       if (!DATE_LIT.test(lo)) return () => false;
       if (d.op === RANGE && !DATE_LIT.test(hi)) return () => false;
-      // A RANGE IS ONE ATOM, which is the whole of what two tokens cannot say:
-      // asked of each cell in turn (`valueTest'), `planned:A..B' is ONE date
-      // cell inside the interval where `planned:>=A planned:<=B' lets either
-      // cell answer either end.
       const holds = d.op === RANGE
         ? dated((c) => cmpTest(CMP_GE, lo, c) && cmpTest(CMP_LE, hi, c))
         : dated((c) => cmpTest(d.op, lo, c));
@@ -2900,9 +2299,6 @@
     }
 
     /**
-     * ONE axis as a single test: its plain and negated tokens AND, and its
-     * ADDED ones OR against that conjunction.  An axis of added tokens alone is
-     * the disjunction, so a lone `+tag:work' is `tag:work'.
      * @param {{base: ((r: Row) => boolean)[], wide: ((r: Row) => boolean)[]}} ax
      * @returns {(r: Row) => boolean}
      */
@@ -2920,17 +2316,6 @@
     }
 
     /**
-     * Q compiled to a row test, or null when it filters nothing.  Built once
-     * per filter change and reused for every row.
-     *
-     * ONE rule: AXES AND, ALTERNATIVES OR, AND WITHIN AN AXIS THE `+' TOKENS OR
-     * AGAINST WHAT THE OTHERS AND.  An axis is a KEY — each column's own,
-     * `planned''s own, and free text sharing `substring''s — so grouping is by
-     * key and never by adjacency and token order carries nothing; the
-     * alternatives' OR lives inside `tokenTest'.  A VACUOUS token establishes no
-     * axis and is dropped ahead of the grouping, so `state: +state:DONE' is the
-     * DONE rows.  A `sort' token is the exception, being no predicate: it states
-     * the ORDER (`chainFor') and contributes no test in either polarity.
      * @param {string} q  @returns {((r: Row) => boolean)|null}
      */
     function queryMatcher(q) {
@@ -2939,8 +2324,6 @@
       compiledDay = localDay();   // one clock read, before any row
       for (const tok of parseQuery(q, queryKeys())) {
         if (tok.key && VIEW_KEYS.indexOf(tok.key) !== -1) continue;
-        // ONE READING PER TOKEN: the same atoms decide whether it is dropped and
-        // what it tests, and reaching them samples the columns (`datedKey').
         const atoms = atomsOf(tok);
         if (vacuousHere(tok, atoms)) continue;
         const key = tok.key === null ? SUBSTRING_KEY : tok.key;
@@ -2962,11 +2345,6 @@
     }
 
     /**
-     * Put every producer row where its `under' names — after that row, or first
-     * where it is null or gone — in the list ARR, rewritten in place. ONE
-     * PLACEMENT FOR EVERY PASS: a sort would park a half-typed row in the blanks
-     * at the end, and a store delta arriving between an anchor and its phantom
-     * would slide the two apart.
      * @param {Row[]} arr
      */
     function placeProducers(arr) {
@@ -2979,8 +2357,7 @@
       }
     }
 
-    /** The rows to display: sorted, then filtered. Cached. A producer's own row
-     * survives both — it is no data, so no local query speaks about it and no
+    /**
      * order may carry it off the row it stands under. @returns {Row[]} */
     function ordered() {
       if (order) return order;
@@ -2996,18 +2373,10 @@
       return order;
     }
 
-    /** How many pages the filtered set makes, never fewer than one. */
     function pageCount() {
       return pageSize ? Math.max(1, Math.ceil(ordered().length / pageSize)) : 1;
     }
 
-    /**
-     * The rows on show: one page of the filtered, sorted set, or all of it with
-     * no page size.  Everything that renders rows reads this, so the
-     * virtualizer works inside the page and knows nothing about paging.  Widths
-     * are the exception, measuring the whole filtered set or columns would jump
-     * every time the page turned.
-     */
     function paged() {
       const rows = ordered();
       if (!pageSize || continuous) return rows;
@@ -3016,12 +2385,6 @@
       return rows.slice(at, at + pageSize);
     }
 
-    /**
-     * The page the cursor sits in, from zero.  In PAGED that is `page' by
-     * construction; in CONTINUOUS it is derived from where the selection
-     * landed, which is what makes the pager move as the cursor crosses a
-     * boundary.  With nothing selected it falls back to `page'.
-     */
     function cursorPage() {
       if (!pageSize) return 0;
       if (!continuous) return Math.min(page, pageCount() - 1);
@@ -3031,9 +2394,6 @@
     }
 
     /**
-     * The rows a reader would call "on show": one page of the filtered set, or
-     * all of it with no page size.  Stays the CURSOR's page even in CONTINUOUS
-     * presentation, so "shown" means one thing across the handle.
      * @returns {Row[]}
      */
     function shownRows() {
@@ -3043,11 +2403,6 @@
       return rows.slice(at, at + pageSize);
     }
 
-    /**
-     * Go continuous, keeping the viewport exactly where it is: a row at index i
-     * is now at `page * pageSize + i', and the scroller moves by that difference
-     * in the same breath, which is what makes the switch invisible.
-     */
     function goContinuous() {
       if (!pageSize || continuous) return;
       const skipped = page * pageSize;
@@ -3060,28 +2415,12 @@
     function matches(r) { return !orderTest || orderTest(r); }
 
     /**
-     * Column widths.  Under the FILL POLICY the CELLS decide and a header
-     * widens nothing: a column of `[#A]' badges reads exactly as wide as
-     * `[#A]', a longer header ellipsizing into it.  A column holding no cell
-     * has only its header to measure.  Without a `title' column to fill, the
-     * width is the widest cell or the header and its mark.
-     *
-     * TEXT IN `ch', GROUNDS IN `px' — the units each is spent in, so a pill
-     * allowed for in characters is right at one font size and short at the rest.
-     * The multi-valued column is measured on what it DRAWS (`tagsCh'), middots
-     * and smaller type and all, so a run of values is paid for as it reads.
-     *
-     * THE ANSWER IS THE VIEW'S AND IS KEPT: this runs at the first rows paint,
-     * at a `fitColumns' and nowhere else.  A MEASURE OVER NO ROWS IS NOT KEPT —
-     * a mount before its rows and a filter matching none both look like this,
-     * and the headers alone are no answer to freeze a view on.
      * @returns {{ch: number, ground: number}[]}
      */
     function colWidths() {
       if (widths) return widths;
       const cols = columns(), chain = sortChain(), fill = titleColumn() !== -1;
       const multi = multiColumn(), rows = ordered();
-      /** The widest CELL each column holds, in characters; 0 where it holds none. */
       const cell = cols.map(() => 0);
       for (const r of rows) {
         const t = rowText(r);
@@ -3104,26 +2443,9 @@
       return fitted;
     }
 
-    /**
-     * FIT THE COLUMNS TO THE SET THE TABLE NOW HOLDS, and leave them there.
-     * The widths are otherwise the view's for its life: nothing a reader types
-     * and no row that arrives moves a column, so a 60-character title typed
-     * into a draft and a row landing with a longer run both move 0px.
-     *
-     * The occasions are the first rows paint after a mount or a `setView', a
-     * window resize, and a NEW RESULT SET.  A producer narrowing server-side
-     * asks for that last one here: every answer arrives through `setRows', so
-     * the widget cannot tell a new query's rows from a store tick's.
-     */
     function fitColumns() { widths = null; repaint(true); }
 
     /**
-     * Characters the multi-valued column's cells may draw in — the width its
-     * column was WRITTEN at (`applyWidths', cap included), read in the tag
-     * type's own measure.  `Infinity' where no column fills and so nothing
-     * caps: there the column is exactly its widest cell and nothing is cut.
-     * TRUNCATION IS PAINT ALONE; what is searched, sorted and filtered is
-     * still the whole cell the producer sent.
      * @returns {number}
      */
     function tagsRoom() {
@@ -3132,15 +2454,6 @@
       return tagRoom(Math.min(colWidths()[at].ch, COL_MAX_CH));
     }
 
-    /**
-     * Write the measured widths onto the columns under the FILL POLICY.  The
-     * `title' column gets no width at all — under the fixed layout the one
-     * column without one absorbs the remainder — so what is written here is the
-     * OTHERS.  Only the table's `min-width' knows the title exists: the sized
-     * columns plus the title's floor, which is where a narrow window starts
-     * scrolling sideways instead of crushing the title.  A view carrying no
-     * `title' column keeps the widths as hints under the auto layout.
-     */
     function applyWidths() {
       const w = colWidths(), at = titleColumn(), fill = at !== -1;
       if (table.classList.contains("tv-fill") !== fill)
@@ -3159,23 +2472,13 @@
     }
 
 
-    /**
-     * Rebuild the colgroup and the header row (a mount, a view change, and a
-     * cell editor closing over a header a producer may have renamed).
-     *
-     * THE HEAD OWNS THE COLGROUP, so it puts the widths back on it before it
-     * returns: the `<col>' nodes it just built carry none, and under the fixed
-     * layout a bare colgroup is six EQUAL columns — which is what every TAB out
-     * of a draft cell and every ESC out of an editor used to draw
-     * (docs/bugs/fixed/2026-09-13-a-cell-editor-closing-rebuilds-the-head-bare.md).
-     */
     function renderHead() {
       colgroup.innerHTML = "";
       headRow.innerHTML = "";
       colEls = [];
       arrowEls = [];
-      // the gutter is nobody's column — left out of colEls/arrowEls so widths and sort arrows keep their indexing.
       if (chrome) {
+        // The gutter is excluded so column widths and sort arrows keep their indices.
         const gut = document.createElement("col");
         gut.className = "tv-gut";   // pinned to the glyph's measure by the sheet
         colgroup.appendChild(gut);
@@ -3221,23 +2524,12 @@
     }
 
     /**
-     * The mark CHAIN's key at AT wears: its direction, and its place in the
-     * chain where there is more than one key to order. Read twice — the header
-     * draws it and `colWidths' pays for it — so what is measured is the text
-     * that is drawn, however many digits the ordinal runs to.
      * @param {{key: SortKey, header: string}[]} chain  @param {number} at
      */
     const sortMark = (chain, at) =>
       (chain[at].key.ascending ? "▲" : "▼")
         + (chain.length > 1 ? superscript(at + 1) : "");
 
-    /**
-     * Mark every sorted column's header with the direction it is sorted in and,
-     * where the chain has more than one key, its place in the chain. The whole
-     * order is therefore readable over the columns it is about — the leading key
-     * in full ink, the tie-breakers muted, and no ordinal at all where there is
-     * nothing to order.
-     */
     function renderArrows() {
       const chain = sortChain(), cols = columns();
       for (let i = 0; i < arrowEls.length; i++) {
@@ -3251,28 +2543,17 @@
     }
 
 
-    // class derivation is single-source, as [name, on] pairs: rowHTML joins the names that are on,
-    // stampSelection toggles each. Spelled twice, build and re-stamp could disagree; re-stamp (not rebuild) lets marks crossfade.
 
     /**
-     * Which cell a producer's `linked' marks: the `title' column's, that being
-     * the text a reader reads the row by. A view without that column carries no
-     * mark — the flag says the row leads somewhere and there is no other cell
-     * it would be true of. -1 for a row that leads nowhere.
      * @param {Row} r
      */
     function linkedCell(r) { return r.linked ? titleColumn() : -1; }
 
-    /** A row the cursor, the marks and a local query may reach: never a
-     * PRODUCER'S OWN, which has no id the store answers for and whose open
-     * editor holds every key a walk would spend. THE ONE PREDICATE — every pass
-     * that reaches a row asks it, or a mouse reaches what the keyboard cannot.
+    /**
      * @param {Row} r */
     const standing = (r) => !r.producer;
 
-    /** The first row from AT going DIR the cursor may stand on, -1 past either
-     * end. The skip is INSIDE the walk: a filtered copy of the page would
-     * renumber every index the caller holds.
+    /**
      * @param {Row[]} rows  @param {number} at  @param {number} dir */
     function standingFrom(rows, at, dir) {
       for (let i = at; i >= 0 && i < rows.length; i += dir)
@@ -3281,8 +2562,6 @@
     }
 
     /**
-     * The classes row R wears at display index I. Zebra striping is index-borne,
-     * since `:nth-child' sees only the window.
      * @param {Row} r  @param {number} i  @returns {[string, boolean][]}
      */
     function rowClasses(r, i) {
@@ -3295,9 +2574,6 @@
     }
 
     /**
-     * The classes column C's cell of row R wears. LINKEDAT is `linkedCell(r)'
-     * and MULTI `multiColumn()', passed in because both callers already have
-     * each for the whole row.
      * @param {Row} r  @param {number} c  @param {number} linkedAt
      * @param {number} multi  @returns {[string, boolean][]}
      */
@@ -3306,8 +2582,6 @@
       return [["tv-right", !!col && col.align === "right"],
               ["tv-colsel", inCol],
               ["tv-cell-sel", inCol && r.id === state.selected],
-              // the multi-valued cell NAMES ITSELF, which is the whole of what a
-              // consumer needs to open a door of its own over the values.
               ["tv-multi", c === multi],
               ["tv-linked", c === linkedAt]];
     }
@@ -3321,9 +2595,6 @@
     }
 
     /**
-     * Put PAIRS on EL, writing only the ones that MOVED: the list is asked
-     * what it holds before it is asked to change it, so re-deriving every class
-     * of a window a held movement key never altered writes nothing at all.
      * @param {Element} el  @param {[string, boolean][]} pairs
      */
     function stampClasses(el, pairs) {
@@ -3333,8 +2604,6 @@
     }
 
     /**
-     * A row's <tr>. I is its index in the display order, MULTI `multiColumn()'
-     * and ROOM `tagsRoom()' — both one answer for the whole window.
      * @param {Row} r  @param {number} i  @param {number} multi
      * @param {number} room  @returns {string}
      */
@@ -3348,16 +2617,12 @@
       return `<tr class="${classAttr(rowClasses(r, i))}" data-id="${esc(r.id)}">${tds}</tr>`;
     }
 
-    /** A spacer row H pixels tall, standing in for the rows outside the window. */
     function padHTML(h) {
       return `<tr class="tv-pad" style="height:${h}px">`
            + `<td colspan="${columns().length + chrome}"></td></tr>`;
     }
 
     /**
-     * Render the window of rows around the scroll position, with the hint,
-     * widths and empty state that go with it. FORCE redraws even when the
-     * window has not moved (the rows themselves changed).
      * @param {boolean} [force]
      */
     function renderRows(force) {
@@ -3367,7 +2632,6 @@
       const total = rows.length;
       const rowH = geom.row;
       const port = scroll.clientHeight || rowH * 20;   // before layout: a screenful
-      // overscan covers the rounding and the band the sticky header hides.
       const top = Math.max(0, (scroll.scrollTop || 0) - geom.head);
       const first = Math.max(0, Math.floor(top / rowH) - OVERSCAN);
       const last = Math.min(total, first + Math.ceil(port / rowH) + OVERSCAN * 2);
@@ -3375,8 +2639,6 @@
       win.first = first;
       win.last = last;
       win.rows = rows;
-      // asked ONCE for the window: the column's width is the whole set's answer,
-      // so every cell in it is cut against the same measure.
       const multi = multiColumn(), room = tagsRoom();
       let html = first > 0 ? padHTML(first * rowH) : "";
       for (let i = first; i < last; i++) html += rowHTML(rows[i], i, multi, room);
@@ -3391,16 +2653,6 @@
       measure();
     }
 
-    /**
-     * A CELL ITS COLUMN CANNOT HOLD CARRIES ITS WHOLE TEXT, so a hover reveals
-     * what the ellipsis took.  The columns are fitted once per view, so a value
-     * longer than the one they were fitted to is drawn clipped and stays that
-     * way until the next fit — which is the one cost of the frozen policy, and
-     * this is what pays it.
-     *
-     * READ IN ONE PASS AND WRITTEN IN A SECOND: `scrollWidth' forces layout, so
-     * every cell is asked before any is touched and the window costs one.
-     */
     function markClipped() {
       const tds = tbody.querySelectorAll("td:not(.tv-box)");
       const over = [];
@@ -3410,14 +2662,12 @@
         if (over[i]) tds[i].title = tds[i].textContent;
     }
 
-    /** The status line, off the state it reads; clears whoever asked for it. */
     function renderHint() {
       wantHint = false;
       if (!hasHint) return;             // the node was never appended
       hint.innerHTML = hintHTML(ordered().length);
     }
 
-    /** Re-read the row and header heights the spacers are sized from. */
     function measure() {
       const tr = /** @type {HTMLElement|null} */ (tbody.querySelector("tr[data-id]"));
       if (!tr || typeof tr.getBoundingClientRect !== "function") return;
@@ -3432,17 +2682,6 @@
       }
     }
 
-    /**
-     * The furthest this scroller can travel with PORT pixels on show.
-     *
-     * `scrollHeight' answers wherever the question is about the rows on show:
-     * `geom.row' is a ROUNDING of the row height, so `geom.head + rows *
-     * geom.row' runs a fraction short PER ROW — twenty pixels over a hundred
-     * rows, which parks the tail under the hint bar.  At a page turn and at the
-     * continuous seam the TBODY is not yet the rows on show, and there the
-     * modelled sum is all there is until the render lands; the row count is
-     * what tells the two apart.
-     */
     function maxScroll(port) {
       const rows = paged();
       const content = win.rows.length === rows.length
@@ -3451,10 +2690,6 @@
     }
 
     /**
-     * Where the current page sits in the filtered set: 1-based `page' of
-     * `pages', rows `from'..`to' of `total'.  The hint line and the handle
-     * both read it, so the range on screen and the range a consumer is told
-     * are one calculation.
      * @returns {{page: number, pages: number, from: number, to: number, total: number}}
      */
     function pageInfo() {
@@ -3467,16 +2702,10 @@
         : { page: 1, pages: 1, from: total ? 1 : 0, to: total, total };
     }
 
-    /** N with thousands grouped, written the same wherever the page runs. */
     function grouped(n) {
       return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
     }
 
-    /**
-     * Where in the filtered set this page sits, and the way to either side.
-     * The range is `pageInfo''s, so the line a reader sees and the numbers a
-     * consumer reads back are one calculation rather than two that agree.
-     */
     function pagerHTML() {
       const p = pageInfo();
       const span = p.from === p.to
@@ -3488,12 +2717,6 @@
            + ` · ${step(1, "next ›", p.page < p.pages)}`;
     }
 
-    /**
-     * The status line: what is on show, how it is sorted, and the actions as
-     * `KEY label' pairs — the way table-view.el prints its legend. The keys are
-     * the interface; a consumer binds them and dispatches the command, and the
-     * renderer offers no button to press instead.
-     */
     function hintHTML(shown) {
       const total = state.rows.length;
       const count = shown === total ? `${total} rows` : `${shown}/${total} rows`;
@@ -3506,11 +2729,9 @@
           if (!a.key) continue;
           out += ` · <b class="tv-key">${esc(a.key)}</b> ${esc(a.label || a.command)}`;
         }
-      // the mark count is of every mark (filtered- or paged-away included) — the number a bulk action runs over.
       if (marks && markSet.ids.size)
         out = `${esc(grouped(markSet.ids.size))} marked · ${out}`;
       if (flags && flagSet.ids.size) {
-        // the flag-helper text is the consumer's own string; a renderer inventing keys would assert a keymap it doesn't own.
         const help = flagHelp && state.selected !== null && flagSet.ids.has(state.selected)
           ? ` · ${flagHelpHTML}` : "";
         out = `${esc(grouped(flagSet.ids.size))} flagged${help} · ${out}`;
@@ -3519,10 +2740,6 @@
     }
 
     /**
-     * COL as a real column index, or null for a whole-row selection — which is
-     * what a column outside the table is.  A consumer steps by reading the
-     * column and handing back one more, so the index past an end is a reader
-     * walking off the cells onto the row they are still on.
      * @param {number|null|undefined} col  @returns {number|null}
      */
     function cellCol(col) {
@@ -3532,16 +2749,9 @@
     }
 
     /**
-     * Move the selection to row ID, and within it to column COL — or to no
-     * column at all, which is the whole-row look this had before cells were
-     * selectable. Stamps the window in place; the classes are re-derived from
-     * the same state on every render, so a scroll, an upsert or a `setRows'
-     * puts them back on whatever row still carries the id.
      * @param {string|null} id  @param {number|null} [col]
      */
     function setSelected(id, col) {
-      // A CLICK REACHES NO ROW THE KEYBOARD CANNOT: a producer's own row is
-      // outside the cursor's set whichever gesture arrives at it.
       const on = state.rows.find((r) => r.id === id);
       if (on && !standing(on)) return;
       state.selected = id ?? null;
@@ -3550,13 +2760,6 @@
       stampSelection();
     }
 
-    /**
-     * Keep the selection where it was on screen when the row it was on stops
-     * being there — filtered away, deleted, replaced by a new page. The id is
-     * gone, but the place is not, so the selection stays at that visual index
-     * (clamped to what is left) rather than disappearing and making the next
-     * keypress start over from the top.
-     */
     function keepSelection() {
       if (state.selected === null) return;
       const rows = paged();
@@ -3564,39 +2767,25 @@
       if (selAt >= 0 && rows[selAt] && rows[selAt].id === state.selected) return;
       if (rows.some((r) => r.id === state.selected)) return;
       const want = Math.max(0, Math.min(rows.length - 1, selAt));
-      // The PLACE may now hold a producer's own row, which the cursor may not
-      // stand on; the nearest one it may, either way, is where it lands.
       const at = standingFrom(rows, want, 1);
       selAt = at === -1 ? standingFrom(rows, want, -1) : at;
       if (selAt === -1) { state.selected = null; state.selCol = null; return; }
       state.selected = rows[selAt].id;
     }
 
-    /** Where the selected row sits in display order, or -1. */
     function indexOfSelected() {
       if (state.selected === null) return -1;
       const rows = paged();
-      // The cached index is right unless the order moved under it.
       if (selAt >= 0 && rows[selAt] && rows[selAt].id === state.selected) return selAt;
       return rows.findIndex((r) => r.id === state.selected);
     }
 
-    /**
-     * The row and column state the window wears, re-derived rather than
-     * rebuilt — which is what leaves the grounds something to crossfade
-     * between.  One pass, a no-op wherever the element already agrees.  Only
-     * the window is stamped; the rows outside it have no elements.
-     *
-     * The row and index behind a `tr' come out of `win', which holds the order
-     * the tbody was DRAWN from: asking `paged()' again would get an answer the
-     * DOM had never been told about.
-     */
     function stampSelection() {
       const trs = tbody.children, multi = multiColumn();
       let k = 0;
       for (let i = 0; i < trs.length; i++) {
         const tr = /** @type {HTMLElement} */ (trs[i]);
-        if (tr.dataset.id === undefined) continue;      // a spacer, not a row
+        if (tr.dataset.id === undefined) continue;      // spacer
         const at = win.first + k++, r = win.rows[at];
         stampClasses(tr, rowClasses(r, at));
         const linkedAt = linkedCell(r), tds = tr.children;
@@ -3609,15 +2798,8 @@
     }
 
 
-    // marks and flags are one mechanism, two id-keyed sets: keyed by id so a mark survives
-    // re-send/re-sort/filter/page; two sets because two questions (a flag is a pending action, a mark a standing selection).
 
     /**
-     * A set of row ids the table draws a state for. DRAWN says whether this
-     * table draws it at all: it gates the class, the chrome and the count
-     * together, so without the option there is nothing to hide rather than
-     * something hidden. The set itself fills either way, which is what lets a
-     * consumer read the ids back off a table that paints none of them.
      * @param {boolean} drawn  @returns {RowState}
      */
     function rowState(drawn) {
@@ -3627,7 +2809,7 @@
         ids,
         /** Does ID wear this state, as the table draws it? @param {string} id */
         shows(id) { return drawn && ids.has(id); },
-        /** Put the state on ID or take it off.
+        /**
          *  @param {string} id  @returns {boolean} the state it landed in */
         toggle(id) {
           const on = !ids.has(id);
@@ -3638,8 +2820,6 @@
         /** Take it off ID, whether or not it was there. @param {string} id */
         drop(id) { if (ids.delete(id)) paintMarks(); },
         /**
-         * Put it on every row of ROWS. Idempotent: a row already carrying it
-         * stays, so running this twice is running it once.
          * @param {Row[]} rows  @returns {number} how many rows carry it after
          */
         addAll(rows) {
@@ -3648,18 +2828,12 @@
           if (ids.size !== before) paintMarks();
           return ids.size;
         },
-        /** Take it off every row. The other state is a different question and
-         *  is left standing. */
         clear() {
           if (!ids.size) return;
           ids.clear();
           paintMarks();
         },
         /**
-         * The ids, in the order a reader would read them off: the ones on show,
-         * in display order, then the ones a filter or another page is hiding,
-         * in the order they were laid down. Stable either way — a bulk action
-         * over this runs in the same order twice.
          * @returns {string[]}
          */
         list() {
@@ -3675,23 +2849,12 @@
     const flagSet = rowState(flags);
 
     /**
-     * Mark every row of the CURRENT FILTERED SET — all of it, never the page on
-     * show.  Idempotent.  `addAll' is the MECHANISM's and both states hold it;
-     * this is where the HANDLE offers it, on marks alone, `unflagRow' being the
-     * same asymmetry on flags.
      * @returns {number} how many rows carry a mark afterwards
      */
     function markAll() {
       return marks ? markSet.addAll(ordered().filter(standing)) : 0;
     }
 
-    /**
-     * Repaint what a mark moved: the grounds, the boxes and the count, all
-     * through the frame the selection already uses. The count needs asking for
-     * separately because `renderRows' turns back at the door when the window
-     * has not moved, which is the common case for a toggle — and a held `m'
-     * would otherwise rewrite the status line thirty times a second.
-     */
     function paintMarks() {
       wantSelection = true;
       wantHint = true;
@@ -3699,15 +2862,6 @@
     }
 
     /**
-     * Select the row with ID, scrolling its place in the (virtual) list into
-     * view.  Rows outside the rendered window have no element to click, so this
-     * is how a consumer moves the selection.  False when no visible row has
-     * that id.  A COL outside the columns that exist selects none of them, so a
-     * consumer stepping past either end lands on the whole-row selection.
-     *
-     * This scrolls, keeping a margin under the cursor; a CLICK must not, the
-     * row being under the pointer already — the delegated handler goes through
-     * `setSelected', which moves the marks and nothing else.
      * @param {string} id  @param {number} [col]  @returns {boolean}
      */
     function selectRow(id, col) {
@@ -3722,24 +2876,14 @@
       return true;
     }
 
-    /**
-     * Repaint the selection on the next frame, once however many times it moved
-     * in between.  A held movement key fires ~30 a second, each a scroll
-     * adjustment and a window rewrite; per event is what makes it stutter.  The
-     * state is already correct, so the frame only has to paint.
-     */
     function paintSelection(was) {
       wantSelection = true;
       if (flagHelp) wantHint = true;
       if (selAt >= 0) easeToRow(selAt, was === undefined ? selAt : was);
-      // Stamp the selection here without a table refresh, so the row lights the
-      // same frame it moved and never blinks.  The frame loop keeps the window
-      // and ease; an off-window row waits for `tick'.
       stampSelection();
       schedule();
     }
 
-    // one frame loop drives window + marks + ease; two schedulers would re-render the tbody twice a frame and race scrollTop.
 
     let frameId = 0;
     let wantWindow = false;      // the scroll moved; re-window if it has to
@@ -3747,15 +2891,15 @@
     let wantHint = false;        // the count moved; rewrite the status line
     let easeAt = 0;              // where the viewport is heading
     let easing = false;
-    /** What that heading is worked out from: the row, its direction, the origin. */
     let aim = { row: -1, down: true, from: 0 };
 
     function schedule() { if (!frameId) frameId = frame(tick); }
 
+    // One frame loop owns windowing, selection, hints, and eased scrolling.
     function tick() {
       frameId = 0;
       if (easing) {
-        // re-read geom here, where the tick owns the frame, or an ease parks short against a height an earlier frame read.
+        // Geometry is re-read in-frame so easing cannot stop against stale dimensions.
         measure();
         const port = scroll.clientHeight || 0;
         if (port) easeAt = aimed(port);
@@ -3764,14 +2908,11 @@
         else {
           const was = scroll.scrollTop;
           scroll.scrollTop = was + step * EASE;
-          // a refused step is an arrival: scrollTop snaps to a device pixel past scrollHeight's fractional end, so ending only on arrival loops forever.
+          // Device-pixel rounding can refuse a fractional step; refusal is arrival.
           if (scroll.scrollTop === was) easing = false;
         }
         wantWindow = true;
       }
-      // THROUGH `repaint', never a bare `renderRows': a window this frame moved
-      // rebuilds the tbody, and an open editor standing in it is held across
-      // that the way every other redraw holds it.
       if (wantWindow || wantSelection) repaint();
       if (wantSelection) stampSelection();
       if (wantHint) renderHint();
@@ -3779,11 +2920,6 @@
       if (easing) schedule();
     }
 
-    /**
-     * Where the viewport has to sit for `aim' to hold, worked out against the
-     * geometry as it now measures and clamped to the content. PORT is the
-     * viewport's height.
-     */
     function aimed(port) {
       const top = geom.head + aim.row * geom.row, foot = top + geom.row;
       let to = aim.from;
@@ -3792,20 +2928,6 @@
       return Math.max(0, Math.min(maxScroll(port), to));
     }
 
-    /**
-     * Aim the viewport at row I, arrived at from row WAS, keeping a margin
-     * under the cursor the way `scroll-margin' and `scrolloff' do: moving down,
-     * the row's foot stops at two thirds of the port; moving up, its head stops
-     * at one third; between those the viewport holds still.  Clamped to the
-     * content, so at either end the cursor walks into the margin.
-     *
-     * Retargeting rather than queueing: a held key lands a new target every
-     * 30ms or so and the one loop heads for the latest.  The aim is taken from
-     * where the ease is GOING rather than where it is, or each keypress would
-     * re-derive against a viewport in flight and creep.  The three inputs are
-     * kept rather than their answer, so the frame loop works the target out
-     * again as rows measure what they measure when drawn.
-     */
     function easeToRow(i, was) {
       const port = scroll.clientHeight || 0;
       if (!port) return;
@@ -3818,28 +2940,13 @@
       easing = true;
     }
 
-    /**
-     * WHICH HALF OF THE GRAMMAR THE BOX EDITS.  Narrowed, it offers the
-     * narrowing keys alone and refuses a shaping token on commit; whole, it
-     * takes everything.  The flag is the SESSION's — every summons states it
-     * and the box closing clears it — so a plain `openFilter' is the whole
-     * grammar however the last one opened.
-     */
     let narrowing = false;
 
-    /** The refusals already spoken this session; one spelling is echoed once.
+    /**
      *  @type {Set<string>} */
     let spoken = new Set();
 
     /**
-     * Summon the control, WHERE THE DOCK PUTS IT: the overlay dock raises the
-     * veil, the strip dock draws the box onto the chips' line, and a mount that
-     * docks nowhere has it on the page already and only takes it. Either way it
-     * is the one entry point a consumer's key binds to.
-     *
-     * HOW.NARROW OPENS THE FILTER HALF: this session offers the narrowing keys
-     * alone and refuses a shaping token on commit (`chipUp'), while the chips
-     * already standing ride along untouched — the strip is not the box.
      * @param {{narrow?: boolean}} [how]
      */
     function openFilter(how) {
@@ -3847,25 +2954,17 @@
       spoken = new Set();
       input.placeholder = narrowing ? NARROW_HINT : WHOLE_HINT;
       if (dock === "overlay") veil.style.display = "";
-      // before the focus: the docked box is display:none until the class is on,
-      // and a box that is not drawn takes no keys.
       if (dock === "strip") root.classList.add("tv-typing");
       input.focus();
       if (input.select) input.select();
     }
 
-    /** Put it away again, and give the keyboard back to the table. */
     function closeFilter() {
       closeAc();
       if (dock === "overlay") veil.style.display = "none";
       input.blur();          // the blur listener un-summons; one owner for the class
     }
 
-    /**
-     * The narrowed session ends with the box, and ITS REFUSALS END WITH IT: the
-     * shaping tokens left standing are taken out on the way, so a token this
-     * door would not deliver cannot ride the next gesture that reads the box.
-     */
     function endNarrow() {
       if (!narrowing) return;
       const kept = typedQuery();          // the box, less what it refused
@@ -3875,7 +2974,7 @@
       if (kept !== input.value.trim()) { input.value = kept; renderNegation(); }
     }
 
-    /** Drop what is half-typed, answering whether there was any.
+    /**
      *  @returns {boolean} */
     function clearTyped() {
       if (!input.value) return false;
@@ -3886,10 +2985,6 @@
       return true;
     }
 
-    /** Back out of the operand the summoned NOT box is editing, keeping the
-     * operator as the door the reader deliberately entered.  The bare `-' was
-     * never committed, so this must not deliver it as a new query; it leaves
-     * the box ready for a fresh operand. */
     function clearNegatedPart() {
       if (!summoned || !input.value.startsWith("-") || input.value === "-")
         return false;
@@ -3902,39 +2997,19 @@
     /** True while the filter box holds the keyboard. @returns {boolean} */
     const filtering = () => document.activeElement === input;
 
-    /**
-     * Escape's ONE STEP out of `inline''s editor: the half-typed filter is
-     * dropped AND the cursor lands on a row.  A compact table is a thing to pick
-     * FROM, so an emptied box is an editor the reader was already done with.
-     * Backspace over an already-empty box lands in the same place, through
-     * `handOver' alone — there is nothing left for it to drop.
-     */
     function abandonFilter() {
       clearTyped();
       handOver();
     }
 
-    /**
-     * The end of every ladder: the table takes the selection and the control
-     * goes. For a summoned box going means the box is gone — the overlay
-     * dissolves, the docked box leaves the strip — which is the same gesture
-     * one step further out than a resident box's blur. The chips stay either
-     * way: they are the page's, not the box's.
-     */
     function handOver() {
       selectFirstVisible();
       closeFilter();
     }
 
-    /** Give the viewport up: whoever is scrolling it now outranks the ease. */
     function cancelEase() { easing = false; }
 
     /**
-     * Turn to page N (from zero), landing the selection on the row LAND names
-     * — its first or its last. The page is a different set of rows, so the
-     * viewport jumps to the end the reader arrives at rather than gliding
-     * across a hundred rows they never asked to see; the band then places the
-     * landing row from there, which is a short move or none.
      * @param {number} to  @param {"first"|"last"} land  @returns {boolean}
      */
     function turnTo(to, land) {
@@ -3944,7 +3019,6 @@
       const col = state.selCol;
       continuous = false;
       page = at;
-      // continuous mode can reach this empty where paged can't: a producer emptying the set mid-glide leaves a rows-less snap-back.
       const rows = paged();
       if (!rows.length) { renderRows(true); return true; }
       const first = land === "first";
@@ -3957,11 +3031,6 @@
     }
 
     /**
-     * Move the selection one row, and off the end of a page onto the next —
-     * landing on its first row going forward, its last going back, with the
-     * column carried through. A consumer's next-row and previous-row keys are
-     * this: the page boundary is the renderer's to know about, since only it
-     * knows there is one.
      * @param {number} step  @returns {boolean}
      */
     function selectStep(step) {
@@ -3983,11 +3052,6 @@
       return selectRow(rows[across].id, col ?? undefined);
     }
 
-    /**
-     * Put the selection on the first visible row, unless it is already on one.
-     * What Enter in the filter box hands the table, so the keys a consumer
-     * binds to rows have something to move from.
-     */
     function selectFirstVisible() {
       const rows = paged();
       if (!rows.length) return;
@@ -3996,10 +3060,6 @@
     }
 
     /**
-     * Put CHAIN in force and redraw. The one place an order is installed —
-     * every gesture that changes it lands here, so a new order always resets
-     * the page and the scroll the same way and always redraws both things that
-     * describe it: the headers and the hint line.
      * @param {SortKey[]} chain
      */
     function applyChain(chain) {
@@ -4019,12 +3079,6 @@
                         && !!k.nullsFirst === !!b[i].nullsFirst);
 
     /**
-     * Sort on KEY in ASCENDING, replacing whatever sort was in force. False
-     * when no column carries that key, so a caller can tell a sort that did not
-     * happen from one that did.
-     *
-     * A producer's call, so it RESTATES the view's order: it is what a query
-     * naming no sort key leaves standing, the way the declared `sort' is.
      * @param {string} key @param {boolean} ascending @returns {boolean}
      */
     function sortTo(key, ascending) {
@@ -4035,20 +3089,6 @@
     }
 
     /**
-     * PROMOTE KEY to the head of the sort chain, ascending, the chain it had
-     * shifting down behind it and KEY dropped from wherever it sat below — a
-     * chain never names a column twice.  KEY already leading instead FLIPS its
-     * direction and leaves the keys behind it where they are.
-     *
-     * The chain is WRITTEN INTO THE QUERY as ONE arrow-form token
-     * (`sort:title->state:desc') and delivered like any other filter change, so
-     * one representation carries the order everywhere; `deliver' puts it in
-     * force.  What it composes onto is the order IN FORCE, declared chain and
-     * all, so only the promoted key ever moves and no tie-breaker is lost.
-     *
-     * `sortable' gates this, the way it gates a header click: promotion is a
-     * READER's gesture.  `sortBy' is the producer's — ungated, replacing the
-     * chain outright and touching no query.
      * @param {string} key @returns {boolean} whether the chain moved
      */
     function sortPromote(key) {
@@ -4065,10 +3105,6 @@
     }
 
     /**
-     * Put CHAIN into the applied query: the sort tokens it already carries come
-     * off, the chain goes on the end as ONE arrow-form token, and the query is
-     * delivered. The tail is where it lands because the strip reads left to
-     * right as what is on show and then what ORDER it is in.
      * @param {SortKey[]} chain
      */
     function writeSort(chain) {
@@ -4097,17 +3133,13 @@
       return a && a.command;
     }
 
-    /** Where an event landed (clicks always land on an element).
+    /**
      * @param {Event} e  @returns {Element|null} */
     const hit = (e) => /** @type {Element|null} */ (e.target);
     /** @param {Row[]} rows  @param {HTMLElement} tr */
     const rowOf = (rows, tr) => rows.find((r) => r.id === tr.dataset.id);
 
     /**
-     * Which column of TR the cell TD is, or null where it is none — no cell at
-     * all, or the mark box, which is chrome and belongs to no column. One
-     * answer for both pointer paths, so the offset the chrome introduces is
-     * applied once rather than at every place a td is turned into an index.
      * @param {HTMLElement} tr  @param {HTMLElement|null} td  @returns {number|null}
      */
     function colOf(tr, td) {
@@ -4116,7 +3148,6 @@
       return at < 0 ? null : at;
     }
 
-    /** Is TARGET inside the mark box of a row this table is marking? */
     const onBox = (target) => marks && !!target.closest("td.tv-box");
 
 
@@ -4142,20 +3173,9 @@
                   colOf(tr, /** @type {HTMLElement|null} */ (t.closest("td"))));
     });
 
-    // ── CELL EDITING ──────────────────────────────────────────────────────
-    // AN IN-CELL EDITOR THE WIDGET OWNS: an <input> placed IN the td/th, filled
-    // with the cell's RAW value (what `displayText' renders FROM, so a link cell
-    // edits its `[[..]]'), committed as an `onEdit' + `tableview-edit'.  The
-    // producer owns the write: the widget REPORTS and does not touch its own
-    // view -- the consumer writes and feeds the new view back.  One editor at a
-    // time; a column opts in with `editable', and a `producer' row is opted in
-    // whole, its cells being the producer's rather than the store's.
     /** @type {{ cell: any, id: string|null, col: number, kind: "cell"|"header",
      *           input: any, raw: string, token: number } | null} */
     let cellEdit = null;
-    /** BUMPED PER OPEN, so the producer tells one edit from the next where the id
-     * and the column repeat.  A repaint's re-open KEEPS the number it held: the
-     * editor never closed, the node under it was rebuilt. */
     let cellToken = 0;
     const columnEditable = (col) => { const c = columns()[col]; return !!(c && c.editable); };
     const cellRaw = (id, col) => {
@@ -4165,8 +3185,6 @@
     function closeCellEditor() {
       if (!cellEdit) return;
       cellEdit = null;
-      // Restore the drawn cell: the producer may have changed the data (a redraw
-      // shows it) or not (the redraw shows the value unchanged).
       renderRows(true);
       renderHead();
     }
@@ -4179,10 +3197,8 @@
       root.dispatchEvent(new CustomEvent("tableview-edit",
         { detail: { id, col, value, kind } }));
     }
-    /** THE CALLER CLOSES: both doors close before they look a cell up, a close
-     * redrawing the rows under whatever node was found first.
+    /**
      * @param {[number, number]|null} [sel]  what to leave selected, the WHOLE
-     * value where none is named.
      * @param {{raw: string, token: number}|null} [keep]  a HELD editor's own
      * open, put back: the value it opened on and the number that open wears. */
     function openCellEditor(cell, id, col, kind, raw, sel, keep) {
@@ -4198,37 +3214,26 @@
       if (sel) input.setSelectionRange(sel[0], sel[1]);
       else if (input.select) input.select();
       input.addEventListener("keydown", (e) => {
-        // The input takes its own keys; a driver's key map does not see them.
         e.stopPropagation();
-        // THE PRODUCER IS ASKED FIRST, this being the only dispatch a key inside
-        // a cell reaches: a row it owns has keys of its own, and `true' says it
-        // took this one.
         if (o.onCellKey && cellEdit && o.onCellKey(e, openCell())) return;
         if (e.key === "Enter" || e.key === "Tab") { e.preventDefault(); commitCellEditor(); }
         else if (e.key === "Escape") { e.preventDefault(); closeCellEditor(); }
       });
       return true;
     }
-    /** The open cell as the producer sees it: what stands in the box, what it
+    /**
      * opened on, and which open this is. @returns {OpenCell} */
     const openCell = () => ({
       id: cellEdit.id, col: cellEdit.col, key: keyOf(cellEdit.col),
       value: cellEdit.input.value, raw: cellEdit.raw, token: cellEdit.token });
-    /** COL's key, or `"" ' past the columns. */
     const keyOf = (col) => { const c = columns()[col]; return c ? c.key : ""; };
-    /** Is ID a producer's own row? ITS CELLS ARE ALL EDITABLE: a per-column
-     * `editable' cannot carry this, since the column would then open a dead
-     * editor on every real row's double-click. */
     const producerRow = (id) =>
       !standing(state.rows.find((r) => r.id === id) || {});
-    // CLOSED BEFORE THE CELL IS LOOKED UP, never after: closing redraws the rows,
-    // so a node found first would be orphaned by the time the editor entered it.
     /** @param {[number, number]|null} [sel]  @param {string|null} [raw]  the
-     * value to open on, the CELL'S OWN where none is named — which is how a held
-     * line comes back without ever entering `r.cells'.
      * @param {{raw: string, token: number}|null} [keep]  `holdEditor''s own open. */
     function editCell(id, col, sel, raw, keep) {
       if (!producerRow(id) && !columnEditable(col)) return false;
+      // Closing redraws rows, so locate the target only after the close.
       closeCellEditor();
       const tr = /** @type {HTMLElement|null} */
         ([...tbody.querySelectorAll("tr[data-id]")]
@@ -4238,15 +3243,11 @@
       return openCellEditor(td, id, col, "cell",
                             raw == null ? cellRaw(id, col) : raw, sel, keep);
     }
-    /** WHICH CELL IS OPEN, by index and by column key, or null. The widget owns
-     * that state, so a producer asks it rather than reading the DOM back. */
     const getEditing = () =>
       (cellEdit && cellEdit.kind === "cell"
         ? { id: cellEdit.id, col: cellEdit.col, key: keyOf(cellEdit.col) } : null);
 
-    /** WHERE ID's COL CELL IS DRAWN, or null past the rows this page shows. The
-     * widget knows where a row stands, so a producer laying an overlay OVER a
-     * cell asks it rather than walking the table's own DOM.
+    /**
      * @param {string} id  @param {number} col */
     function cellRect(id, col) {
       const tr = /** @type {any} */
@@ -4257,13 +3258,6 @@
     }
 
     /**
-     * AN OPEN CELL EDITOR, HELD ACROSS A REPAINT: the caret comes back where it
-     * stood. THE TYPED LINE RIDES IN THE
-     * HANDLE, a producer's row and a standing one alike — one object holds it,
-     * never two — and the row is left as it was: a standing row's cells are the
-     * store's, and a producer's own cell is drawn by the input standing in it.
-     * The OPEN travels too, so the re-open is the same open rather than a new
-     * one. The handle is dropped rather than closed, the repaint being the close.
      * @returns {{id: string, col: number, value: string, raw: string,
      *            token: number, sel: [number, number]}|null}
      */
@@ -4276,14 +3270,13 @@
                sel: [input.selectionStart ?? input.value.length,
                      input.selectionEnd ?? input.value.length] };
     }
-    /** The editor HELD put back, caret and all — never `select()'d: every store
-     * tick repaints, and a select-all there swallows the reader's next key.
+    /**
      * @param {{id: string, col: number, value: string, raw: string,
      *          token: number, sel: [number, number]}|null} held */
     function resumeEditor(held) {
       if (held) editCell(held.id, held.col, held.sel, held.value, held);
     }
-    /** Redraw under an open cell editor, which survives it.
+    /**
      * @param {boolean} [force]  redraw a window that has not moved. */
     function repaint(force) {
       const held = holdEditor();
@@ -4295,11 +3288,8 @@
       closeCellEditor();
       const th = [...headRow.querySelectorAll("th[data-key]")][col];
       const c = columns()[col];
-      // Open on the TRIMMED name, so a header a producer left blank (a space, to
-      // draw a blank cell rather than the key fallback) opens as empty.
       return openCellEditor(th, null, col, "header", c ? String(c.header || "").trim() : "");
     }
-    // A DOUBLE-CLICK on an editable cell (or its header) opens the editor.
     scroll.addEventListener("dblclick", (e) => {
       const t = hit(e);
       if (!t) return;
@@ -4313,7 +3303,6 @@
       const td = /** @type {HTMLElement|null} */ (t.closest("td"));
       if (tr && td && tr.dataset.id !== undefined) editCell(tr.dataset.id, colOf(tr, td));
     });
-    // ──────────────────────────────────────────────────────────────────────
 
     let pressAt = 0, pressX = 0, pressY = 0, pressRan = false;
     /** @type {string|null} */
@@ -4329,10 +3318,7 @@
       const tr = t && /** @type {HTMLElement|null} */ (t.closest("tr[data-id]"));
       const touch = e.touches && e.touches[0];
       if (!tr || !touch) return;
-      // a press on the box stays the box; else the completing touchend swallows the toggle's click and the 44px target can't be checked.
       if (onBox(t)) return;
-      // A LONG PRESS IS A ROW'S DEFAULT COMMAND, and a producer's own row is no
-      // command's target — the same wall the cursor meets.
       if (!standing(rowOf(state.rows, tr) || {})) return;
       cancelPress();
       pressRan = false;
@@ -4367,8 +3353,6 @@
       const t = hit(e);
       const tr = t && /** @type {HTMLElement|null} */ (t.closest("tr[data-id]"));
       if (!tr) return;
-      // A ROW'S DEFAULT COMMAND NAMES THE ROW, and a producer's own is no
-      // command's target — it opened its cell editor on the same click.
       const r = rowOf(state.rows, tr);
       if (!r || !standing(r)) return;
       const cmd = defaultCommand();
@@ -4380,24 +3364,15 @@
       scroll.addEventListener(how, cancelEase);
 
 
-    /** The committed tokens, each the source text it was written as. */
     /** @type {string[]} */
     let chips = [];
 
     /**
-     * The trail a drill-down left: where the reader came FROM, oldest first.
-     * Handle state, the way a mark is — the consumer owns the drilling and this
-     * owns the strip — so it survives `setRows' and every filter, and `setView'
-     * takes it with the world it described.
      * @type {Crumb[]}
      */
     let crumbs = [];
 
     /**
-     * WHAT THE BOX CONTRIBUTES: its text, less every shaping token while the
-     * session is narrowed.  Such a token is refused and left where the reader
-     * can see it, and a refusal the producer still received would be no refusal
-     * at all.  The CHIPS are read whole either way — the strip is not the box.
      * @returns {string}
      */
     function typedQuery() {
@@ -4409,7 +3384,6 @@
       return kept.join(" ");
     }
 
-    /** The query as it stands: every chip, then whatever is in the box. */
     function effectiveQuery() {
       const typed = typedQuery();
       if (!chips.length) return typed;
@@ -4424,10 +3398,6 @@
     }
 
     /**
-     * How a live chip reads.  A `chipLabel' formatter may alias the token; the
-     * QUERY is untouched, so `getQuery', `onFilter' and what a click takes off
-     * are all still the token as written.  Crumbs never reach this — a crumb's
-     * label IS its label.
      * @param {string} tok
      */
     function chipText(tok) {
@@ -4438,8 +3408,6 @@
       return spelled(tok);
     }
 
-    /** The chip's visible face. Its source remains TOK in `chips' and in every
-     * query API; a negation alone is respelled as an attached NOT operator. */
     function chipFace(tok) {
       const text = chipText(tok), t = asToken(tok);
       if (!t || !t.negated)
@@ -4450,12 +3418,6 @@
     }
 
     /**
-     * TOK in the grammar's own `key:value' spelling. A bare word is free text,
-     * which is `substring:' with the key elided (SCHEMA.md, Filter query), so
-     * the chip spells the key out and the strip reads `key:value' throughout.
-     * THE SIGN IS THE HEAD and rides the spelling: `+bread' draws as
-     * `+substring:bread', the way `-bread' draws as `-substring:bread'.
-     * The QUERY keeps what the reader typed — this is the label alone.
      * @param {string} tok  @returns {string}
      */
     function spelled(tok) {
@@ -4466,10 +3428,6 @@
     }
 
     /**
-     * The crumbs as the strip draws them, leftmost first. Past CRUMB_MAX the
-     * oldest collapse into one `… +N' counter, and the counter takes a slot of
-     * its own — so the strip is never wider than CRUMB_MAX chips however deep
-     * the drilling went, and the fifth crumb is what folds the first two away.
      * @returns {string[]}
      */
     function crumbStrip() {
@@ -4504,12 +3462,6 @@
     const asToken = (tok) => parseQuery(tok, queryKeys())[0];
 
     /**
-     * Whether TOK states an order this renderer READS: a sort key resolving to
-     * a column, or `*none*'.  Those are what `chainFor' builds the order out of
-     * and what the strip may colour as an ordering.  A refusal keeps the
-     * ordinary chip — the strip promises an order where there is one.
-     * `sortable' gates the reader's GESTURE rather than the token, so a column
-     * that opts out still orders and still wears it.
      * @param {string} tok  @returns {boolean}
      */
     function ordersRows(tok) {
@@ -4520,12 +3472,6 @@
     }
 
     /**
-     * Whether TOK states a column set: a columns key naming at least one
-     * column. Every nonempty name counts — a name this view does not carry is
-     * the producer's custom column, so this side cannot call any unknown —
-     * and the half-typed `columns:' keeps the ordinary chip, naming none.  A
-     * SIGNED token states no set in either sign: the producer answers
-     * `+columns:' with a refusal, and `-columns:' names nothing here either.
      * @param {string} tok  @returns {boolean}
      */
     function showsColumns(tok) {
@@ -4535,11 +3481,6 @@
     }
 
     /**
-     * Whether TOK names a saved view: a view key naming one the producer
-     * declared. An unknown name keeps the ordinary chip — what a name MEANS is
-     * the producer's, so this side calls none of them wrong — and so does the
-     * half-typed `view:', naming none.  A SIGNED token names none either: the
-     * producer answers `+view:' with a refusal, as it does `+sort:'.
      * @param {string} tok  @returns {boolean}
      */
     function namesView(tok) {
@@ -4550,10 +3491,6 @@
     }
 
     /**
-     * The dress a chip wears for the view token it states: the sort hue, the
-     * columns hue, the saved-view hue, or none — one classifier, so the strip's
-     * render names no token kind of its own and a new view token registers its
-     * class here.
      * @param {string} tok  @returns {string}
      */
     const chipClassOf = (tok) =>
@@ -4563,10 +3500,6 @@
         : namesView(tok) ? " tv-chip-view" : "");
 
     /**
-     * The ONE token spelling the order query Q names, in canonical arrow form.
-     * `sortsIn' decides it — the same reading `applyChain' is handed — so the
-     * strip cannot describe an order the rows are not in.  Called behind
-     * `ordersRows', so Q always names one.
      * @param {string} q  @returns {string}
      */
     function sortChip(q) {
@@ -4575,16 +3508,6 @@
     }
 
     /**
-     * Put TOK on the strip, unless the strip already carries the same token.
-     * Every token is idempotent under the one combination rule, so a second
-     * copy is chrome to read past.  A predicate is itself AS SPELLED, so a near
-     * twin (`tag:game' beside `tag:games') stays a second chip.
-     *
-     * ONE ORDER, ONE CHIP.  Every token that STATES an order folds into the
-     * chip already stating one, landing as the canonical arrow form of the
-     * chain the two name together; first-wins dedup rides in `sortsIn'.  A
-     * token this renderer reads NO order from stays its own chip as spelled and
-     * goes back to the producer verbatim, which is how a refusal is answered.
      * @param {string} tok
      */
     function pushChip(tok) {
@@ -4598,16 +3521,6 @@
     }
 
     /**
-     * Where TOK's opposite-signed twin stands in the strip, or -1.  Twins are
-     * matched on what a token MEANS — the key it names and the value it spells,
-     * as `parseQuery' resolves them — never on source text, so a pair spelled
-     * two ways still meets: `-priority:"[#B]"' finds `+priority:[#B]', where
-     * the quote opening `-"priority:[#B]"' makes it free text and no twin at
-     * all.  Only `-' against `+' pairs; an unsigned token names its added
-     * form's rows and cancels nothing.  Values are compared as written, so
-     * `+state:A|B' leaves `-state:B|A' standing — the strip cancels the pair a
-     * reader can SEE is one.  A chip spelling more than one token is a folded
-     * order chain, which wears no sign and is no token's twin.
      * @param {Token} tok  @returns {number}
      */
     function twinAt(tok) {
@@ -4622,27 +3535,15 @@
     }
 
     /**
-     * Commit TEXT, the source token TOK was written as, to the strip: the
-     * ANNIHILATION rule first — a token whose opposite-signed twin already
-     * stands removes both, the pair being ¬v ∨ v and so every row
-     * (docs/query.md) — and otherwise the ordinary push.
-     *
-     * The rule is the STRIP's affordance over the token the reader just
-     * committed, never the grammar's: it runs on this interactive path alone.
-     * `seedQuery' pushes around it, since a producer's query arrives whole and
-     * a scan of it would eat a standing pair the reader never touched.
      * @param {string} text  @param {Token} tok
      */
     function commitChip(text, tok) {
+      // Commit sequentially: each token cancels against the prior result.
       const at = twinAt(tok);
       if (at === -1) pushChip(text); else chips.splice(at, 1);
     }
 
     /**
-     * REFUSE TEXT: say so once, and leave the rest to the caller, which keeps
-     * the token in the box.  ONCE PER SPELLING PER SESSION — the box commits on
-     * every settling debounce and a refused token stays standing through all of
-     * them, so an echo per pass would be an echo nobody reads.
      * @param {string} text
      */
     function refuse(text) {
@@ -4652,15 +3553,6 @@
     }
 
     /**
-     * Move the box's finished tokens into chips. A token with nothing after it
-     * is still being typed and stays put, so a word is never chipped out from
-     * under the caret; ALL overrides that, which is what Enter means.
-     *
-     * A NARROWED SESSION CHIPS THE NARROWING HALF ALONE: a shaping token is
-     * REFUSED where it would have been chipped — never on the strip, never in
-     * the delivered query (`typedQuery'), left in the box where the reader sees
-     * what was refused, and spoken through `refuse'.  The tokens beside it land
-     * as they always do.
      * @param {boolean} [all]  @returns {boolean} whether anything moved
      */
     function chipUp(all) {
@@ -4669,11 +3561,8 @@
       if (!toks.length) return false;
       const last = toks[toks.length - 1];
       const keep = !all && last.end === v.length ? last : null;
-      /** What the box is left holding: the refusals, then the half-typed tail. */
       const left = [];
       let moved = false;
-      // one at a time and in order: a token annihilates against the strip as it
-      // stands when IT commits, so `-x +x' typed together cancels to nothing.
       for (const t of toks) {
         if (t === keep) continue;
         const text = v.slice(t.start, t.end);
@@ -4690,11 +3579,6 @@
       return true;
     }
 
-    /** Adopt the query as it stands: re-filter, and redraw from the top.  A NEW
-     * QUESTION IS A NEW RESULT SET, so the columns are fitted to it — this is
-     * the refit `fitColumns' is for, named here because the widget can see the
-     * query change.  A producer narrowing server-side answers through `setRows'
-     * and asks for its own. */
     function applyFilter() {
       const v = effectiveQuery();
       if (v === state.filter) return;
@@ -4705,17 +3589,14 @@
       renderRows(true);
     }
 
-    /** What the last delivery sent; `getQuery' answers with it. */
     let lastQuery = "";
 
     function deliver(onFrame) {
       const q = effectiveQuery();
-      // skip when nothing changed — a producer can't dedup Escape-dropped text, an empty commit, or a debounce settling on the same value.
       if (q === lastQuery) return;
       lastQuery = q;
       page = 0;                          // a different question, read from the top
       continuous = false;
-      // the sort token takes effect here, before the producer is asked, so rows re-order under the reader's hand.
       const chain = chainFor(q);
       if (!sameChain(chain, state.sortKeys)) applyChain(chain);
       if (o.onFilter) o.onFilter(q);
@@ -4724,10 +3605,6 @@
     }
 
     /**
-     * Take off the last unit of the query: what is half-typed in the box, else
-     * the last chip — WHOLE, the sort chip included, an order being one
-     * decision taken off the way it went on.  False when there was nothing left,
-     * so a consumer can walk the query down and know when it has hit the end.
      * @returns {boolean}
      */
     function stripLastToken() {
@@ -4745,22 +3622,11 @@
     }
 
     let debounce = 0;
-    /** Dress only the first token's leading `-'. The source stays in INPUT so
-     * the caret, parser and consumer continue to share one string. */
     function renderNegation() {
       const on = input.value.startsWith("-");
       filterWrap.classList.toggle("tv-negating", on);
       input.setAttribute("aria-label", on ? "Negated filter" : "Filter");
     }
-    /**
-     * Arm the delivery a keystroke implies, in the modes where one does.  A
-     * SUMMONED BOX FILTERS ON COMMIT ALONE, over the veil or on the strip
-     * alike: the reader called the box up and is looking at it, so narrowing
-     * as the query is typed animates a table they are not watching, and every
-     * half-written token is a query of its own.  The suggestion list stays live
-     * regardless, and the picker narrows as it is typed — that is what a picker
-     * is for, and `summoned' is spelled to leave it out.
-     */
     function armFilter() {
       if (summoned) return;
       if (debounce) clearTimeout(debounce);
@@ -4793,10 +3659,6 @@
     let acAt = 0;
 
     /**
-     * COL's value domain, and how many rows stand behind each value.  The order
-     * is the column's own where it has one — `values', else the badge palette —
-     * that order being semantic; distinct cell values sort instead.  Counts come
-     * from one lazy pass per column, thrown away with the text cache.
      * @returns {{list: string[], counts: Map<string, number>}}
      */
     function domainOf(col) {
@@ -4839,20 +3701,12 @@
     }
 
     /**
-     * What the token under the caret is asking for, or null when it asks for
-     * nothing: a quoted token is free text and takes no suggestions, and so
-     * does one carrying punctuation that named no column — `:work:' is org
-     * text, not a half-typed predicate.
      * @returns {{stage: string, tok: Token, col: Column|null, prefix: string}|null}
      */
     function stageAt() {
       const t = tokenAtCaret();
       if (!t || t.quoted) return null;
       if (t.key !== null) {
-        // THE NARROWED DOOR COMPLETES NOTHING IT WILL REFUSE: a shaping key
-        // hand-typed into this box asks for no stage, so the sort, columns and
-        // view lists never open behind it.  The refusal `chipUp' speaks at
-        // commit stays the one answer the typist is given.
         if (narrowing && shapesView(t.key)) return null;
         if (t.key === SORT_KEY) {
           const v = t.value.toLowerCase(), arrow = v.lastIndexOf(SORT_ARROW);
@@ -4868,9 +3722,6 @@
           return { stage: "view", tok: t, col: null, prefix: t.value.toLowerCase() };
         const col = colByKey(t.key);
         if (!col) return null;
-        // A DATE COLUMN'S VALUE IS A STAGE OF ITS OWN: what stands there is a
-        // grammar as well as a domain, and an operator head OPENS the value
-        // where a value finishes it (`suggestFor', `acceptAc').
         const onDate = dateColumn(columns().indexOf(col));
         return { stage: onDate ? "date" : "value", tok: t, col,
                  prefix: t.value.slice(t.value.lastIndexOf(ALT) + 1) };
@@ -4880,10 +3731,6 @@
     }
 
     /**
-     * What KEY's axis already carries, each folded to what it MEANS (`meant'):
-     * every alternative of every OTHER token naming KEY, whatever its sign,
-     * chips and box alike.  TOK IS THE CARET'S OWN AND COUNTS FOR NOTHING — the
-     * partial value being typed must not suppress the offers it is opening.
      * @param {string} key  @param {Token} tok  @returns {Set<string>}
      */
     function axisCarries(key, tok) {
@@ -4902,13 +3749,6 @@
     }
 
     /**
-     * The suggestions for STAGE: the text each inserts, the rows behind it, and
-     * whether it finishes a token.  A column completion does not — it lands as
-     * `key:' and carries no count, narrowing nothing on its own; nor does an
-     * operator head on a date value, which lands as `key:>='.  `full' IS THE
-     * WHOLE OF THAT ANSWER and no stage adds finality behind it (`acceptAc').
-     * Row one is what Enter takes (`openAc'): WHAT THE WORD SPELLS IN FULL
-     * LEADS WHAT IT MERELY OPENS, at either stage.
      * @returns {{text: string, count: number, full: boolean, dim: boolean,
      *             show?: string, aside?: string}[]}
      */
@@ -4983,8 +3823,6 @@
                          || b.count - a.count
                          || (a.text < b.text ? -1 : 1));
         const exact = hits.length > 0 && hits[0].whole;
-        // A SAVED VIEW SHAPES, so the narrowed door offers none: `offeredKeys'
-        // drops the three keys, and this drops the names that spell one.
         if (!narrowing)
           for (const v of savedViews()) {
             if (out.length >= AC_MAX) break;
@@ -5029,30 +3867,14 @@
         return out;
       }
       const dom = domainOf(st.col);
-      // THE DAY WORDS AND THE OPERATOR HEADS RIDE THE FOOT of a date column's
-      // domain, the way `*empty*' rides every column's, and what is offered
-      // behind a typed head is the LITERAL: `scheduled:>=2026-0' completes
-      // dates.  A TYPED HEAD DROPS `*empty*', the empty cell sitting outside
-      // every comparison.  `*today*' IS NOT AMONG THEM: it is read and never
-      // offered, `today' being the one spelling this proposes.
       const onDate = dateColumn(columns().indexOf(st.col));
-      // THE STAGE READS WHAT THE PARSER READS: the quoted spelling folds first
-      // (`compacted'), so a head measured here indexes the value the grammar
-      // sees and every offer lands compact.  A space-free prefix folds to
-      // itself, which is every prefix that reached here before.
       const pd = onDate ? compacted(p) : p;
       const dv = onDate ? dateValue(pd) : null;
-      // THE HEAD is what stands before a literal still being typed: the
-      // operator, or the range's low end and the separator behind it.
       const head = dv === null ? "" : dv.op === RANGE ? dv.lo + RANGE : dv.op;
       const p2 = pd.slice(head.length);
       const listed = onDate ? dom.list.concat(DAY_WORD_LIST) : dom.list;
       const domain = head || listed.indexOf(EMPTY_META) !== -1
         ? listed : listed.concat([EMPTY_META]);
-      // AN ADDED TOKEN WIDENS, AND A CARRIED VALUE WIDENS BY NOTHING: `A ∨ A'
-      // is `A', so behind a `+' the values its axis already stands on are dead
-      // offers and drop out.  The plain and negated stages take the whole
-      // domain, each of them narrowing.
       const carried = st.tok.added ? axisCarries(st.tok.key, st.tok) : null;
       /** @type {{text: string, count: number, full: boolean, dim: boolean}|null} */
       let whole = null;
@@ -5061,32 +3883,17 @@
         const lower = String(v).toLowerCase(), text = head + String(v);
         if (carried && carried.has(meant(text.toLowerCase()))) continue;
         if (!opensWith(lower, p2)) continue;
-        // THE DOMAIN COUNTS ROWS SPELLING A CELL, where `>=D' serves rows that
-        // spell something else — so an offer behind a head prints no count
-        // rather than a wrong one.
         const meta = reserved(String(v), onDate);
         const item = { text, count: meta || head ? -1 : dom.counts.get(lower) || 0,
                        full: true, dim: meta };
         if (spells(lower, p2)) { whole = item; continue; }
         if (out.length < AC_MAX) out.push(item);
       }
-      // WHAT SPELLS IN FULL LEADS WHAT MERELY OPENS, so a head rides under the
-      // values and carries no count.  `full: false' is what says it opens one:
-      // accepting leaves the token unfinished for the literal (`acceptAc').
       if (onDate)
         for (const op of CMPS.filter((c) => c !== pd && c.startsWith(pd))) {
           if (out.length >= AC_MAX) break;
           out.push({ text: op, count: -1, full: false, dim: true });
         }
-      // A SHIFT'S HEADS RIDE THE SAME FOOT THE OPERATORS' DO, and split the
-      // same way: behind a BASE SPELLED IN FULL the two SIGNS open a shift, and
-      // behind a sign and its digits the four UNITS finish one.  A sign alone
-      // enumerates nothing — any number stands there — so nothing is offered
-      // until a digit is typed.  THE BARE SHIFT IS TYPED AND NOT PROPOSED: the
-      // empty base gives no head to hang a sign on, and once a sign and its
-      // digits stand there the units finish it like any other.  Each offer
-      // wears the head it was typed with and spells its base canonically, so
-      // `*today*+30' completes to `today+30d'.
       if (onDate) {
         const stem = shiftBase(p2);
         if (stem)
@@ -5111,11 +3918,6 @@
     }
 
     /**
-     * The literal offer: what was typed, as a free-text token.  DRAWN quoted,
-     * the grammar's notation for "this is text", and COMMITTED bare, which is
-     * what a reader who knew the grammar would have written.  Quotes are owed
-     * only where a separator would break the token up, and of those only
-     * whitespace can reach here.
      * @param {string} text
      */
     function literalOffer(text) {
@@ -5126,10 +3928,6 @@
     }
 
     /**
-     * The distinct titles, in row order, lowercased beside the RAW cell — only
-     * the few titles offered pay `displayText''s link parse.  Built whole on
-     * first use rather than patched, an upsert being able to move any of them,
-     * and thrown away with the text cache it was read from.
      * @type {{titles: {lower: string, cell: Cell|undefined}[]}|null}
      */
     let wordIndex = null;
@@ -5179,7 +3977,6 @@
       acEl.style.display = "";
     }
 
-    /** Offer what the caret is asking for, or close when that is nothing. */
     function openAc() {
       const st = stageAt();
       if (!st) { closeAc(); return; }
@@ -5197,20 +3994,6 @@
       renderAc();
     }
 
-    /**
-     * Put TEXT in place of the token under the caret, leaving the rest of the
-     * box alone.  A key lands as `key:' with the caret against the colon; a
-     * value lands with a trailing space.  Focus stays in the box either way.
-     *
-     * A value keeps everything through the token's LAST bar and a SORT segment
-     * through the last ARROW, so completing inside either keeps ONE token.
-     * Both are looked for in the RAW text: the token's value has had its quotes
-     * taken out and no longer lines up with the box.
-     *
-     * THE SIGN SURVIVES THE COMPLETION at every stage: a key head spells it
-     * (`signMark'), and every other stage slices from `start', which sits at the
-     * sign — so `+sta' completes to `+state:' and `+state:DO' to `+state:DONE'.
-     */
     function acceptAc(item) {
       if (!ac) return;
       const stage = ac.stage;
@@ -5244,21 +4027,12 @@
       const item = t && /** @type {HTMLElement|null} */ (t.closest(".tv-ac-item"));
       if (item && ac) acceptAc(ac.items[Number(item.dataset.i)]);
     });
-    // A SUMMONED BOX THAT LOST THE KEYS IS NOT SUMMONED.  Tab walks out of it
-    // natively and a row click takes the focus, either of which used to leave a
-    // docked editor DRAWN while the keys were elsewhere — a consumer reading
-    // `filtering()' and a reader reading the screen would then disagree.
     input.addEventListener("blur", () => {
       closeAc();
       endNarrow();           // the session is the box's; one owner for the flag
       if (dock === "strip") root.classList.remove("tv-typing");
     });
 
-    /**
-     * Apply the box now, cancelling whatever the debounce still owes — so the
-     * query reaches the producer (or the local filter) exactly once, with the
-     * text as it stands rather than as it stood a keystroke ago.
-     */
     function flushFilter(all) {
       if (debounce) { clearTimeout(debounce); debounce = 0; }
       chipUp(all);
@@ -5266,16 +4040,12 @@
     }
 
     input.addEventListener("keydown", (e) => {
-      // A consumer may give its filter a row cursor of its own. Ask before the
-      // completion list claims arrows and C-n/C-p, since those keys mean row
-      // movement in a chooser even while its narrowing field has focus.
       if (o.onFilterKey && o.onFilterKey(e)) {
         e.preventDefault();
         e.stopPropagation();
         return;
       }
       if (ac) {
-        // C-n/C-p move the list too; Chrome-family takes C-n for a new window before the page sees it, so arrows are the fallback there (Firefox/webview deliver both).
         const down = e.key === "ArrowDown" || (e.ctrlKey && e.key === "n");
         const up = e.key === "ArrowUp" || (e.ctrlKey && e.key === "p");
         const accepts = e.key === "Tab" || e.key === "Enter";
@@ -5284,7 +4054,6 @@
           e.stopPropagation();
           if (down) { moveAc(1); return; }
           if (up) { moveAc(-1); return; }
-          // In `inline' the suggestion list is no rung of its own.
           if (e.key === "Escape") { closeAc(); if (inline) abandonFilter(); return; }
           const taken = ac.items[acAt];
           const finished = taken.full;
@@ -5297,16 +4066,7 @@
         e.preventDefault();
         e.stopPropagation();
         if (e.repeat) return;
-        // BACKSPACE OVER AN EMPTY SUMMONED BOX EXITS FILTERING, veiled or
-        // docked alike.  It does not reach through to the chips behind the box;
-        // the strip's own × and `stripLastToken' remain their deletion paths.
         if (summoned) { closeFilter(); return; }
-        // The picker's editor is summoned too, and there an EMPTY one is itself
-        // the thing to take away: it was the last thing the reader put there.
-        // This ENDS the ladder — the box is blurred, so the chips behind it are
-        // the consumer's own to walk.  A resident box has no such rung and
-        // never gets here.  The SAME exit Escape takes, said once: the box is
-        // empty by the guard above, so `abandonFilter' has nothing left to drop.
         if (inline) { abandonFilter(); return; }
         if (chips.length) dropChip(chips.length - 1);
         else handOver();
@@ -5316,21 +4076,12 @@
       e.preventDefault();               // and, for Escape, the native search-box clear
       e.stopPropagation();
       if (e.key === "Escape") {
-        // ONE STEP OUT OF THE PICKER, where an emptied box is an editor the
-        // reader was already done with.
         if (inline) { abandonFilter(); return; }
-        // TWO STEPS EVERYWHERE ELSE: the typed text first, the box second —
-        // which for a summoned box IS the box going, over the veil or off the
-        // strip, and for a resident one is the blur.  NOT ADDS ONE OPERAND RUNG:
-        // first drop what it is qualifying, leaving the deliberate operator;
-        // a later Escape over bare NOT drops that through the ordinary rung.
         if (!(clearNegatedPart() || clearTyped())) closeFilter();
         return;
       }
       if (input.value.trim()) {
         flushFilter(true);              // `chipUp' reads the box, then empties it
-        // A REFUSAL IS THE READER'S TO SEE: the narrowed door leaves the shaping
-        // token standing, and a box with something still in it is not finished.
         if (input.value.trim()) return;
       } else {
         input.value = "";               // stray whitespace is nothing to commit
@@ -5352,7 +4103,6 @@
              Number(step.dataset.pg) > 0 ? "first" : "last");
     });
 
-    /** Take chip AT off and re-run what is left. */
     function dropChip(at) {
       chips.splice(at, 1);
       renderChips();
@@ -5364,7 +4114,7 @@
       const t = hit(e);
       if (t && t.closest(".tv-pin")) { if (onPin) onPin(); return; }
       const chip = t && /** @type {HTMLElement|null} */ (t.closest(".tv-chip"));
-      // a crumb carries no data-i; without this guard the index reads NaN and splice takes it as 0 (the first live chip).
+      // Crumbs have no data-i; Number(undefined) would remove the first chip.
       if (!chip || chip.dataset.i === undefined) return;
       dropChip(Number(chip.dataset.i));
     });
@@ -5372,8 +4122,6 @@
 
 
     /**
-     * Move ROW to where it now belongs in the cached list ARR, or leave it out
-     * when FILTERED and the query excludes it. No re-sort, no re-filter.
      * @param {Row[]} arr  @param {Row} row  @param {boolean} filtered
      */
     function place(arr, row, filtered) {
@@ -5423,7 +4171,6 @@
       dark = now;
       renderRows(true);
     }
-    /** What `destroy' has to undo: the two theme watchers outlive the DOM. */
     const themeQuery = typeof matchMedia === "function"
                      ? matchMedia("(prefers-color-scheme: dark)") : null;
     if (themeQuery && themeQuery.addEventListener)
@@ -5433,10 +4180,6 @@
     if (themeWatch)
       themeWatch.observe(document.documentElement,
                          { attributes: true, attributeFilter: ["data-theme"] });
-    /** A RESIZE IS THE THIRD FIT: the sized columns are px and do not stretch,
-     * so the fill column alone absorbs the window — and its floor is what a
-     * narrowing eventually meets.  Coalesced on a frame: a drag fires a burst
-     * of these and one measure is what a settled resize is worth. */
     const onResize = () => {
       if (fitWait) return;
       fitWait = frame(() => { fitWait = 0; fitColumns(); });
@@ -5470,15 +4213,6 @@
         renderRows(true);
       },
       /**
-       * Replace every row.  Marks are deliberately NOT pruned against the new
-       * set: a producer filtering server-side answers a narrowed query through
-       * here, so an id that did not come back is HIDDEN rather than deleted and
-       * must still be marked when the filter comes off.  A delta's `reset' is
-       * the same op; `deleteRow' and a delta's `delete' do drop it.
-       *
-       * THE PRODUCER'S OWN ROWS STAND THROUGH IT: they are no part of the set
-       * being replaced, so each goes back under the row its `under' names and
-       * an open editor comes back with its caret.
        * @param {Row[]} rows
        */
       setRows(rows) {
@@ -5497,8 +4231,6 @@
         if (i === -1) state.rows.push(row); else state.rows[i] = row;
         texts.delete(row.id);
         dropDomains();
-        // PLACED AFTER THE INSERT, both lists: a delta landing between an anchor
-        // and its phantom would otherwise slide the two apart.
         placeProducers(state.rows);
         if (sorted) { place(sorted, row, false); placeProducers(sorted); }
         if (order && orderCmp) { place(order, row, true); placeProducers(order); }
@@ -5507,8 +4239,6 @@
       },
       /** @param {string} id */
       deleteRow(id) {
-        // TAKEN BEFORE THE ROW GOES, so an editor standing in it is dropped
-        // here rather than left holding a node the redraw has orphaned.
         const held = holdEditor();
         state.rows = state.rows.filter((r) => r.id !== id);
         markSet.ids.delete(id);  // the row is gone; a mark on it would outlive it
@@ -5525,16 +4255,14 @@
         const held = holdEditor();
         for (const op of ops || []) {
           if (op.op === "reset") {
-            // A `reset' IS a `setRows': the producer's own rows are no part of
-            // the set it replaces.
+            // Producer rows are outside the data set replaced by a reset.
             state.rows = (op.rows || []).slice().concat(ownRows());
             clearTexts();
             dropSorted();
             continue;
           }
           // delta op indices count in the window (display order) per SCHEMA.md; with no local sort/filter/page that's the store's own order.
-          // A PRODUCER'S OWN ROW IS NO PART OF THAT COUNT: the ops describe the
-          // store's rows, and a phantom among them would shift every index.
+          // Producer rows are excluded from delta indices.
           const win = paged().filter(standing);
           const store = (row) => state.rows.findIndex((r) => r.id === row.id);
           if (op.op === "insert") {
@@ -5559,53 +4287,31 @@
         resumeEditor(held);
       },
       getRows() { return state.rows.slice(); },
-      /**
-       * The rows on show: one page of the filtered, sorted set, or all of it
-       * with no page size.  In CONTINUOUS the window is over the whole set,
-       * but this still answers the CURSOR's page, so a consumer's buffer-end
-       * keys and the pager agree whichever way the rows were drawn.
-       */
       getVisible() { return shownRows().slice(); },
       select: selectRow,
       /**
-       * Where the selection is: the row's id and the column index within it,
-       * `col' being null for a whole-row selection. A consumer moving the
-       * selection reads this, adds a step, and hands it back to `select'.
        * @returns {{id: string|null, col: number|null}}
        */
       getSelection() { return { id: state.selected, col: state.selCol }; },
       /**
-       * Open the in-cell editor on ID's COL cell. The row must be the
-       * producer's own or the column `editable'; returns whether it opened.
-       * Commit reports through `onEdit' / `tableview-edit' and the producer
-       * owns the write.
        * @param {string} id  @param {number} col  @returns {boolean}
        */
       editCell,
-      /** Take the open in-cell editor down, writing nothing — what `ESC' does,
-       * for a producer that has moved the reader somewhere else. */
       closeEditor: closeCellEditor,
-      /** WHERE ID's COL CELL IS DRAWN, or null: what a producer lays its own
+      /**
        * overlay over. @param {string} id  @param {number} col */
       cellRect,
       /**
-       * Which cell the editor stands in, by index and by column key, or null.
-       * The widget owns that state, so a producer asks rather than reading the
-       * DOM back.
        * @returns {{id: string|null, col: number, key: string}|null}
        */
       getEditing,
       /** Open the editor on COL's header. @param {number} col  @returns {boolean} */
       editHeader,
       /**
-       * The query as last delivered: the chips and whatever had been committed
-       * with them. What a consumer echoes, or writes into a URL.
        * @returns {string}
        */
       getQuery() { return lastQuery; },
       /**
-       * Replace the crumb trail, oldest first. Anything that is not an object
-       * is dropped; a missing `label' or `query' reads as "".
        * @param {Crumb[]} list
        */
       setCrumbs(list) {
@@ -5617,15 +4323,12 @@
         renderChips();
       },
       /**
-       * The trail as it stands, oldest first — copies, so a consumer reading
-       * it cannot move the strip by editing what it was handed.
        * @returns {Crumb[]}
        */
       getCrumbs() { return crumbs.map((c) => ({ label: c.label, query: c.query })); },
       setPinned(on) { pinned = !!on; renderChips(); },
       setQuery(q) { seedQuery(String(q == null ? "" : q)); },
       /**
-       * Push one crumb on the end. What a consumer does as it drills IN.
        * @param {Crumb} c  @returns {number} how deep the trail is now
        */
       pushCrumb(c) {
@@ -5634,9 +4337,6 @@
         return crumbs.length;
       },
       /**
-       * Take the last crumb off and hand it back, or null on an empty trail.
-       * It is popped and NOT applied: whoever owns the fetching owns what a
-       * query means, so a consumer walking out re-applies the `query' itself.
        * @returns {Crumb|null}
        */
       popCrumb() {
@@ -5648,13 +4348,6 @@
       },
       stripLastToken,
       filtering,
-      /**
-       * Let the mount go.  Emptying the container drops the DOM; these two
-       * theme watchers are registered OUTSIDE it and would hold this whole
-       * scope — rows, caches, the detached tree — alive without this.  A
-       * consumer that mounts once a session may skip it; one that mounts per
-       * gesture may not.
-       */
       destroy() {
         if (themeQuery && themeQuery.removeEventListener)
           themeQuery.removeEventListener("change", onTheme);
@@ -5662,41 +4355,21 @@
         if (typeof removeEventListener === "function")
           removeEventListener("resize", onResize);
       },
-      /**
-       * FIT THE COLUMNS TO THE ROWS THE TABLE NOW HOLDS.  The widths are the
-       * VIEW's and stand through every tick, delta, draft and keystroke; a
-       * producer that has just asked a NEW QUESTION says so here, every answer
-       * arriving through `setRows' whichever it was.
-       */
       fitColumns,
       /**
-       * Sort on COLUMN, ascending unless ASCENDING is false, replacing whatever
-       * sort is in force.  A header click TOGGLES; this STATES an order.  It
-       * ignores `sortable', which gates what a READER may reach.
        * @param {string} column @param {boolean} [ascending]
        * @returns {boolean} false when no column carries that key
        */
       sortBy(column, ascending) { return sortTo(column, ascending !== false); },
       /**
-       * `^': promote COLUMN to the head of the chain ascending, flipping it
-       * where it already leads.  The new chain is written into the query and
-       * delivered, so a consumer narrowing server-side is asked for the order
-       * it has just been told about.  Gated by `sortable' — a reader's gesture,
-       * where `sortBy' is a producer's.
        * @param {string} column @returns {boolean} whether the chain moved
        */
       sortPromote,
       /**
-       * The chain in force, highest priority first, as copies. What a consumer
-       * persists (a URL, a saved layout); `setSort' takes it back.
        * @returns {SortKey[]}
        */
       getSort() { return state.sortKeys.map((k) => Object.assign({}, k)); },
       /**
-       * Replace the whole chain — SCHEMA's `sort' shape or `getSort''s.  An
-       * empty one leaves the rows in the order they arrived, which is the CLEAR
-       * a consumer binds.  A producer's call, like `sortBy': it writes no
-       * query, so a query naming sort keys still outranks it.
        * @param {Sort|Sort[]|SortKey[]|null} [sort]
        */
       setSort(sort) { stated = normalizeSort(sort); applyChain(stated); },
@@ -5708,15 +4381,12 @@
       /** Turn back a page, landing on its last. @returns {boolean} */
       previousPage() { return turnTo(cursorPage() - 1, "last"); },
       /**
-       * Where the reading is: the page and how many there are, and the span of
-       * the filtered set on show. Counted from one, the way it reads.
        * @returns {{page: number, pages: number, from: number, to: number, total: number}}
        */
       pageInfo,
       /** Mark ID, or unmark it. @param {string} id  @returns {boolean} its new state */
       toggleMark(id) { return markSet.toggle(id); },
       markAll,
-      /** Take every mark off. Flags are a different question and stay. */
       clearMarks() { markSet.clear(); },
       /** The marked ids: those on show first, then the rest. @returns {string[]} */
       getMarked() { return markSet.list(); },
@@ -5726,7 +4396,6 @@
       flagRow(id) { return flagSet.toggle(id); },
       /** Take the flag off ID, whether or not it had one. @param {string} id */
       unflagRow(id) { flagSet.drop(id); },
-      /** Take every flag off. Marks are a different question and stay. */
       clearFlags() { flagSet.clear(); },
       /** The flagged ids, ordered like `getMarked'. @returns {string[]} */
       getFlagged() { return flagSet.list(); },

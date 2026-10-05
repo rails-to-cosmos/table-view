@@ -1,4 +1,3 @@
-//! In-memory table: columnar store with tombstones, a view (filter+sort) cache, patch, and delta.
 
 use crate::column::{gen_col, Col, StrCol};
 use crate::delta::{diff_ops, RowSnap, Sub};
@@ -71,7 +70,6 @@ impl Table {
         }
     }
 
-    /// Filtered+sorted row indices for (SORT, FILTER); memoized per rev (LRU 4).
     pub fn view(&mut self, sort: &[(String, bool, bool)], filter: &str) -> Result<Vec<u32>, String> {
         let cache_key = format!("{}|{sort:?}|{filter}", self.rev);
         if let Some((_, v)) = self.cache.iter().find(|(k, _)| *k == cache_key) {
@@ -83,8 +81,6 @@ impl Table {
         self.ensure_ranks();
         let mut v = self.filter_rows(filter);
         if !sort_ci.is_empty() {
-            // Stable sort + RowIx tiebreak: ties keep insertion order (elisp parity).
-            // Null placement is absolute per key, independent of that key's asc/desc.
             let keys: Vec<(&Col, bool, bool, Option<u32>)> = sort_ci.iter()
                 .map(|&(ci, asc, nf)| (&self.cols[ci], asc, nf, self.cols[ci].empty_code()))
                 .collect();
@@ -107,8 +103,6 @@ impl Table {
         Ok(v)
     }
 
-    /// Live rows matching FILTER (empty = all); numeric columns match only a
-    /// numeric needle, mirroring the elisp joined-cell filter.
     pub fn filter_rows(&self, filter: &str) -> Vec<u32> {
         let n = self.ids.len();
         let alive = &self.alive;
@@ -138,7 +132,6 @@ impl Table {
         RowSnap { id: self.ids[r].clone(), cells: self.cells_of(r) }
     }
 
-    /// The RowSnap window `[offset, offset+limit)` of VIEW (empty past the end).
     pub fn window_snaps(&self, view: &[u32], offset: usize, limit: usize) -> Vec<RowSnap> {
         let end = (offset + limit).min(view.len());
         if offset < view.len() {
@@ -148,7 +141,6 @@ impl Table {
         }
     }
 
-    /// Apply upserts (update by id, else append) and deletes (tombstone); bump rev, drop cache.
     pub fn patch(&mut self, upserts: &[Value], deletes: &[Value]) {
         let keys = self.keys.clone();
         for row in upserts {
@@ -180,7 +172,6 @@ impl Table {
         self.cache.clear();
     }
 
-    /// Recompute the subscribed window; return a `$/delta` payload, or None when the window is unaffected.
     pub fn delta_after_patch(&mut self) -> Option<Value> {
         let sub = self.sub.as_ref()?;
         let (offset, limit) = (sub.offset, sub.limit);
@@ -196,8 +187,6 @@ impl Table {
         let rev = self.rev;
         let sub = self.sub.as_mut().unwrap();
         sub.last = new;
-        // Unchanged window AND unchanged counts: no delta.  But a patch outside
-        // the window still pushes empty ops so the counts refresh.
         if ops.is_empty() && matched == last_matched && total == last_total {
             return None;
         }

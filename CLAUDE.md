@@ -4,7 +4,7 @@ Declarative, producer-agnostic table view for Emacs (Emacs Lisp package).
 
 ## Documentation convention
 
-Write all project documents as **Org-mode files** (`.org`), not Markdown.
+Write all project documents as **Org-mode files** (`.org`).
 
 - Design notes, proposals, and reviews live under [`docs/`](docs/) as a
   **wiki**: the index ([`docs/index.org`](docs/index.org)) links out, and
@@ -19,20 +19,22 @@ Write all project documents as **Org-mode files** (`.org`), not Markdown.
 
 ## Docstrings & comments
 
-Cut genuine bloat — over-explanation, redundancy, three sentences where one
-works. Keep docstrings proper English and checkdoc-valid (they are public API,
-shown by `C-h f`): a complete imperative first line, arg names in CAPS, facts
-intact. Terse, but complete.
+Code should explain itself. Keep implementation comment-only lines below 10%
+except where checker-readable type annotations require more. Comments state
+only hazards, ordering constraints, deliberate differences, failed obvious
+approaches, or links to the owning design document.
+
+Keep public docstrings proper English and checkdoc-valid (they are shown by
+`C-h f`): a complete imperative first line, arg names in CAPS, facts intact.
 
 Never use the "negation-reveal" pattern ("not X, but Y" / "it's not just A,
 it's B" / "this isn't about A, it's about B") in any generated text — docs,
 comments, commit messages, prose. State the point directly.
 
-In `web/table-view.js`: a JSDoc block is its function's FACTS and its tags, two
-or three lines of description at most. Rendering behaviour, geometry, the filter
-grammar and the suggestion ordering are documented in `README.md` under
-`## Browser renderer` and in `docs/web-renderer.org` — a comment restating them
-is a second copy, and two copies drift. Cross-reference instead, the way
+In `web/table-view.js`: a JSDoc block is its function's facts and tags, with at
+most two description lines. Rendering behaviour is documented in
+`docs/guide.org`; geometry, filter grammar, and suggestion ordering live in
+`docs/web-renderer.org`. Cross-reference instead, the way
 `// column geometry (COL_MAX, TITLE_MIN): docs/web-renderer.org` already does.
 Type tags (`@param`, `@returns`, `@type`, `@typedef`) are read by
 `make web-check` and are never shortened. Stacking two doc blocks before one

@@ -5,9 +5,9 @@
 
 The reference browser [[file:../CONTEXT.md::*Renderer][renderer]] of the table-view contract. Dependency-free,
 one file, no build; the palette CSS lives in the =const css= template
-(off-limits to prose passes — CSS comments there are code). This page is the
-"why" behind the numbers and the non-obvious behavior, so the source carries
-one-line pointers rather than essays.
+(off-limits to prose passes — CSS comments there are code). This page records
+the reasons behind the numbers and non-obvious behavior; the source carries
+one-line pointers here.
 
 * Palette & contrast
 
@@ -59,7 +59,7 @@ Measured against a 12,674-headline Org corpus.
   on the engine's 1/64px grid and rounds DOWN, so an exact allowance is a
   sixtieth short and Chromium draws an ellipsis beside an inline-block pill it
   cannot cut. The +1 keeps the rule from firing on a cell that fits.
-- *A tag cell is measured on what it DRAWS* (=tagsCh=), not on the raw text.
+- *=tagsCh= measures a tag cell's DRAWN form.*
   =:a:b:= and =a · b= are the same length, but a third value costs two more —
   =:a:b:c:= is 7 and =a · b · c= is 9 — so the raw measure runs short of the
   drawing from three values up, and short by more with every one after. The
@@ -120,8 +120,8 @@ the same way. Renderer-specific decisions:
 - Multi-valued star: =tag:*book*= is the whole entry =book=, where =tag:boo= is
   a substring of the delimited cell — decidable locally (the delimiter is in the
   cell), so both sides answer it identically.
-- A keyless token and =substring:= are ONE test — the key is an elision, not a
-  second search; the cached joined string is the hot path.
+- A keyless token and =substring:= are ONE cached joined-string test; the key
+  is elided.
 
 ** Date comparisons
 
@@ -290,7 +290,7 @@ bare word:
   commits again on every settling debounce. The chips already applied ride along
   untouched: the strip is not the box, so narrowing never loses the order. The
   flag is the SESSION's and the refusals go with it when the box closes.
-- *The dock is where a summoned box lands, not what summons it*:
+- *Dock placement for a summoned box*:
   =filterDock: "overlay" | "strip"=. Overlay raises the veil, strip lays the box
   on the CHIP STRIP'S OWN ROW (chips auto column, box taking the slack, revealed
   by =tv-typing=). =palette= defaults to overlay and =inline= to strip; named on

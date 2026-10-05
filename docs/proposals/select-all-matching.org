@@ -19,16 +19,15 @@ that were never fetched.
 
 * Proposal
 
-A *virtual* select-all, resolved by the producer rather than by loading rows.
+A producer-resolved *virtual* select-all.
 
-- A command “mark all matching” that sets a virtual-select-all flag instead of
-  marking individual rows.
-- Bulk handlers receive a *selection object* rather than a bare row list:
+- A command “mark all matching” that sets a virtual-select-all flag.
+- Bulk handlers receive a *selection object*:
   - =table-view-selection-rows= — the cached, explicitly-marked rows;
   - =table-view-selection-all-p= — whether virtual select-all is active;
   - =table-view-selection-query= — the live sort + filter (from
     =table-view-page-request=), so the consumer issues one producer operation
-    (e.g. =DELETE ... WHERE <filter>=) instead of enumerating unloaded rows.
+    over the unloaded matching set (e.g. =DELETE ... WHERE <filter>=).
 - The indicator shows “all N matching selected”.
 
 * Trade-offs

@@ -1,16 +1,5 @@
 ;;; bulk.el --- Marking, narrowing, and bulk actions -*- lexical-binding: t; -*-
 
-;; Eval this buffer for a downloads table with bulk operations:
-;;
-;;   m    mark / unmark the row at point (marked rows get a `*' gutter column)
-;;   U    unmark all
-;;   /    narrow to the marked rows; with nothing marked, filter by substring
-;;   d    delete -- a BULK action: it operates on the marked rows, or the row
-;;        at point if none are marked, and each removal goes through a
-;;        pre-delete gate (a `locked' file is refused, so its row stays)
-;;
-;; `d' is declared with `(bulk . t)', so its handler receives the operative
-;; ROW LIST rather than a single (id row); see `table-view-current-or-marked-rows'.
 
 (require 'table-view)
 

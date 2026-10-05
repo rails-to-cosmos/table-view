@@ -1,8 +1,5 @@
 ;;; upsert.el --- Streaming row updates with upsert -*- lexical-binding: t; -*-
 
-;; Eval this buffer to see a table that adds one row per second via a
-;; timer, demonstrating `table-view-upsert-row'.  Rows update in place
-;; when their id already exists.
 
 (require 'table-view)
 
@@ -29,7 +26,6 @@
   (upsert-example--stop)
   (setq upsert-example--tick 0)
   (let ((buf "*live-counter*")
-        ;; Deliberately out of order, so the declared sort has something to do.
         (labels '("charlie" "alpha" "bravo")))
     (table-view-display buf upsert-example--spec nil)
     (setq upsert-example--timer
@@ -44,8 +40,6 @@
                               (cells . ((label . ,label)
                                         (value . ,upsert-example--tick))))))
                   (table-view-upsert-row buf row)
-                  ;; An upsert appends; the spec's declared sort is applied
-                  ;; here or not at all.
                   (with-current-buffer buf (table-view-apply-sort)))))))))
 
 (upsert-example--start)

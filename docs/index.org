@@ -5,6 +5,9 @@ Design notes, proposals, and reviews for =table-view=.  All documents here are
 Org-mode and cross-link each other (see [[file:../CLAUDE.md][CLAUDE.md]] for the convention).  Start
 here and follow the links.
 
+User-facing installation, API, and renderer documentation lives in
+[[file:guide.org][the user guide]].
+
 * Deliveries
 
 table-view is one renderer against one [[file:../SCHEMA.md][contract]], delivered several ways.  A
@@ -31,8 +34,8 @@ holds copies, never a second edited home.
 Ideas surfaced but intentionally not built yet, each with enough design to pick
 up later.
 
-- [[file:proposals/incremental-render-o1.org][Incremental render → O(1) via mutator hints]] :: make streaming
-  edits O(changed) instead of O(rows).
+- [[file:proposals/incremental-render-o1.org][Incremental render → O(1) via mutator hints]] :: reduce streaming
+  edits from O(rows) to O(changed).
 - [[file:proposals/incremental-width-maintenance.org][Incremental column-width maintenance]] :: avoid the full width
   recompute when a max-holding row changes.
 - [[file:proposals/select-all-matching.org][Bulk “select all matching” (server pagination v2)]] :: act on the
@@ -59,11 +62,9 @@ Design records for features already in the package.
   is kept under =proposals/= as the design record.  Its ERT suite
   (=table-view-native-test.el=) skips the binary-dependent tests where =tvx=
   has not been built.
-- [[file:proposals/cell-editing.org][Cell editing (an editable table-view)]] :: an in-cell editor the
-  widget owns and an =onEdit= / =tableview-edit= the consumer commits, so an
-  embedded table (=glance='s material doc) edits a cell IN the cell rather than
-  through a consumer-side overlay.  Web renderer shipped (=glance= retired its
-  overlay); Elisp/native parity follows.
+- [[file:proposals/cell-editing.org][Cell editing (an editable table-view)]] :: a widget-owned in-cell
+  editor and an =onEdit= / =tableview-edit= the consumer commits.  Web renderer
+  shipped (=glance= retired its overlay); Elisp/native parity follows.
 - [[file:web-renderer.org][Web renderer (table-view.js) — design rationale]] :: the "why" behind the
   browser renderer's palette/contrast values, column geometry, filter grammar,
   suggestion tiers, and interaction hazards.  The source points here rather
@@ -97,6 +98,7 @@ Findings from adversarial reviews of shipped work.
 #+begin_example
 docs/
   index.org                     ← you are here
+  guide.org                     user guide and API reference
   proposals/
     incremental-render-o1.org        ┐ perf follow-ups, cross-linked
     incremental-width-maintenance.org ┘

@@ -31,64 +31,15 @@
 ;; DEALINGS IN THE SOFTWARE.
 
 ;;; Commentary:
-;; A tiny, producer-agnostic core that renders a declarative table
-;; description -- columns, actions, default sort -- and dispatches keys to
-;; consumer-registered command handlers.
-;;
-;; Responsibilities:
-;;   * render a spec as an aligned, org-table-styled read-only view
-;;   * colour `badge' cells from the column's declared palette
-;;   * build a keymap from the declared actions, dispatch by command name
-;;   * own a row store keyed by id: set-rows / upsert-row / delete-row
-;;   * client-side sort on sortable columns
-;;   * interactive substring filter (/)
-;;   * mark rows (m) and run `bulk' actions on the marked set
-;;   * optional server-side pagination via a `page-fn': one page in memory,
-;;     sort and filter pushed down, marks and bulk that span pages
-;;
-;; A consumer provides: a parsed spec, a handler alist (command-name -> FN of
-;; ID ROW), and either a `fill-fn' (BUFFER -> populates all rows via the
-;; mutators below) or, for server-side pagination, a `page-fn' (REQUEST ->
-;; fetches one page and delivers it with `table-view-set-page').
-;;
-;; See examples/ for runnable demos:
-;;   minimal.el       — inline rows from a JSON spec
-;;   fill-function.el — populate via a fill function (Emacs subprocesses)
-;;   upsert.el        — streaming row updates via a timer
-;;   multi-sort.el    — column navigation + multi-column (C-u ^) sorting
-;;   sort-methods.el  — per-column sort methods (values / compare) + default sort
-;;   delete.el        — row deletion gated on a custom pre-delete step
-;;   bulk.el          — marking (m), narrowing (/), and bulk actions (bulk: t)
-;;   paginate.el      — server-side pagination over a fake producer (page-fn)
-;;   org-links.el     — Org links in cells, followed by C-c C-o or mouse
-;;
-;; Keybindings in table-view-mode:
-;;   g   — clear filter/narrow & refresh, preserving the sort order
-;;   ^   — sort by the column at point, repeat toggles asc/desc;
-;;         off a column, cycle through every column and direction
-;;   C-u ^ — add the column at point as a secondary (tie-breaker) sort key;
-;;           a following run of `^' then toggles that key's direction
-;;   ?   — toggle the multiline action legend (below the subtitle)
-;;   m   — toggle mark on the current row;  u — unmark it
-;;   M   — mark all visible rows;  U — unmark all
-;;   /   — narrow to the marked rows, or filter by substring when none marked
-;;   n/p — next/previous data row (stops on the last / first row)
-;;   f/b — forward/backward: by column on a table line (header or row),
-;;         by char elsewhere
-;;   C-c C-o — follow the Org link at point (cells may hold [[TARGET][DESC]]);
-;;             links are also mouse-clickable
-;;   M-left/M-right — move the column at point left/right (org-table style)
-;;   > / . — next page, < / , — previous page (paged buffers)
-;;   M-> / M-< — last / first page;  M-g — go to page (offset paging)
-;;   q   — quit
+;; Declarative table renderer with local and producer-backed row stores.
+;; Usage and design: README.md and docs/index.org.
 
 ;;; Code:
 
 (require 'cl-lib)
-(require 'subr-x)                        ; when-let, string-empty-p
+(require 'subr-x)                        ; if-let*, when-let*, string-empty-p
 (require 'org)                           ; org-link-bracket-re, org-link-open-from-string
 
-;;; Buffer-local state
 
 (defvar-local table-view--spec nil
   "Parsed table spec (alist) for this buffer.")
@@ -127,12 +78,6 @@ In paged mode a marked row leaves `table-view--rows' when you turn the
 page, so its payload is cached here; this is what lets marks, narrow,
 and bulk span pages.")
 
-;;; Pagination state
-;;
-;; When a `page-fn' is supplied, `table-view--rows' holds only the CURRENT
-;; page fetched from the producer; sort and filter are pushed down
-;; into each page request instead of running client-side.  A buffer with no
-;; page-fn leaves all of this nil/0 and behaves exactly as before.
 
 (defvar-local table-view--page-fn nil
   "Consumer fetcher, or nil.  Called as (FN REQUEST); REQUEST is a plist
@@ -175,7 +120,6 @@ failed fetch never advances the visible page position.")
   "Non-nil when the paging strategy is offset-based (not keyset)."
   (eq table-view--strategy 'offset))
 
-;;; Spec accessors
 
 (defun table-view--columns (spec) (alist-get 'columns spec))
 (defun table-view--actions (spec) (alist-get 'actions spec))
@@ -215,16 +159,10 @@ column layout and the one-line-per-row assumption of incremental rendering."
              (seq-find (lambda (b) (equal (alist-get 'value b) value))
                        (alist-get 'badges col))))
 
-;;; Org links
-;;
-;; A cell with Org bracket links -- [[TARGET][DESC]] or [[TARGET]] -- renders
-;; each as its DESC (or TARGET), followable by mouse or `C-c C-o'.  Parsing and
-;; following reuse Org's `ol.el' (`org-link-bracket-re', `org-link-open-from-
-;; string').  Width, filter, and sort see the DESC, so a link column lines up
-;; and searches by its displayed description.
 
 (defface table-view-link '((t :inherit link))
-  "Face for Org links rendered in table cells.")
+  "Face for Org links rendered in table cells."
+  :group 'table-view)
 
 (defvar table-view-render-links t
   "When non-nil, cells render Org bracket links ([[TARGET][DESC]]) as
@@ -247,8 +185,8 @@ Org (`org-link-open-from-string'), so `file:', `id:', and custom
   "Follow the table-view link at point, or the one clicked (EVENT).
 Bound to `C-c C-o' and to mouse clicks on rendered link text."
   (interactive (list last-nonmenu-event))
-  (if-let ((pos (if (mouse-event-p event) (posn-point (event-end event)) (point)))
-           (target (get-text-property pos 'table-view-link)))
+  (if-let* ((pos (if (mouse-event-p event) (posn-point (event-end event)) (point)))
+            (target (get-text-property pos 'table-view-link)))
       (funcall table-view-open-link-function target)
     (message "No link at point")))
 
@@ -282,10 +220,6 @@ off or S has no link."
               'keymap table-view--link-keymap
               'follow-link t))
 
-;; Parsing the same cell values is repeated on every render (the width pass
-;; and the row pass each walk every cell, and sort/filter re-derive them), so
-;; memoize the two pure entry points.  Caches are buffer-local (freed with the
-;; buffer) and keyed on the raw cell string.
 (defvar-local table-view--linkify-cache nil
   "Buffer-local memo of `table-view--linkify', keyed by raw cell string.")
 (defvar-local table-view--delink-cache nil
@@ -295,8 +229,6 @@ off or S has no link."
 (defconst table-view--link-cache-cap 65536
   "Per-cache entry cap; a cache is cleared wholesale once it grows past this.")
 
-;; Forward declarations: `table-view--link-cache-check' resets render/filter
-;; state whose defvar-locals are further down.
 (defvar table-view--rendered-rows)
 (defvar table-view--filter-text-cache)
 
@@ -369,8 +301,8 @@ A fresh cons list, so the caller's ROW is never mutated."
 A `value-fn' column declares a function of (ID ROW).  Each row lacking that
 cell gets it filled by the function; a row that already carries the cell keeps
 it, so a producer-supplied value wins.  The computed value is stored like any
-other cell, so sort/filter/width see it.  Non-destructive: changed rows get a
-fresh `cells' alist, so the caller's ROWS are never mutated."
+other cell, so sort/filter/width see it.  Changed rows get a fresh `cells'
+alist, leaving the caller's ROWS unchanged."
   (let ((vcols (seq-filter (lambda (c) (alist-get 'value-fn c))
                            (table-view--columns spec))))
     (if (null vcols)
@@ -427,7 +359,6 @@ runtime-added column must be materialised there as well."
                   (cons (car c) (car (table-view--compute-cells (list (cdr c)) table-view--spec))))
                 table-view--mark-cache)))
 
-;;; Sorting
 
 (defvar table-view-comparators nil
   "Alist of NAME (string) -> less-than predicate for a column's `compare'.
@@ -468,8 +399,8 @@ metas alone orders nothing and the badge palette below it still rules."
 (defun table-view--sort-key-spec (col)
   "Return (KEYFN . KLESS) for COL -- the single source of sort resolution.
 KEYFN maps a raw cell value to a comparison key; KLESS is a primitive less-than
-over keys.  Splitting the comparator this way lets the key be computed once per
-row (decorate-sort-undecorate) instead of per comparison.  Resolution order: an
+over keys.  Decorate-sort-undecorate computes each key once per row.
+Resolution order: an
 explicit `compare' (a predicate, a built-in name, or a `table-view-comparators'
 name), else an ordered `values'/badge domain (categorical, unlisted last), else
 `type' \"number\", else lexicographic."
@@ -501,15 +432,6 @@ order): each argument is decorated with that spec's key, then compared."
   (pcase-let ((`(,keyfn . ,kless) (table-view--sort-key-spec col)))
     (lambda (a b) (funcall kless (funcall keyfn a) (funcall keyfn b)))))
 
-;; A sort key is a cons (COL . DIRECTION-CODE).  DIRECTION-CODE widens the plain
-;; asc/desc cdr with a nulls-placement axis while keeping the old shape: t and
-;; nil still mean ascending/descending nulls-last, so every existing (COL . t) /
-;; (COL) key is unchanged.  Two symbols add nulls-first:
-;;   t                 asc,  nulls-last  (default)
-;;   nil               desc, nulls-last
-;;   asc-nulls-first   asc,  nulls-first
-;;   desc-nulls-first  desc, nulls-first
-;; A "null" is an empty cell (a nil or empty-string comparison text).
 
 (defun table-view--sort-key-col (key)
   "Return the column name of sort KEY."
@@ -588,8 +510,7 @@ commands, never from row updates, so operating on a row leaves it in place.
 The common single-key case decorates each row with its comparison key once,
 then sorts; multi-key chains use `table-view--sort-rows-multi'."
   (when table-view--sort-keys
-    ;; In paged mode ordering is the server's job (the loaded page is a slice);
-    ;; re-sorting here would reorder just those rows.  The chain still counts.
+    ;; Paged ordering belongs to the server; local sorting would reorder one slice.
     (unless (table-view--paged-p)
       (if (cdr table-view--sort-keys)
           (table-view--sort-rows-multi)
@@ -604,7 +525,6 @@ then sorts; multi-key chains use `table-view--sort-rows-multi'."
                            (lambda (r)
                              (let* ((v (table-view--cell r key))
                                     (null? (table-view--sort-null-p col v)))
-                               ;; (NULL? KEYVAL ROW); KEYVAL is nil (unused) for nulls.
                                (list null? (and (not null?) (funcall keyfn v)) r)))
                            table-view--rows)))
           (setq decorated
@@ -638,14 +558,13 @@ defaults to ascending; `nulls' is \"first\" or \"last\" (the default)."
   (let ((specs (if (alist-get 'column sort) (list sort) sort)))
     (delq nil
           (mapcar (lambda (s)
-                    (when-let ((col (alist-get 'column s)))
+                    (when-let* ((col (alist-get 'column s)))
                       (table-view--make-sort-key
                        col
                        (if (assq 'ascending s) (and (alist-get 'ascending s) t) t)
                        (if (equal (alist-get 'nulls s) "first") 'first 'last))))
                   specs))))
 
-;;; Filtering
 
 (defvar-local table-view--filter-text-cache nil
   "Buffer-local eq hash: row object -> its lowered, newline-joined cell text.")
@@ -701,19 +620,14 @@ narrowed), then restricted to the current filter."
         (setq rows (cl-remove-if-not
                     (lambda (r) (table-view--marked-p (alist-get 'id r))) rows)))
       (when (and table-view--filter (not (string-empty-p table-view--filter)))
-        (let ((pat (downcase table-view--filter)))     ; downcase once, not per row
+        (let ((pat (downcase table-view--filter)))     ; downcase once per filter
           (setq rows (cl-remove-if-not
                       (lambda (r) (string-search pat (table-view--row-filter-text r)))
                       rows))))
       rows)))
 
-;;; Rendering
+;; Width-cache invariants: docs/reviews/incremental-render.org.
 
-;; Column widths scan every visible cell -- the priciest part of a render.
-;; They change only with the visible row SET, cell VALUES, or columns; a sort
-;; (same cells reordered), mark toggle (the gutter is a fixed prefix), and
-;; point-restoration render leave them intact.  So cache them and invalidate
-;; explicitly at the mutation seams.
 (defvar-local table-view--widths-cache nil
   "Cached column-width alist, reused across renders that cannot change it.")
 
@@ -721,9 +635,6 @@ narrowed), then restricted to the current filter."
   "Drop the cached column widths so the next render recomputes them."
   (setq table-view--widths-cache nil))
 
-;; A record of what the buffer currently shows, so a re-render can diff the new
-;; visible rows against it and rewrite only the lines that changed (see
-;; `table-view--render-incremental').
 (defvar-local table-view--rendered-rows nil
   "The row objects currently drawn in the buffer, in order.")
 (defvar-local table-view--rendered-widths nil
@@ -783,7 +694,7 @@ the row loop, and `table-view--delink' is probed only for a cell containing
 (defun table-view--badge-string (col s)
   "Return S coloured per badge column COL's palette.
 S is returned unchanged when its value has no declared colour."
-  (if-let ((color (table-view--badge-color col s)))
+  (if-let* ((color (table-view--badge-color col s)))
       (propertize s 'face (list :foreground color :weight 'bold))
     s))
 
@@ -845,7 +756,6 @@ on `^'."
               (table-view--sort-description)
             "unsorted (^)")
           (cond ((null table-view--filter) "")
-                ;; Paged: the whole-set counts aren't known client-side.
                 ((table-view--paged-p) (format "    filter: %s" table-view--filter))
                 (t (format "    filter: %s (%d/%d)"
                            table-view--filter
@@ -998,10 +908,8 @@ changes -- without touching the rest of the buffer."
 (defun table-view--rerender-after-mark (was-active)
   "Refresh the display after a mark toggle at the row at point.
 When the mark gutter was shown before (WAS-ACTIVE) and still is, and the
-view is neither paged nor narrowed, flip only this row's gutter character
-and rewrite the hint line -- an O(1) update instead of a full re-render.
-Otherwise (the gutter appears or disappears, reflowing every row, or the
-visible set changed) fall back to `table-view--render'."
+view is neither paged nor narrowed, update this row's gutter and the hint in
+O(1).  Re-render when the gutter or visible set changes."
   (let ((id (get-text-property (point) 'table-view-id)))
     (if (and id was-active (table-view--marks-active-p)
              (not table-view--narrowed) (not (table-view--paged-p)))
@@ -1012,7 +920,6 @@ visible set changed) fall back to `table-view--render'."
           (table-view--refresh-hint))
       (table-view--render))))
 
-;;; Marks and bulk
 
 (defun table-view-marked-rows (&optional buffer)
   "The marked rows of BUFFER (or the current buffer).
@@ -1033,7 +940,6 @@ This is what a `bulk' action's handler receives."
         (let ((row (get-text-property (point) 'table-view-row)))
           (and row (list row))))))
 
-;;; Dispatch
 
 (defun table-view--dispatch (command &optional bulk)
   "Invoke the registered handler for COMMAND.
@@ -1048,13 +954,12 @@ it is called with the id and row at point."
                  (get-text-property (point) 'table-view-id)
                  (get-text-property (point) 'table-view-row))))))
 
-;;; Navigation
 
 (defun table-view--rows-region ()
   "Return (FIRST . LAST), the line-start positions of the first and last
 data rows, or nil when there are no rows.  Rows are the lines the renderer
 tags with `table-view-id'."
-  (when-let ((first (text-property-not-all (point-min) (point-max) 'table-view-id nil)))
+  (when-let* ((first (text-property-not-all (point-min) (point-max) 'table-view-id nil)))
     (let ((last first) (pos first))
       (while (setq pos (next-single-property-change pos 'table-view-id))
         (when (get-text-property pos 'table-view-id)
@@ -1069,7 +974,7 @@ above the rows `n' enters the first row (and from below, `p' the last).
 When the preserved column falls on the leading \"|\" (e.g. entering the table
 from the title line at column 0), point snaps to the first cell rather than
 the separator."
-  (when-let ((region (table-view--rows-region)))
+  (when-let* ((region (table-view--rows-region)))
     (let ((col (current-column))
           (start (point))
           (start-bol (line-beginning-position))
@@ -1084,7 +989,7 @@ the separator."
          (t (goto-char start))))                              ; at a boundary: stay
       (move-to-column col)
       (unless (get-text-property (point) 'table-view-col)
-        (when-let ((starts (table-view--cell-starts)))
+        (when-let* ((starts (table-view--cell-starts)))
           (goto-char (car starts)))))))
 
 (defun table-view-next-line (&optional n)
@@ -1172,7 +1077,6 @@ it falls back to `backward-char'."
       (table-view-backward-column n)
     (backward-char n)))
 
-;;; Column reordering
 
 (defun table-view--goto-cell (col)
   "Move point to the start of COL's cell on the current line.
@@ -1230,7 +1134,6 @@ See `table-view-move-column-right'."
   (interactive "p")
   (table-view-move-column-right (- (or n 1))))
 
-;;; Column schema (add / remove columns at runtime)
 
 (defvar-local table-view-add-column-function nil
   "Function returning a column alist to add, or nil to cancel the add.
@@ -1290,9 +1193,7 @@ cancelled."
                ((and index (<= 0 index (length cols)))
                 (append (seq-take cols index) (list col) (seq-drop cols index)))
                (t (append cols (list col)))))
-        ;; A (re)added `value-fn' column is authoritative: drop any stale cell for
-        ;; its key first, so `table-view--compute-cells' recomputes it instead of
-        ;; keeping the value a prior column (or a prior definition) left behind.
+        ;; Re-added `value-fn' columns must recompute stale same-key cells.
         (when (alist-get 'value-fn col)
           (table-view--strip-cell-everywhere key))
         (table-view--materialise-cells)
@@ -1326,8 +1227,7 @@ KEY when a column was actually removed."
             (cl-remove key cols :test #'equal :key (lambda (c) (alist-get 'key c))))
       (setq table-view--sort-keys
             (cl-remove key table-view--sort-keys :test #'equal :key #'car))
-      ;; Drop the removed column's now-orphaned cell so a later same-key re-add
-      ;; recomputes from its own `value-fn' rather than resurrecting this value.
+      ;; Remove orphaned cells so same-key `value-fn' re-adds recompute them.
       (table-view--strip-cell-everywhere key)
       (table-view--invalidate-widths)
       (setq table-view--filter-text-cache nil)   ; column set changed
@@ -1337,7 +1237,6 @@ KEY when a column was actually removed."
         (message "Removed column: %s" key))
       key))))
 
-;;; Keymap
 
 (defvar table-view-mode-map
   (let ((map (make-sparse-keymap)))
@@ -1345,8 +1244,6 @@ KEY when a column was actually removed."
     (define-key map "p" #'table-view-previous-line)
     (define-key map "f" #'table-view-forward)
     (define-key map "b" #'table-view-backward)
-    ;; `g' is intentionally left unbound; consumers bind it (e.g. to
-    ;; `table-view-revert', or a per-view refresh) via the spec's action keys.
     (define-key map "/" #'table-view-filter-or-narrow)
     (define-key map "m" #'table-view-mark-toggle)
     (define-key map "u" #'table-view-unmark)
@@ -1365,8 +1262,7 @@ KEY when a column was actually removed."
   "Generic, read-only declarative table view."
   (setq truncate-lines t)
   (setq-local cursor-type 'box)
-  ;; `g' is not bound here; it stays `special-mode's `revert-buffer', which we
-  ;; route to `table-view-revert' -- the standard Emacs refresh, not a sort.
+  ;; `g' inherits `special-mode' refresh; see CLAUDE.md.
   (setq-local revert-buffer-function (lambda (&rest _) (table-view-revert)))
   (setq-local table-view--show-help table-view-show-action-help))
 
@@ -1396,13 +1292,10 @@ key on conflict."
                       (table-view--dispatch command bulk)))))
     (use-local-map map)))
 
-;;; Interactive sort commands
 
 (defmacro table-view--save-point-location (&rest body)
-  "Run BODY, then restore point to the line and column it is on now.
-Unlike saving raw point, this survives the header/hint text changing
-width during the re-render BODY performs, so the cursor stays put on
-screen instead of drifting or following its row."
+  "Run BODY, then restore point to its current screen line and column.
+This survives header or hint width changes during BODY's re-render."
   (declare (indent 0) (debug t))
   (let ((line (make-symbol "line"))
         (col (make-symbol "col")))
@@ -1520,8 +1413,6 @@ Marked rows show a `*' in a gutter column and are the operand of a
         (setq table-view--marks (cons id table-view--marks))
         (when row (push (cons id row) table-view--mark-cache)))
       (table-view--prune-marks)         ; widen if that was the last mark
-      ;; While narrowed the visible set IS the marked subset, so a mark change
-      ;; resizes it; otherwise the gutter is a fixed prefix and widths hold.
       (when was-narrowed (table-view--invalidate-widths))
       (table-view--rerender-after-mark was-active)
       (table-view--move-row 1))))
@@ -1565,8 +1456,6 @@ Complements `U' (unmark all)."
           (unless (member id table-view--marks)
             (push id table-view--marks)
             (push (cons id row) table-view--mark-cache))))
-      ;; Many gutter cells change at once (and the gutter may appear),
-      ;; so always take the full re-render path.
       (table-view--invalidate-widths)
       (table-view--render)
       (message "Marked %d rows" (length table-view--marks)))))
@@ -1628,8 +1517,6 @@ landing on the first row."
   (if (table-view--paged-p)
       (progn
         (setq table-view--sorted (and table-view--sort-keys t))
-        ;; Sort resets to page 1, but keep the cursor where it is on screen
-        ;; (e.g. on the column header just clicked), like the client path.
         (table-view--refetch-first (table-view--preserve-landing)))
     (table-view--save-point-location
       (table-view--sort-rows)
@@ -1714,10 +1601,8 @@ plain `^' keeps toggling that key.  Point keeps its on-screen location."
       (table-view--apply-sort-selection col secondary)
       (table-view--commit-order)
       (message "Sort: %s" (table-view--sort-description))
-      ;; C-u ^ arms a run of plain `^' to keep flipping this key.
       (when secondary (table-view--arm-secondary-toggle col))))))
 
-;;; Pagination
 
 (defun table-view--page-segment ()
   "The paging-status segment of the hint line, or \"\" when not paged."
@@ -1829,9 +1714,6 @@ the marked rows, so it is refused there until the view is widened."
   (cond ((not (table-view--paged-p)) "Pagination not enabled")
         (table-view--narrowed "Widen with / before paging")))
 
-;; Page turns keep point on its current on-screen line and column (so a
-;; column can be scanned straight across pages); when the new page is shorter
-;; the position clamps to the last row.
 
 (defun table-view-next-page ()
   "Fetch the next page (paged buffers), keeping point where it is on screen."
@@ -1906,7 +1788,6 @@ the marked rows, so it is refused there until the view is widened."
           (table-view--fetch-page
            (append (list :offset (* idx table-view--page-size)) landing)))))))
 
-;;; Public API
 
 (defun table-view-parse (json-string)
   "Parse JSON-STRING into the alist shape the core expects."
@@ -1998,7 +1879,7 @@ any that only moved -- untouched.  Re-renders once for the whole batch."
           (dolist (r table-view--rows)
             (puthash (alist-get 'id r) r pool))
           (cl-flet ((reuse (raw)
-                      ;; Keep the existing row object when nothing changed.
+                      ;; Preserve unchanged row identity for incremental rendering.
                       (let* ((new (car (table-view--compute-cells (list raw) table-view--spec)))
                              (old (gethash (alist-get 'id new) pool)))
                         (if (and old (equal old new)) old new))))
@@ -2058,8 +1939,6 @@ instead of enumerating rows it has not loaded.  This is the seam a future
                         table-view--rows))
           (unless old
             (setq table-view--rows (nconc table-view--rows (list row))))
-          ;; Keep the width cache (making the render a cheap one-line edit) when
-          ;; the upsert cannot change any column's max width; otherwise recompute.
           (unless (table-view--upsert-keeps-widths-p old row)
             (table-view--invalidate-widths))
           (table-view--render))))))
@@ -2146,7 +2025,6 @@ page request (paged).
 When the optional `table-view-native' package is loaded and SPEC carries a
 large inline-rows set (see `table-view-native-threshold'), the display is
 routed through the native Rust accelerator if its binary is available."
-  ;; Route a large inline table to the native accelerator when it can take over.
   (when (and table-view--native-display-function
              (null fill-fn) (null page-fn)
              (not (alist-get 'pagination spec))

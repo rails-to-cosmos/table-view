@@ -27,10 +27,10 @@ widget's and the widget owns its cell DOM). It works, but it re-implements, per
 consumer, an editor the widget is the natural home for — and it fights the
 widget's own DOM ownership the whole way.
 
-The widget already has every piece: it owns the cell DOM, it manages a
-=<input>= (the filter), it has a selection model (=select=, =getSelection=), and
-it speaks to consumers through callbacks + =CustomEvent=\s. Editing is the
-missing verb, not a missing mechanism.
+The widget already has every mechanism needed for editing: it owns the cell
+DOM, it manages a =<input>= (the filter), it has a selection model (=select=,
+=getSelection=), and it speaks to consumers through callbacks +
+=CustomEvent=\s. Editing adds the missing verb.
 
 * Proposal
 
@@ -42,8 +42,8 @@ An IN-CELL editor the widget owns, and an EDIT event the consumer commits.
   on the selected cell opens its editor; a *plain typed character* replaces and
   opens (spreadsheet feel), guarded so it never fights a navigation key.
 - *Mouse*: a double-click on a cell opens its editor.
-- *Programmatic* (an EXTERNAL driver, e.g. =glance='s doc, whose keys live in
-  Elm, not the widget): =tv.editCell(id, col)= opens the editor on that cell;
+- *Programmatic* (an EXTERNAL driver, e.g. =glance='s doc, whose key map lives
+  in Elm): =tv.editCell(id, col)= opens the editor on that cell;
   =tv.editHeader(col)= opens it on a column's header. This is the seam that lets
   a consumer keep its own key map and still use the widget's editor.
 

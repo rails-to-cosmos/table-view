@@ -1,9 +1,7 @@
-//! JSON-RPC stdio transport (Content-Length framing) plus serde_json coercion helpers.
 
 use serde_json::Value;
 use std::io::{self, Read, Write};
 
-/// Read one Content-Length-framed JSON-RPC message, or None at EOF.
 pub fn read_frame<R: Read>(reader: &mut R) -> Option<Value> {
     let mut header = Vec::new();
     let mut byte = [0u8; 1];
@@ -28,7 +26,6 @@ pub fn read_frame<R: Read>(reader: &mut R) -> Option<Value> {
     serde_json::from_slice(&buf).ok()
 }
 
-/// Write one Content-Length-framed JSON-RPC message to stdout.
 pub fn write_frame(v: &Value) {
     let body = serde_json::to_vec(v).unwrap();
     let mut out = io::stdout().lock();
@@ -37,7 +34,6 @@ pub fn write_frame(v: &Value) {
     let _ = out.flush();
 }
 
-/// A JSON value as a display string (strings verbatim, everything else via Display).
 pub fn json_to_string(v: &Value) -> String {
     match v {
         Value::String(s) => s.clone(),
@@ -45,7 +41,6 @@ pub fn json_to_string(v: &Value) -> String {
     }
 }
 
-/// A JSON value coerced to i64 (numbers direct, numeric strings parsed, else 0).
 pub fn json_i64(v: &Value) -> i64 {
     match v {
         Value::Number(n) => n.as_i64().unwrap_or_else(|| n.as_f64().unwrap_or(0.0) as i64),
@@ -61,7 +56,6 @@ pub fn cell_i64(row: &Value, key: &str) -> i64 {
     row.get("cells").and_then(|c| c.get(key)).map(json_i64).unwrap_or(0)
 }
 
-/// Parse a `[[key, asc, nulls], ...]` sort chain into (column, ascending, nulls_first); a 2-element entry means nulls-last.
 pub fn parse_sort(v: &Value) -> Vec<(String, bool, bool)> {
     v.as_array()
         .map(|a| {

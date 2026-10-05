@@ -1,68 +1,31 @@
 #!/usr/bin/env node
-/*
- * perf-driver.js — headless benchmark and smoke test for table-view.js.
- *
- *   node web/perf-driver.js [renderer.js] [rows]     (make web-perf)
- *
- * Mounts a synthetic glance-shaped view (6 columns, Org links in the headline
- * cells) into a DOM shim small enough to live in this file, then times mount,
- * filter keystrokes, upsert, delete and a scroll re-window.
- *
- * The shim never lays out or paints and its parser is not a browser's, so the
- * times only rank the operations against each other. The honest cross-version
- * numbers are the two counters beside them — bytes of HTML written and event
- * listeners attached per operation, which a browser has to parse and bind
- * either way.
- *
- * The smoke checks after the table are the point of keeping this in the repo:
- * clicks, links, sorting, filtering, streaming ops and `select(id)' all run
- * here, and a failure exits non-zero.
- */
 "use strict";
 
 const path = require("path");
 const fs = require("fs");
 
-// ---- metrics ---------------------------------------------------------------
 
 const now = () => Number(process.hrtime.bigint()) / 1e6;
 let bytes = 0, listeners = 0, work = 0;
 
-// Time whatever the renderer schedules for itself, so `work' is renderer CPU
-// and nothing else.  The driver's own waits use the real timers.
 const realTimeout = setTimeout, realClear = clearTimeout;
 const timed = (fn) => () => { const t = now(); try { fn(); } finally { work += now() - t; } };
 const sleep = (ms) => new Promise((done) => realTimeout(done, ms));
-/** Wait out a coalesced selection paint (one rAF). */
 const painted = () => sleep(20);
 
 /**
- * The sort chain as ROOT's headers wear it, in COLUMN order: a marked header is
- * its label with the direction and, past one key, the place it holds. The one
- * reader, since five checks over four mounts ask the same question.
  * @param {*} root  @returns {string[]}
  */
 const sortMarks = (root) => root.querySelectorAll(".tv-table thead th")
   .map((th) => th.text).filter((t) => /[▲▼]/.test(t));
 
 /**
- * A mounted table and the gestures a check performs on it. Every section built
- * the same five closures over its own mount; one factory means a change to what
- * "start clean" or "commit this query" means lands everywhere at once, instead
- * of in whichever copies were remembered.
  * @param {*} box  the container  @param {*} handle  what `mount' returned
  */
 function probe(box, handle) {
   const b = () => filterOf(box);
-  /** Empty the box and take every chip back off, so each case starts clean.
-   *  BACKSPACE IS THE PLUMBING HERE, so this is `inline''s one trap: there an
-   *  empty-box Backspace puts the summoned editor away instead of taking a chip,
-   *  and the loop below would spin its 40 turns clearing nothing.  Safe while no
-   *  `driver()' mount passes `inline: true'. */
   const reset = () => {
     const el = b();
-    // An empty box offers nothing, so this shuts any list a previous check
-    // left open — an open list would take the keys below for itself.
     el.value = "";
     el.dispatchEvent(new Ev("input"));
     for (let i = 0; i < 40 && box.querySelectorAll(".tv-chip[data-i]").length; i++)
@@ -73,14 +36,12 @@ function probe(box, handle) {
     b().dispatchEvent(e);
     return e;
   };
-  /** Type into a clean box and return what the list offers. */
   const type = (q) => {
     reset();
     b().value = q;
     b().dispatchEvent(new Ev("input"));
     return items();
   };
-  /** Commit a query from a clean box, and say how many rows it left. */
   const shown = (q) => {
     reset();
     b().value = q;
@@ -89,18 +50,11 @@ function probe(box, handle) {
   };
   const items = () => box.querySelectorAll(".tv-ac-label").map((e) => e.text);
   const counts = () => box.querySelectorAll(".tv-ac-n").map((e) => Number(e.text));
-  // A free-text offer — the literal, a whole title — annotates itself with an
-  // aside where a predicate suggestion prints its count. So the rows carrying a
-  // count are not `items()' positionally any more, and the two questions those
-  // two arrays were answering get one accessor each.
-  /** The labels of the rows that suggest a token, the free-text offers aside. */
   const offers = () => box.querySelectorAll(".tv-ac-item")
     .filter((e) => e.querySelectorAll(".tv-ac-aside").length === 0)
     .map((e) => e.querySelector(".tv-ac-label").text);
-  /** The suggestion row wearing LABEL, or null. */
   const rowFor = (label) => box.querySelectorAll(".tv-ac-item")
     .filter((e) => e.querySelector(".tv-ac-label").text === label)[0] || null;
-  /** What LABEL's row shows in its annotation slot; null when it shows nothing. */
   const slotOf = (sel) => (label) => {
     const el = rowFor(label), a = el && el.querySelector(sel);
     return a ? a.text : null;
@@ -108,25 +62,14 @@ function probe(box, handle) {
   const countOf = (label) => { const n = slotOf(".tv-ac-n")(label);
                                return n === null ? null : Number(n); };
   const asideOf = slotOf(".tv-ac-aside");
-  // The live chips are the ones carrying an index — which is also the property
-  // that makes them removable, and what tells them from a crumb wearing the
-  // same shape beside them.
   const chipsOf = () => box.querySelectorAll(".tv-chip[data-i]").map((c) => c.text.replace("×", ""));
   const crumbsOf = () => box.querySelectorAll(".tv-chip-muted").map((c) => c.text);
-  // The chain is written over the columns it orders, so it is read off the
-  // HEADERS rather than out of the strip: neither chip reader above sees it.
   const sortsOf = () => sortMarks(box);
-  /** Commit a query without clearing what is already applied. */
   const commit = (q) => { b().value = q; press("Enter"); };
   return { box, handle, b, reset, press, commit, type, shown, items, counts,
            offers, countOf, asideOf, chipsOf, crumbsOf, sortsOf };
 }
 
-/**
- * Mount a fixture and hand back a probe over it. ROWS is a row count for the
- * standard fixture or a whole view; PORT, when given, is the scroller height
- * the geometry checks need.
- */
 function driver(rows, opts, port) {
   const box = new El("div");
   const handle = TableView.mount(box, typeof rows === "number" ? view(rows) : rows, opts);
@@ -134,10 +77,6 @@ function driver(rows, opts, port) {
   return probe(box, handle);
 }
 
-// ---- colour ----------------------------------------------------------------
-// WCAG, implemented here so the renderer's contrast claims are checked against
-// something other than themselves. One copy: three sections wanted it and three
-// copies is three chances to fix a bug twice and miss the third.
 
 /** #rrggbb (or #rgb) to channel bytes. @param {string} h */
 const rgb = (h) => {
@@ -148,34 +87,19 @@ const rgb = (h) => {
 const chan = (c) => (c / 255 <= 0.03928 ? c / 255 / 12.92
                                         : Math.pow((c / 255 + 0.055) / 1.055, 2.4));
 const lum = (c) => 0.2126 * chan(c[0]) + 0.7152 * chan(c[1]) + 0.0722 * chan(c[2]);
-/** Contrast ratio between two hex colours. */
 const ratio = (a, b) => {
   const x = lum(rgb(a)) + 0.05, y = lum(rgb(b)) + 0.05;
   return x > y ? x / y : y / x;
 };
-/** A blended toward B by T, back as hex. */
 const mixed = (a, b, t) => "#" + rgb(a)
   .map((v, i) => Math.round(v + (rgb(b)[i] - v) * t).toString(16).padStart(2, "0")).join("");
 /**
- * The custom properties RULE declares, read out of the stylesheet the renderer
- * actually emitted — the way the badge-ink block reads its grounds. Literals
- * here would be a second copy of the palette, and a second copy passes while
- * the first one drifts. Hex values and percentages both, since a strength is
- * as much a palette decision as a colour.
  * @param {string} rule  the selector text, up to and including its `{'
  */
-/** Every stylesheet the renderer injected, as one string. */
 const cssText = () => document.head.children.map((e) => e.text).join("");
 
-/**
- * The applied chip's rule, selector and all. The identity belongs to the
- * SUMMONED mount — the palette's overlay and the strip dock alike — so it is
- * spelled for both, and the checks that read it say where it is written once
- * instead of eight times.
- */
 const FROST_RULE = ".tv-pal .tv-chip,.tv-summon .tv-chip";
 
-/** A CSS percentage as a fraction. */
 const pctOf = (v) => Number(String(v).replace("%", "")) / 100;
 
 function paletteIn(rule) {
@@ -190,12 +114,6 @@ function paletteIn(rule) {
 }
 
 /**
- * The box longhands an element settles at, cascaded over the RULES it matches.
- * There is no CSSOM in the shim, so the `border'/`padding' shorthands this
- * sheet writes are expanded here and the rules are merged in the order given —
- * which is the order the cascade takes them, these rules only ever tying on
- * source position. Asserting spellings instead lets a restyle move what is
- * painted without moving the check.
  * @param {string[]} rules  selector texts, in cascade order
  * @param {string} [css]  the sheet to read, defaulting to the whole of it
  */
@@ -204,8 +122,6 @@ function boxOf(rules, css) {
   const out = {};
   for (const sel of rules) {
     const esc = sel.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    // Anchored at a rule boundary, so `.tv-chip{' cannot land inside the
-    // `.tv-pal .tv-chip{' rule that is spelled above it.
     const m = new RegExp("(?:^|[}\\n])\\s*" + esc + "\\{").exec(sheet);
     if (!m) continue;
     const open = sheet.indexOf("{", m.index);
@@ -229,10 +145,6 @@ function boxOf(rules, css) {
 }
 
 /**
- * The chip colours THEME actually paints, resolved: the frost it washes (which
- * cascades from the base rule) composited onto that theme's own ground at the
- * strength the theme asks for. What `color-mix' with `transparent' does, done
- * here so the assertion is about the painted colour rather than its spelling.
  * @param {"light"|"dark"} theme
  */
 function chipIn(theme) {
@@ -246,10 +158,6 @@ function chipIn(theme) {
 }
 
 /**
- * The wash THEME paints with --tv-NAME at --tv-STRENGTH: the colour (which may
- * cascade from the base rule) composited onto that theme's own ground at the
- * strength that theme asks for. The `chipIn' of the row grounds — read from the
- * sheet, never re-spelled, so an identity swap swaps what is asserted.
  * @param {"light"|"dark"} theme  @param {string} name  @param {string} strength
  */
 function washIn(theme, name, strength) {
@@ -261,27 +169,16 @@ function washIn(theme, name, strength) {
   return { colour, ground, pct, wash: mixed(ground, colour, pct) };
 }
 
-/**
- * How far apart two colours sit in sRGB. A contrast ratio answers "can this be
- * read on that" and says almost nothing about "can this band be seen": the
- * light cursor row is 1.04:1 against the page it sits on and perfectly plain to
- * the eye, because what moved was hue rather than luminance. This is the metric
- * for the second question; what a step of it means is read against another step
- * in the same theme, the two themes having very different ranges.
- */
 const apart = (a, b) => Math.hypot(...rgb(a).map((v, i) => v - rgb(b)[i]));
 
-/** A hex colour's channels on 0..1 with their extrema — what hue and sat share. */
 const chroma = (h) => {
   const [r, g, b] = rgb(h).map((v) => v / 255);
   return { r, g, b, mx: Math.max(r, g, b), mn: Math.min(r, g, b) };
 };
-/** Saturation 0..1, for telling a pale wash from a saturated accent. */
 const sat = (h) => {
   const { mx, mn } = chroma(h);
   return mx === 0 ? 0 : (mx - mn) / mx;
 };
-/** Hue in degrees, for asserting that a lightness-only change kept one. */
 const hue = (h) => {
   const { r, g, b, mx, mn } = chroma(h);
   if (mx === mn) return 0;
@@ -291,14 +188,6 @@ const hue = (h) => {
   return Math.round(x * 60);
 };
 
-/**
- * A media-query stub that reads the query instead of sniffing a word out of
- * it. `reduce' and `no-preference' are different answers to one feature, and a
- * stub matching on the feature name alone answers yes to both — so a renderer
- * asking the wrong question passes. PREFS maps feature to the value in force.
- * The returned function is `matchMedia'; its `flip' changes a preference and
- * notifies whatever listened, which is how the system-theme path gets run.
- */
 function mediaStub(prefs) {
   const asked = new Map();
   const parse = (q) => /\((prefers-[\w-]+):\s*([\w-]+)\)/.exec(String(q));
@@ -328,12 +217,10 @@ function mediaStub(prefs) {
   return query;
 }
 
-/** A MutationObserver stub that keeps what it was told to watch. */
 class Watcher {
   constructor(cb) { this.cb = cb; this.target = null; this.opts = null; Watcher.made.push(this); }
   observe(target, opts) { this.target = target; this.opts = opts; }
   disconnect() { this.opts = null; }
-  /** What the browser does when the attribute moves. */
   fire(records) { this.cb(records || [{ type: "attributes" }], this); }
 }
 Watcher.made = [];
@@ -342,38 +229,12 @@ global.setTimeout = (fn, ms) => realTimeout(timed(fn), ms);
 global.clearTimeout = (id) => realClear(id);
 global.requestAnimationFrame = (fn) => realTimeout(timed(fn), 0);
 
-// ---- DOM shim --------------------------------------------------------------
 
-/**
- * The shim's line height, and the TRUE one: the driver moves it to stand in
- * for a zoom, and gives it a FRACTION to stand in for the height a real row
- * has. `13px/1.5' plus padding and a hairline does not land on a whole pixel,
- * and no browser reports a fractional box back whole — see `SNAP_PX' below and
- * `getBoundingClientRect'.
- */
 let ROW_PX = 30;
-/** The header's, which is deliberately NOT the row's: the renderer keeps the
- *  two apart and every sum over them has to as well. A shim reporting one
- *  number for both lets an arithmetic that confuses them pass. The driver moves
- *  it to stand in for a header that measures taller once it is drawn. */
 let HEAD_PX = 24;
-/**
- * The grid a rect is reported on. A browser lays a box out in fractions and
- * SNAPS every rect it hands back, so `getBoundingClientRect().height' is a
- * ROUNDING of the height rather than the height — Firefox at 13px/1.5 reports
- * a 30.5px row as 30 or 30.5 depending where it fell. Modelled here at that
- * same half-pixel, because the whole class of bug this catches is an
- * arithmetic that multiplies one sampled rect by a page of rows.
- */
 const SNAP_PX = 0.5;
 const snapped = (v) => Math.round(v / SNAP_PX) * SNAP_PX;
 
-/**
- * What a laid-out box really measures, unsnapped: what it was TOLD to be (a
- * spacer carries its height in the markup), else what its kind measures, else
- * the sum of what it holds. This is the number a scroller reports as its
- * `scrollHeight' and the number a rect is a rounding of.
- */
 function trueHeight(el) {
   if (!el || !el.tagName) return 0;
   if (el.style && el.style.display === "none") return 0;
@@ -384,12 +245,6 @@ function trueHeight(el) {
   return el.children.reduce((a, c) => a + trueHeight(c), 0);
 }
 
-/**
- * Where EL's top edge falls in the scroller above it, unsnapped: everything
- * ahead of it in its parent, and so on up to the scroll container. A row's rect
- * is snapped against this, so a run of rows reports the alternation a
- * fractional height really produces instead of one number repeated.
- */
 function contentTop(el) {
   let top = 0;
   for (let n = el; n && n.parentNode; n = n.parentNode) {
@@ -407,7 +262,6 @@ const decode = (s) =>
   s.indexOf("&") === -1 ? s : s.replace(/&(amp|lt|gt|quot|#39);/g, (_, e) => ENTITY[e]);
 const dash = (k) => String(k).replace(/[A-Z]/g, (c) => "-" + c.toLowerCase());
 
-/** One selector step: `tag.class[attr=value]'. */
 function step(s) {
   const attrs = [];
   s = s.replace(/\[([\w-]+)(?:=["']?([^\]"']*)["']?)?\]/g, (_, n, v) => (attrs.push([n, v]), ""));
@@ -427,7 +281,6 @@ function fits(el, st) {
   return true;
 }
 
-/** Match EL against STEPS (descendant combinators only). */
 function fitsAll(el, steps) {
   let i = steps.length - 1;
   if (!fits(el, steps[i--])) return false;
@@ -456,7 +309,6 @@ class Ev {
   stopPropagation() { this.propagationStopped = true; }
 }
 
-/** A text node: ordered among its siblings, invisible to selectors. */
 class TextNode {
   constructor(t) { this.textContent = String(t); this.tagName = null; this.parentNode = null; }
 }
@@ -476,7 +328,6 @@ class El {
     this.scrollTop = 0;
     this.clientHeight = 0;
   }
-  /** Elements only, the way a browser's `children' is — text nodes excluded. */
   get children() { return this.childNodes.filter((c) => c.tagName); }
   get className() { return this.attrs.get("class") || ""; }
   set className(v) {
@@ -504,10 +355,6 @@ class El {
   getAttribute(n) { return this.attrs.has(n) ? this.attrs.get(n) : null; }
   removeAttribute(n) { this.attrs.delete(n); if (n === "class") this.className = ""; }
   appendChild(c) { c.parentNode = this; this.childNodes.push(c); return c; }
-  // A real caret. Setting the text puts it at the end, the way typing does;
-  // a consumer that wants it elsewhere says so. Without this every caret the
-  // renderer reads is `value.length' and every check about where the caret is
-  // asserts the same fallback twice.
   get value() { return this._value; }
   set value(v) {
     this._value = String(v);
@@ -524,7 +371,6 @@ class El {
     this.childNodes.length = 0;
     if (String(t) !== "") this.appendChild(new TextNode(t));
   }
-  // The driver reads `.text' as shorthand for the rendered text.
   get text() { return this.textContent; }
   set text(t) { this.textContent = t; }
   get innerHTML() { return ""; }
@@ -554,27 +400,15 @@ class El {
     this.dispatchEvent(new Ev("blur"));      // a browser fires one; listeners rely on it
   }
   getBoundingClientRect() {
-    // What the box is told to be, else what its kind measures. A spacer row
-    // carries its height in the markup and must report that, or the geometry
-    // the renderer reads back is not the geometry it wrote.
     const h = this.style.height;
     if (h && /px$/.test(String(h))) return { height: parseFloat(String(h)), width: 0 };
     if (this.tagName === "THEAD") return { height: HEAD_PX, width: 0 };
-    // A ROW is reported the way a browser reports one: snapped, against where
-    // the row actually falls. With a whole ROW_PX that is ROW_PX for every row
-    // and this is the shim it always was; with a fractional one the rects
-    // alternate around it, which is what makes `one rect times a page of rows'
-    // a different number from the page.
     if (this.tagName === "TR") {
       const top = contentTop(this);
       return { height: snapped(top + ROW_PX) - snapped(top), width: 0 };
     }
     return { height: 0, width: 0 };
   }
-  /**
-   * What this box's content measures, as a scroller reports it: a browser
-   * rounds `scrollHeight' to a whole pixel over content that is not whole.
-   */
   get scrollHeight() { return Math.round(trueHeight(this)); }
   closest(sel) {
     const steps = parseSel(sel);
@@ -595,8 +429,6 @@ class El {
 const TAG = /<(\/?)([a-zA-Z][\w-]*)((?:\s+[^\s"'>\/=]+(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s"'>]+))?)*)\s*(\/?)>/g;
 const ATTR = /([^\s"'>\/=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+)))?/g;
 
-/** Parse HTML into PARENT (enough of a parser for what this renderer writes). */
-/** A `style' attribute's declarations onto EL, the way the DOM does. */
 function applyStyle(el, decls) {
   for (const decl of String(decls).split(";")) {
     const at = decl.indexOf(":");
@@ -623,10 +455,6 @@ function parseInto(html, parent) {
       const name = a[1], val = decode(a[2] ?? a[3] ?? a[4] ?? "");
       if (name === "class") el.className = val;
       else el.attrs.set(name, val);
-      // A `style' attribute is a declaration list and the shim's geometry reads
-      // it: a SPACER row carries its height there and nowhere else, so leaving
-      // it as an opaque string had every spacer report one row's height however
-      // many rows it stood in for.
       if (name === "style") applyStyle(el, val);
       if (name === "value") el.value = val;
     }
@@ -638,8 +466,6 @@ function parseInto(html, parent) {
 }
 
 global.CustomEvent = Ev;
-// The renderer opens an http link itself when no `onLink' is given; the check
-// below is what keeps this from being a stub for a path nobody walks.
 let opened = null;
 global.window = { open(url, target, features) { opened = [url, target, features]; } };
 global.document = {
@@ -648,7 +474,6 @@ global.document = {
   createElement: (tag) => new El(tag),
 };
 
-// ---- the view --------------------------------------------------------------
 
 const file = process.argv[2] || path.join(__dirname, "table-view.js");
 const COUNT = Number(process.argv[3] || 13344);
@@ -656,9 +481,7 @@ const TableView = require(path.resolve(file));
 
 const STATES = ["NEXT", "TODO", "WAITING", "CANCELLED", "DONE"];
 const PRI = ["A", "B", "C"];
-/** SCHEMA's uniform meta, which every key's value domain ends with. */
 const EMPTY = "*empty*";
-/** LIST as a value domain reads it: the column's own values, then that meta. */
 const domain = (...list) => list.concat([EMPTY]);
 const WORDS = ["ship", "the", "system", "review", "index", "rewrite", "org", "cache",
                "parser", "daemon", "window", "headline", "sync", "queue", "digest"];
@@ -674,7 +497,6 @@ const columns = [
   { key: "deadline", header: "Deadline", type: "text", sortable: true },
 ];
 
-/** A row shaped like a glance headline: an Org link in the title cell. */
 function makeRow(i) {
   const words = [0, 1, 2, 3].map((k) => WORDS[(i * 7 + k * 3) % WORDS.length]).join(" ");
   const day = 1 + (i % 28), month = 1 + (i % 12);
@@ -699,10 +521,6 @@ const view = (n) => ({
 });
 
 
-/**
- * SCHEMA's ordering rules: which comparator wins, where the blanks land, and
- * whose indices a delta is counted in.
- */
 async function sortOrder() {
   console.log("\n== ordering");
   const cols = [
@@ -715,24 +533,18 @@ async function sortOrder() {
     { id: "3", cells: { name: "apple", state: "TODO" } },
     { id: "4", cells: { name: "fig", state: "" } },
   ];
-  /** Mount the ordering fixture under SORT and read column KEY off the window. */
   const order = (sort, key) => {
     const box = new El("div");
     const h = TableView.mount(box, { title: "order", columns: cols, rows, sort });
     return h.getVisible().map((r) => r.cells[key]);
   };
 
-  // --- g: an explicit comparator outranks a value order
-  // `values' would sort TODO before DONE. `compare' is named on the same
-  // column, and SCHEMA gives it precedence, so the sort is alphabetical and
-  // DONE leads. Reading it the other way would put TODO first.
   check("a named comparator beats the column's value order",
         order({ column: "state", ascending: true }, "state").slice(0, 2),
         ["DONE", "TODO"]);
   check("without one, the value order still rules",
         order({ column: "state", ascending: true }, "state").slice(0, 2)[0] !== "TODO", true);
 
-  // --- h: blanks go last, and stay last when the sort reverses
   check("ascending puts the blank name last",
         order({ column: "name", ascending: true }, "name"),
         ["apple", "fig", "pear", ""]);
@@ -742,7 +554,6 @@ async function sortOrder() {
   check("a blank in a column with a value order sorts last too",
         order({ column: "state", ascending: true }, "state")[3], "");
 
-  // The direction strings are the only spelling that asks for the other rule.
   check("asc-nulls-first leads with the blank",
         order({ column: "name", direction: "asc-nulls-first" }, "name"),
         ["", "apple", "fig", "pear"]);
@@ -754,10 +565,6 @@ async function sortOrder() {
   check("direction outranks ascending",
         order({ column: "name", direction: "desc", ascending: true }, "name")[0], "pear");
 
-  // --- i: a delta is counted in the window, not the store
-  // The store order is pear, blank, apple, fig; sorted ascending the window
-  // reads apple, fig, pear, blank. Deleting window index 0 must take apple,
-  // which sits at store index 2 -- a store-indexed delete would take pear.
   const box = new El("div");
   const h = TableView.mount(box, {
     title: "order", columns: cols, rows, sort: { column: "name", ascending: true },
@@ -772,7 +579,6 @@ async function sortOrder() {
         (h.applyDelta([{ op: "insert", index: 99, row: { id: "8", cells: { name: "zed", state: "DONE" } } }]),
          h.getRows().length), 5);
 
-  // --- j: a column that declares itself multi-valued outranks the shapes
   const tagCols = [
     { key: "title", label: "Title" },
     { key: "tags", label: "Tags", multi: true },
@@ -783,8 +589,6 @@ async function sortOrder() {
   ];
   const decl = new El("div");
   const d = TableView.mount(decl, { title: "t", columns: tagCols, rows: tagRows });
-  // Nothing here is org-shaped, so the heuristic would have found no tag column
-  // at all and offered no key for it. The declaration is what supplies one.
   const db = decl.querySelector(".tv-filter");
   db.value = "we";
   db.dispatchEvent(new Ev("input"));
@@ -792,7 +596,6 @@ async function sortOrder() {
         decl.querySelectorAll(".tv-ac-label").map((e) => e.text).some((x) => /^web|tag/.test(x)),
         true);
 
-  // Undeclared, the shapes still decide -- the fallback keeps working.
   const guess = new El("div");
   const g = TableView.mount(guess, {
     title: "t",
@@ -803,10 +606,6 @@ async function sortOrder() {
   check("undeclared, the cell shapes still find it",
         g.getVisible().length, 2);
 
-  // --- l: every comparator branch, run rather than merely exported
-  // `comparator' is on the static surface, so a consumer sorting its own rows
-  // gets whichever branch its column names -- and until now only two of the
-  // five ever ran here.
   const sortBy = (col, vals) => vals.slice().sort(TableView.comparator(col));
   check("number sorts by value, not by digit",
         sortBy({ key: "n", compare: "number" }, ["10", "9", "100", "1"]),
@@ -833,17 +632,12 @@ async function sortOrder() {
   check("and everything else collates",
         sortBy({ key: "s" }, ["b", "a"]), ["a", "b"]);
 
-  // With nothing reordering the rows the window is the store, and the two
-  // readings agree -- the mapping has to be invisible in the common case.
   const plain = new El("div");
   const p = TableView.mount(plain, { title: "order", columns: cols, rows });
   p.applyDelta([{ op: "delete", index: 0 }]);
   check("with no sort the window is the store",
         p.getRows().map((r) => r.cells.name), ["", "apple", "fig"]);
 
-  // --- m: `sortBy' STATES an order where a header click toggles one.  A
-  // consumer applying a canned view -- glance's agenda -- has to land on the
-  // same order every time it is asked for, so asking twice must not reverse it.
   const said = new El("div");
   const q = TableView.mount(said, { title: "order", columns: cols, rows });
   check("sortBy orders the window", (q.sortBy("name"),
@@ -852,18 +646,10 @@ async function sortOrder() {
         q.getVisible().map((r) => r.cells.name)), ["apple", "fig", "pear", ""]);
   check("false takes the other direction", (q.sortBy("name", false),
         q.getVisible().map((r) => r.cells.name)), ["pear", "fig", "apple", ""]);
-  // `sortable' is opt-in and gates the READER's key; neither column here
-  // declares it, and both of the above sorted, which is the whole of the rule.
   check("a column nothing carries is refused, and says so", q.sortBy("nope"), false);
   check("and the order it was in is left alone",
         q.getVisible().map((r) => r.cells.name), ["pear", "fig", "apple", ""]);
 
-  // --- n: PROMOTION, which is how a chain is composed in a browser. `^' and a
-  // header click put a column at the HEAD and shift the rest down; pressing
-  // over columns in reverse priority order builds the chain, and the QUERY
-  // carries it as it grows — promotion writes `sort:' tokens, so the order is
-  // one of the query's own terms. table-view.el spells the same thing with
-  // `C-u ^', which a page has no prefix argument for.
   {
     const cols2 = [
       { key: "dept",  header: "Dept",  sortable: true },
@@ -880,8 +666,6 @@ async function sortOrder() {
     const el = new El("div");
     const p = TableView.mount(el, { title: "roster", columns: cols2, rows: team });
     const chain = () => p.getSort().map((k) => k.column + (k.ascending ? "+" : "-"));
-    // The chain over the headers, and the chain as the query spells it: the two
-    // descriptions the reader has, and neither of them a store of its own.
     const heads = () => sortMarks(el);
     const asked = () => p.getQuery();
 
@@ -904,16 +688,12 @@ async function sortOrder() {
     check("and a key nothing carries is refused too", p.sortPromote("nope"), false);
     check("neither moved the chain", chain(), ["score-"]);
 
-    // The headers: every key of the chain marks its own column, in precedence
-    // order, and a chain of one has nothing to number.
     check("the headers draw the chain in precedence order",
           (p.setSort([{ column: "dept", ascending: true },
                       { column: "score", ascending: false }]), heads()),
           ["Dept▲¹", "Score▼²"]);
     check("the leading key is the one in full ink",
           el.querySelectorAll(".tv-arrow").filter((a) => a.classes.has("tv-lead")).length, 1);
-    // Read in COLUMN order, so it is the ordinals that carry the precedence:
-    // promoting `score' leaves the marks where the columns are and renumbers.
     check("a promotion renumbers them at once",
           (p.sortPromote("score"), heads()), ["Dept▲²", "Score▲¹"]);
     check("and writes the chain into the query as ONE token, precedence and all",
@@ -923,15 +703,11 @@ async function sortOrder() {
     check("and clearing the chain takes the marks off",
           (p.setSort([]), [chain(), heads()]), [[], []]);
 
-    // A key naming no column describes nothing, so nothing describes it: the
-    // headers, the hint and the comparator drop it alike.
     check("a chain key for a column that is gone is dropped everywhere",
           (p.setSort([{ column: "ghost" }, { column: "score", ascending: true }]),
            [heads(), p.getVisible().map((r) => r.id)]),
           [["Score▲"], ["dot", "gil", "hugh", "bell", "ada"]]);
 
-    // getSort/setSort round-trip, nulls included — the property a consumer
-    // persisting a chain in a URL rests on.
     check("a chain read out and handed back is the chain that was read",
           (p.setSort([{ column: "dept", direction: "desc-nulls-first" }]),
            p.setSort(p.getSort()), p.getSort()),
@@ -940,14 +716,6 @@ async function sortOrder() {
 }
 
 
-/**
- * The conformance vectors both renderers' suites execute (../fixtures/parity),
- * off one manifest: this driver and table-view-test.el. The manifest says which
- * capabilities are this harness's, and a listed one with no runner below fails
- * rather than skipping, so it cannot claim one that is missing. `query' is this
- * renderer's alone — table-view.el has no query grammar — which is why the
- * split is in the manifest rather than assumed on either side.
- */
 async function parityVectors() {
   console.log("\n== parity vectors");
   const dir = path.join(__dirname, "..", "fixtures", "parity");
@@ -955,7 +723,6 @@ async function parityVectors() {
   const manifest = read("manifest.json");
   const mine = manifest.harnesses["web/perf-driver.js"];
 
-  // A vector file the manifest forgot is a vector nobody runs.
   check("the manifest lists every vector file",
         fs.readdirSync(dir).filter((f) => f !== "manifest.json").sort(),
         manifest.vectors.map((v) => v.file).sort());
@@ -977,15 +744,10 @@ async function parityVectors() {
       }
     },
 
-    // One gesture, read two ways: `query' declares WHICH rows a query leaves
-    // and `query-sort' declares what ORDER it leaves them in. Same commit, same
-    // `getVisible', so a vector file says which question it is asking by the
-    // field it writes the answer in.
     query: (c, view, name) => shown(c, view, name, c.expect.ids),
     "query-sort": (c, view, name) => shown(c, view, name, c.expect.order),
   };
 
-  /** Commit C's query over VIEW and check the ids it leaves against WANT. */
   function shown(c, view, name, want) {
     const p = driver(view, undefined, 300);
     p.commit(c.q);
@@ -1000,8 +762,6 @@ async function parityVectors() {
     if (mine.indexOf(v.capability) === -1) continue;
     const file = read(v.file);
     check(`${v.file} declares ${v.capability}`, file.capability, v.capability);
-    // A case takes the file's view, one of its own, or `{"$ref": NAME}' naming
-    // one of the file's `views' — so a view several cases share is written once.
     const viewOf = (c) => (c.view && c.view.$ref ? file.views[c.view.$ref]
                                                  : c.view || file.view);
     for (const c of file.cases)
@@ -1010,11 +770,6 @@ async function parityVectors() {
 }
 
 
-/**
- * Producer meta-values: the completion domain merges `values' with the badge
- * palette, and a starred entry reads as the producer's own rather than as a
- * value the rows hold.
- */
 async function metaValues() {
   console.log("\n== producer meta-values");
   const cols = [
@@ -1033,13 +788,11 @@ async function metaValues() {
   ];
   const P = driver({ title: "meta", columns: cols, rows });
 
-  // --- the merge: declared values in their order, then the badges they missed
   check("the domain is values then the unlisted badges, then the uniform meta",
         P.type("state:"), ["*active*", "*inactive*", "TODO", "NEXT", "DONE", "*empty*"]);
   check("the badge keywords survive alongside the declared values",
         P.type("state:").indexOf("TODO") !== -1, true);
 
-  // --- a meta reads as a meta
   P.type("state:");
   const rowsOf = () => P.box.querySelectorAll(".tv-ac-item");
   const dimmed = rowsOf().map((e) => e.classes.has("tv-ac-dim"));
@@ -1053,7 +806,6 @@ async function metaValues() {
   check("the dim class is italic as well as faint",
         /\.tv-ac-dim\{[^}]*font-style:italic/.test(css), true);
 
-  // --- accepted verbatim, asterisks and all
   P.reset();
   P.b().value = "state:*act";
   P.b().dispatchEvent(new Ev("input"));
@@ -1061,7 +813,6 @@ async function metaValues() {
   P.box.querySelectorAll(".tv-ac-item")[0].dispatchEvent(new Ev("click"));
   check("accepting inserts it with its asterisks", P.b().value.trim(), "state:*active*");
 
-  // --- and the asterisks are reading notation, not typing burden
   const metaAt = () => P.box.querySelectorAll(".tv-ac-item")
     .findIndex((e) => e.classes.has("tv-ac-on"));
   check("a meta answers to the word inside its stars", P.type("state:act"), ["*active*"]);
@@ -1077,19 +828,10 @@ async function metaValues() {
   check("while a word inside no meta reaches none of them",
         P.type("state:tive"), []);
 
-  // --- and the local evaluator answers the one half it can
-  //
-  // SCHEMA puts the EMPTY cell in `*active*' -- a row nobody has stated is live
-  // work -- and that term names no keyword, so it reads the same here as at the
-  // producer. The keyword half is the producer's and drops out, which is why
-  // `*active*' finds the one stateless row rather than the three active ones.
-  // `*inactive*' has no such half and stays the literal it was.
   check("the active meta finds the stateless row, the half a renderer can know",
         P.shown("state:*active*"), 1);
   check("and state:*empty* is that same row, asked for by name",
         P.shown("state:*empty*"), 1);
-  // The stars are what make a value a meta, so the bare word reserves nothing:
-  // this fixture has no state spelled `none', and the query says so.
   check("while the bare word is the literal it always could have been",
         P.shown("state:none"), 0);
   check("the inactive meta stays a literal, so it matches nothing",
@@ -1100,7 +842,6 @@ async function metaValues() {
         P.shown("-state:*inactive*"), 4);
   check("while a concrete value matches as ever", P.shown("state:TODO"), 2);
 
-  // --- regressions either side of the merge
   const B = driver({
     title: "meta",
     columns: [{ key: "title", label: "Title" },
@@ -1123,13 +864,6 @@ async function metaValues() {
         [M.type("tag:"), M.counts()], [domain("api", "web"), [1, 2]]);
 }
 
-/**
- * The starred family: `*empty*' on every key, a starred word on a multi-valued
- * column as the whole entry, and the bare words neither of them reserves. What
- * the parity vectors pin is the MATCHING; what belongs here is the offering,
- * the ordering it does not disturb, and the completion that reaches a meta
- * without its stars.
- */
 async function starredMetas() {
   console.log("\n== starred metas");
   const cols = [
@@ -1149,7 +883,6 @@ async function starredMetas() {
   const P = driver({ title: "metas", columns: cols, rows });
   const ids = (q) => { P.shown(q); return P.handle.getVisible().map((r) => r.id); };
 
-  // --- offered per key, wherever an empty cell means anything, which is everywhere
   check("a badge column ends its domain with the uniform meta",
         P.type("state:"), ["*active*", "TODO", "DONE", "*empty*"]);
   check("a multi column offers its declared meta and that one both",
@@ -1157,13 +890,11 @@ async function starredMetas() {
   check("and a free-text column, whose domain is its own cells, offers it too",
         P.type("title:").indexOf("*empty*") !== -1, true);
 
-  // --- and a meta is reached without its stars, at either stage
   check("the uniform meta answers to the word inside them", P.type("state:emp"), ["*empty*"]);
   check("a declared one the same way", P.type("tag:arch").slice(0, 2), ["*archive*", "archive"]);
   check("and a bare word reaches it through the column that declares it",
         P.type("arch").indexOf("tag:*archive*") !== -1, true);
 
-  // --- matching: the stars are the whole of what makes a meta
   check("the uniform meta is the empty cell, on any key",
         [ids("state:*empty*"), ids("tag:*empty*")], [["bare"], ["bare"]]);
   check("a starred word on a multi column is the whole entry", ids("tag:*archive*"), ["arch"]);
@@ -1172,23 +903,12 @@ async function starredMetas() {
   check("a starred word on a SINGLE-valued column is a literal, so it finds nothing",
         ids("state:*todo*"), []);
 
-  // --- a meta takes no sort position: no cell holds one
   const sorted = () => { P.shown(""); P.handle.sortBy("state", true);
                          return P.handle.getVisible().map((r) => r.id); };
-  // TODO before DONE is the palette's order; a `values' of metas alone orders
-  // nothing, so without the rule that drops them every row would tie here and
-  // the rows would come back as they went in.
   check("the badge palette still orders the column its `values' declared a meta in",
         sorted(), ["arch", "word", "near", "bare"]);
 }
 
-/**
- * Org's priority decoration: a cell drawn `[#A]' and meant as `A'. Display
- * wears it and matching reads through it — the stars' rule from the cell's side
- * rather than the vocabulary's — so completion reaches the cell's own spelling
- * from either. What the parity vectors pin is the MATCHING; what belongs here is
- * the offering, and that what a completion COMMITS still answers.
- */
 async function decoratedCells() {
   console.log("\n== the priority decoration");
   const cols = [
@@ -1206,12 +926,10 @@ async function decoratedCells() {
   const leads = () => P.box.querySelectorAll(".tv-ac-item")
     .findIndex((e) => e.classes.has("tv-ac-on"));
 
-  // --- the domain is the cell's own spelling; the decoration is not vocabulary
   check("the column offers the values as the cells wear them",
         P.type("priority:"), domain("[#A]", "[#B]"));
   check("and each carries the rows behind it", P.counts(), [1, 1]);
 
-  // --- reached bracket-free, the way a meta is reached star-free
   check("the letter alone reaches the value it decorates", P.type("priority:a"), ["[#A]"]);
   check("spelled in full it leads, so RET takes it", leads(), 0);
   check("and the cell's own spelling still answers to itself",
@@ -1219,7 +937,6 @@ async function decoratedCells() {
   check("a bare word reaches it through the column too",
         P.type("a").indexOf("priority:[#A]") !== -1, true);
 
-  // --- and what commits wears the decoration, and matches
   P.type("priority:a");
   P.b().dispatchEvent(new Ev("keydown", { key: "Enter" }));
   check("accepting inserts the decorated spelling",
@@ -1227,7 +944,6 @@ async function decoratedCells() {
   check("which is the query the letter would have asked",
         [P.handle.getVisible().map((r) => r.id), ids("priority:A")], [["hi"], ["hi"]]);
 
-  // --- the fold is the whole decoration's, and the match is still whole-value
   check("half a decoration folds nothing", ids("priority:[#"), []);
   check("and neither side is a substring of the other", ids("priority:AB"), []);
   check("the empty meta reads the cell as ever", ids("priority:*empty*"), ["flat"]);
@@ -1235,7 +951,6 @@ async function decoratedCells() {
         ids("-priority:A"), ["mid", "flat"]);
 }
 
-/** Six rows with two columns, which is enough to page, filter and sort over. */
 const MARK_VIEW = {
   title: "marks",
   columns: [{ key: "state", header: "State", type: "text", sortable: true },
@@ -1245,17 +960,9 @@ const MARK_VIEW = {
     .map(([id, state, title]) => ({ id, cells: { state, title } })),
 };
 
-/**
- * Row marking: the chrome column, what a mark survives, and the ground it puts
- * a row on. The feature is renderer-local by SCHEMA, so everything here is
- * about the renderer's own surface — no cell, column or op changes shape.
- */
 async function rowMarks() {
   console.log("\n== row marks");
 
-  // --- without the option, nothing at all — and nothing a consumer can turn on
-  //     by accident: the calls are on the handle either way (as `nextPage' is
-  //     with no page size), so the check is that using one paints nothing.
   {
     const off = driver(10);
     check("no marks option, no mark column", off.box.querySelectorAll(".tv-box").length, 0);
@@ -1274,7 +981,6 @@ async function rowMarks() {
           off.box.querySelector(".tv-hint").textContent.indexOf("marked"), -1);
   }
 
-  // --- the chrome
   const M = driver(10, { marks: true });
   const rows = () => M.box.querySelectorAll(".tv-table tbody tr[data-id]");
   const washed = () => rows().filter((tr) => tr.classes.has("tv-marked"));
@@ -1284,16 +990,12 @@ async function rowMarks() {
         [columns.length + 1, ""]);
   check("and every row with a box cell of its own",
         M.box.querySelectorAll("tbody td.tv-box").length, 10);
-  // The glyph is the class's, drawn by ::before, so the cell itself is empty
-  // and the state has one home rather than two that can disagree.
   check("which the markup leaves empty, the class carrying the state",
         [rows()[0].children[0].text, washed().length], ["", 0]);
   check("the hint line is untouched while nothing is marked",
         hint(), "10 rows · sort scheduled asc" + ACT);
   {
     const css = cssText();
-    // Scoped to `.tv-marking', which only `marks' puts on the root: the gutter
-    // belongs to either row state and the box in it to a table that marks.
     check("the box glyph is drawn off the class, both states, under the marking root",
           [css.indexOf('.tv-marking .tv-table td.tv-box::before{content:"[ ]"}') !== -1,
            css.indexOf('.tv-marking .tv-table tbody tr.tv-marked td.tv-box::before'
@@ -1305,7 +1007,6 @@ async function rowMarks() {
           [true, false]);
   }
 
-  // --- toggling, and what it answers
   const ids = M.handle.getVisible().map((r) => r.id);
   check("toggleMark answers the state it landed in",
         [M.handle.toggleMark(ids[2]), M.handle.toggleMark(ids[2])], [true, false]);
@@ -1319,8 +1020,6 @@ async function rowMarks() {
   check("the count leads the hint line, ahead of what is merely on show",
         hint(), "2 marked · 10 rows · sort scheduled asc" + ACT);
 
-  // --- the pointer: the box is a toggle, and the only cell that is not a
-  //     selection. Everything past it still selects, one column over.
   M.handle.select(ids[0]);
   await painted();
   rows()[3].children[0].click();
@@ -1334,8 +1033,6 @@ async function rowMarks() {
   check("and the cell mark lands on that td rather than one over",
         rows()[5].children.findIndex((td) => td.classes.has("tv-cell-sel")), 3);
 
-  // --- the survival matrix. A mark is an entry in a set of ids, which is why
-  //     it outlives every re-derivation of the rows and only its row's death.
   {
     const S = driver(MARK_VIEW, { marks: true, pageSize: 4 });
     const h = S.handle;
@@ -1369,7 +1066,6 @@ async function rowMarks() {
     check("clearMarks takes the rest", h.markedCount(), 0);
   }
 
-  // --- actionHints: false drops the legend and nothing else
   {
     const seen = [];
     const H = driver(10, { actionHints: false, onAction: (c, id) => seen.push(c + " " + id) });
@@ -1381,12 +1077,10 @@ async function rowMarks() {
     check("while the counts and the sort stand where they were",
           line, "10 rows · sort scheduled asc");
 
-    // Presentation only: the actions are still there and still dispatch.
     H.box.querySelectorAll(".tv-table tbody tr[data-id]")[0]
       .dispatchEvent(new Ev("dblclick"));
     check("the default action still runs", seen.pop(), "materialize " + ids[0]);
 
-    // The pager keeps its place in the line too, the legend being what left.
     const P2 = driver(250, { actionHints: false, pageSize: 100 }, 600);
     check("a paged line keeps its range AND its prev/next, dropping only the pairs",
           P2.box.querySelector(".tv-hint").textContent,
@@ -1400,7 +1094,6 @@ async function rowMarks() {
           T2.box.querySelector(".tv-hint").textContent, "10 rows · sort scheduled asc" + ACT);
   }
 
-  // --- flags: the pending-action state, beside the standing one
   {
     const F = driver(MARK_VIEW, { marks: true, pageSize: 4 });
     const h = F.handle;
@@ -1416,7 +1109,6 @@ async function rowMarks() {
     h.unflagRow("e");
     check("and says nothing when there was none to take", h.getFlagged(), ["a"]);
 
-    // --- the two sets are two questions
     h.toggleMark("a");
     check("a row can be marked and flagged at once",
           [h.getMarked(), h.getFlagged()], [["a"], ["a"]]);
@@ -1429,7 +1121,6 @@ async function rowMarks() {
           [h.flaggedCount(), h.getMarked()], [0, ["b"]]);
     h.clearMarks();
 
-    // --- the survival matrix, the same one marks answer
     h.flagRow("b");
     h.flagRow("e");
     h.upsertRow({ id: "b", cells: { state: "WAIT", title: "bravo again" } });
@@ -1456,11 +1147,6 @@ async function rowMarks() {
     check("setView drops them with the view they were about", NF.handle.flaggedCount(), 0);
   }
 
-  // --- flags alone: the gutter without the checkbox
-  // `flags' defaults to `marks', which is the one option flags shipped under,
-  // so every mount above is byte for byte what it was. Asked for on its own it
-  // draws the flag ground and the edge cell the ground needs, and nothing of
-  // marking: no box to check, no click that checks one, no count on the line.
   {
     const A = driver(MARK_VIEW, { flags: true });
     const h = A.handle;
@@ -1478,14 +1164,9 @@ async function rowMarks() {
           [rowOfId("b").classes.has("tv-flagged"), h.getFlagged()], [true, ["b"]]);
     check("and the line counts it", A.box.querySelector(".tv-hint").textContent
             .indexOf("1 flagged") === 0, true);
-    // The edge lives on the gutter cell, so a flag reads there whatever ground
-    // the row is on -- which is the whole reason the cell is drawn at all.
     check("the edge rule is unscoped, the gutter being either state's",
           cssText().indexOf(".tv-table tbody tr.tv-flagged td.tv-box{box-shadow:") !== -1,
           true);
-    // Marking is off: the box is inert and the count it would lead with never
-    // appears, while the ids still go in and come back -- the option gates the
-    // DRAWING, as it always has.
     A.box.querySelectorAll("tbody tr[data-id]")[0].children[0].click();
     await painted();
     check("a click on the gutter marks nothing, and selects the row like any cell",
@@ -1496,8 +1177,6 @@ async function rowMarks() {
           [A.box.querySelectorAll("tr.tv-marked").length, h.markAll(),
            A.box.querySelector(".tv-hint").textContent.indexOf("marked")],
           [0, 0, -1]);
-    // The other half of the default: naming it false under `marks: true' takes
-    // the flag drawing off and leaves the marking alone.
     const N = driver(MARK_VIEW, { marks: true, flags: false });
     N.handle.flagRow("a");
     N.handle.toggleMark("a");
@@ -1508,10 +1187,8 @@ async function rowMarks() {
            N.handle.getFlagged()], [1, 0, ["a"]]);
   }
 
-  // --- the precedence stack: one background slot, four things wanting it
   {
     const css = document.head.children.map((e) => e.text).join("");
-    // Source order IS the precedence, every rule being one class on `tr'.
     const at = (sel) => css.indexOf(sel);
     check("zebra, then mark, then flag, then cursor",
           [at(".tv-table tbody tr.tv-alt{") < at(".tv-table tbody tr.tv-marked{"),
@@ -1533,18 +1210,12 @@ async function rowMarks() {
     check("and a flagged row keeps its class with no cursor on it",
           [rowOfId("b").classes.has("tv-flagged"), rowOfId("b").classes.has("tv-sel")],
           [true, false]);
-    // The cursor takes the one background slot, so the flag needs a second
-    // channel or it stops saying anything under the cursor. That is the edge.
     check("the flag's edge is on the box cell, where no other state writes",
           /tr\.tv-flagged td\.tv-box\{box-shadow:inset 3px 0 0 var\(--tv-flag\)\}/
             .test(css), true);
     check("and the checkbox glyph is drawn from the mark, independent of any ground",
           /tr\.tv-marked td\.tv-box::before\{content:"\[X\]"\}/.test(css), true);
 
-    // A column band crosses all of it and contests none of it: the states are
-    // on the tr and the band is on the td, so a row that is marked, flagged and
-    // under the cursor keeps every class it had while the band washes one of
-    // its cells. And the box is nobody's column, so the band is counted past it.
     h.select("a", 1);
     await painted();
     check("a band leaves every row class where it found it",
@@ -1567,7 +1238,6 @@ async function rowMarks() {
     check("giving the column back takes the band with it",
           P.box.querySelectorAll("tbody td.tv-colsel").length, 0);
 
-    // --- the hint segment
     check("both counts lead the line, the pending one first",
           P.box.querySelector(".tv-hint").textContent, "2 flagged · 1 marked · 6 rows · unsorted");
     h.clearFlags();
@@ -1580,7 +1250,6 @@ async function rowMarks() {
           P.box.querySelector(".tv-hint").textContent, "6 rows · unsorted");
   }
 
-  // --- the flag wash, read out of the sheet like the frost
   {
     const L = washIn("light", "flag", "flag-wash"), D = washIn("dark", "flag", "flag-wash");
     check("both themes wash the one flag var", [L.colour === D.colour, !!L.colour],
@@ -1589,9 +1258,6 @@ async function rowMarks() {
           [L.pct > 0 && L.pct <= 0.3, D.pct > 0 && D.pct <= 0.3], [true, true]);
     check("the flag is a red, which is nothing else the table paints",
           hue(L.colour) <= 15 || hue(L.colour) >= 345, true);
-    // The floors are what SET the strengths rather than what they were checked
-    // against afterwards: red is dark, and on white the tag ink falls under
-    // 4.5:1 by 10%, so the light wash is the most the ink allows and no more.
     for (const [theme, p] of [["light", L], ["dark", D]]) {
       const pal = paletteIn(`:root[data-theme="${theme}"] .tv-root{`);
       check(`${theme}: body ink clears 7:1 on a flagged row`,
@@ -1601,31 +1267,19 @@ async function rowMarks() {
       check(`${theme}: and the wash stays nearer the page than the solid flag`,
             ratio(p.ground, p.wash) < ratio(p.wash, p.colour), true);
     }
-    // The two strengths are bound by different things, and only one of them is
-    // bound by the ink: on white a red this dark drags --tv-muted under 4.5:1
-    // by 10%, so the light wash is the most the ink allows. On black there is
-    // room to spare, and the strength is set by what reads rather than by a
-    // floor -- which is why the two numbers are far apart.
     check("light is the strength the ink caps; two points more would break it",
           ratio(paletteIn(':root[data-theme="light"] .tv-root{').muted,
                 mixed(L.ground, L.colour, L.pct + 0.02)) >= 4.5, false);
     check("dark has headroom the light side does not",
           ratio(paletteIn(':root[data-theme="dark"] .tv-root{').muted,
                 mixed(D.ground, D.colour, D.pct + 0.06)) >= 4.5, true);
-    // The mark and the flag land at the same lightness on white, so they are
-    // told apart by hue rather than by weight — worth pinning, since a future
-    // strength change could make them the same wash.
     check("the mark and the flag are different hues, which is what separates them",
           Math.abs(hue(L.wash) - hue(L.colour)) < 45, true);
   }
 
-  // --- the two presentations: a stepped seam flows, an explicit turn snaps
   {
     const P = driver(250, { pageSize: 100 }, 300);
     const h = P.handle;
-    // Display order, not store order: the view carries a sort, so an index
-    // into `getRows' would be indexing the wrong sequence. An unpaged mount of
-    // the same view IS the ordered set.
     const ids = driver(250).handle.getVisible().map((r) => r.id);
     const at = (id) => ids.indexOf(id);
 
@@ -1636,7 +1290,6 @@ async function rowMarks() {
     check("a step inside the page changes no presentation",
           [h.selectStep(1), h.pageInfo().page, h.getVisible().length], [true, 1, 100]);
 
-    // --- crossing forward: one row, and the pager follows the cursor
     h.select(h.getVisible()[99].id);
     await painted();
     check("parked on the last row of page one", at(h.getSelection().id), 99);
@@ -1650,7 +1303,6 @@ async function rowMarks() {
           [h.getVisible().length, at(h.getVisible()[0].id),
            at(h.getVisible()[99].id)], [100, 100, 199]);
 
-    // --- a held burst, across a second seam
     let steps = 0;
     for (let i = 0; i < 101 && h.selectStep(1); i++) steps++;
     await painted();
@@ -1658,7 +1310,6 @@ async function rowMarks() {
           [steps, at(h.getSelection().id)], [101, 201]);
     check("and the pager has followed it onto page three", h.pageInfo().page, 3);
 
-    // --- an explicit turn snaps back to the crisp presentation
     check("previousPage steps back a page from the cursor's", h.previousPage(), true);
     await painted();
     check("landing on that page's LAST row, the paged slice exact",
@@ -1669,7 +1320,6 @@ async function rowMarks() {
     check("with the pager and the slice agreeing again",
           [h.pageInfo().page, at(h.getVisible()[0].id)], [3, 200]);
 
-    // --- the resets put it back to paged page one
     h.select(h.getVisible()[49].id);
     h.selectStep(1);
     P.box.querySelector("th[data-key=state]").click();
@@ -1688,7 +1338,6 @@ async function rowMarks() {
     check("and so does setRows", (R.handle.setRows(view(250).rows),
                                   R.handle.pageInfo().page), 1);
 
-    // --- marks and flags are id-keyed, so a presentation switch is nothing
     const M = driver(250, { pageSize: 100, marks: true }, 300);
     const mh = M.handle;
     const mids = ids;
@@ -1706,9 +1355,6 @@ async function rowMarks() {
           [mh.getMarked(), mh.getFlagged()], [[mids[5]], [mids[150]]]);
     check("with the column carried through all of it",
           mh.getSelection().col, null);
-    // "On show" means one thing across the handle: getMarked, getFlagged and
-    // getVisible all read the cursor's page, so a mark on another page sorts
-    // after the shown ones in continuous exactly as it does in paged.
     mh.toggleMark(mids[210]);          // page three, the cursor being on two
     check("getMarked reads the cursor's page first, then the rest",
           mh.getMarked(), [mids[5], mids[210]].filter((id) =>
@@ -1717,7 +1363,6 @@ async function rowMarks() {
               !mh.getVisible().some((r) => r.id === id))));
   }
 
-  // --- no pageSize at all: none of this exists
   {
     const N = driver(40);
     N.handle.select(N.handle.getVisible()[0].id);
@@ -1728,7 +1373,6 @@ async function rowMarks() {
           [39, 40, { page: 1, pages: 1, from: 1, to: 40, total: 40 }]);
   }
 
-  // --- flagHelp: the segment becomes a reminder, on the flagged row alone
   {
     const HELP = "d/D archive · u unflag";
     const F = driver(MARK_VIEW, { marks: true, flagHelp: HELP });
@@ -1756,7 +1400,6 @@ async function rowMarks() {
     await painted();
     check("and with no flags at all the segment goes", line(), "6 rows · unsorted");
 
-    // Without the option the line is exactly what it was.
     const P = driver(MARK_VIEW, { marks: true });
     P.handle.flagRow("a");
     P.handle.select("a");
@@ -1765,7 +1408,6 @@ async function rowMarks() {
           P.box.querySelector(".tv-hint").textContent, "1 flagged · 6 rows · unsorted");
   }
 
-  // --- markAll: the filtered SET, which is not the page on show
   {
     const A = driver(MARK_VIEW, { marks: true, pageSize: 2 });
     const h = A.handle;
@@ -1776,8 +1418,6 @@ async function rowMarks() {
     check("it is idempotent — twice is once", h.markAll(), 6);
 
     h.clearMarks();
-    // A filter is what the reader narrowed to; the page is only how much of it
-    // fits at a time. So the filter bounds it and the page does not.
     A.shown("TODO");
     check("the filter leaves three, still two to a page",
           [h.getVisible().length, A.handle.pageInfo().total], [2, 3]);
@@ -1788,7 +1428,6 @@ async function rowMarks() {
     check("and the line counts them",
           A.box.querySelector(".tv-hint").textContent.indexOf("3 marked · "), 0);
 
-    // Already-marked rows keep their marks when the set widens under them.
     A.reset();
     check("widening the filter and marking again adds the rest", h.markAll(), 6);
     check("without disturbing the ones already carried",
@@ -1797,7 +1436,6 @@ async function rowMarks() {
     check("and clearMarks still takes the lot", h.markedCount(), 0);
   }
 
-  // --- the two other ways a row or a view goes away
   {
     const D = driver(MARK_VIEW, { marks: true });
     D.handle.toggleMark("c");
@@ -1811,7 +1449,6 @@ async function rowMarks() {
     check("setView drops them with the view they were about", N.handle.markedCount(), 0);
   }
 
-  // --- the spacers span the chrome, or the virtualized table splits in two
   {
     const tall = driver(60, { marks: true }, 300);
     const pad = tall.box.querySelector("tbody tr.tv-pad td");
@@ -1819,26 +1456,17 @@ async function rowMarks() {
           pad.attrs.get("colspan"), String(columns.length + 1));
   }
 
-  // --- the ground: its own wash, and the ink still legible on it
   {
     const css = cssText();
     const at = css.indexOf(".tv-table tbody tr.tv-marked{\n"
                          + "  background:color-mix(in srgb,var(--tv-muted) var(--tv-mark-wash)");
-    // One `indexOf' for both halves — that the rule exists, and that what it
-    // washes is the muted ink rather than the frost, which is the applied
-    // filter's identity. Read as an offset, since the ordering check below
-    // compares against it and -1 would let anything past.
     check("the marked row washes the muted ink, in a rule of its own", at !== -1, true);
-    // The cursor is the other role, and it is the one that wins on a row
-    // wearing both: its rule follows, at equal specificity.
     check("and the cursor's rule follows it", css.indexOf("tr.tv-sel{background") > at, true);
     for (const theme of ["light", "dark"]) {
       const p = paletteIn(`:root[data-theme="${theme}"] .tv-root{`);
       const ground = mixed(p.bg, p.muted, pctOf(p["mark-wash"]));
       check(theme + ": the mark ground is neither the page's nor the cursor's",
             [ground === p.bg, ground === p.sel], [false, false]);
-      // The tag ink IS the colour being washed, so it is the floor that binds:
-      // body text on this ground can only be further from it.
       check(theme + ": the muted ink the wash is made of still clears AA on it",
             ratio(p.muted, ground) >= 4.5, true);
     }
@@ -1846,9 +1474,6 @@ async function rowMarks() {
 }
 
 /**
- * A glance-shaped view for the width policy: a badge column whose header is
- * WIDER than every cell under it (the case the policy turns on), a title to
- * fill, and a tags column carrying the long cell.
  * @param {string} title  the title cell both rows share
  * @param {string} [tag]  the second row's tags cell, which is the widest
  */
@@ -1857,8 +1482,6 @@ const widthView = (title, tag = ":ops:system:") => ({
   columns: [
     { key: "state", header: "State", type: "badge", sortable: true,
       badges: [{ value: "TODO", color: "#e0af68" }] },
-    // Org's own decoration, which is what the cell spells; the header is the
-    // long word the column must NOT be measured by.
     { key: "priority", header: "Priority", type: "badge", sortable: true,
       badges: [{ value: "[#A]", color: "#f7768e" }] },
     { key: "title", header: "Title", type: "text" },
@@ -1868,57 +1491,34 @@ const widthView = (title, tag = ":ops:system:") => ({
          { id: "b", cells: { state: "TODO", priority: "[#B]", title: "b", tag } }],
 });
 
-/**
- * THE WIDTH POLICY: the title column fills and every other column is exactly
- * its own content. The three halves are the measure (what a column is worth in
- * characters), the application (which column is left without a width, and the
- * table's floor under it) and the sheet that resolves the two — so the checks
- * are the numbers, the strings written onto the colgroup, and the rules that
- * turn a leftover into a remainder and an overrun into an ellipsis.
- */
 async function columnWidths() {
   console.log("\n== column widths");
 
-  /** The width each column declares, in colgroup order, gutter included. */
   const declared = (box) =>
     box.querySelectorAll(".tv-table colgroup col").map((c) => c.style.width || "");
-  /** ... as bare character counts, the padding stripped. */
   const chOf = (box) => declared(box).map((w) => {
     const m = /^calc\((\d+)ch \+ (\d+)px\)$/.exec(w);
     return m ? Number(m[1]) : w === "" ? null : w;
   });
 
-  // --- the title fills and nothing else does
   {
-    // 45 characters, so the title's own content is past the 40 the floor stops
-    // at; the tags cell is the widest of the rest at 12.
     const F = driver(widthView("a headline that runs on for a good while long"));
     check("the title column is the ONE column with no width of its own",
           chOf(F.box), [6, 6, null, 12]);
-    // Which is only a remainder because the layout is fixed: under auto a col
-    // width is a hint and the browser hands the slack to every column, which is
-    // the whole of what made these columns twice their cells.
     check("and the table says so — fixed layout, and the class that turns it on",
           [F.box.querySelector(".tv-table").classes.has("tv-fill"),
            cssText().indexOf(".tv-table.tv-fill{table-layout:fixed}") !== -1],
           [true, true]);
 
-    // THE BAR. `Priority' is eight characters and `[#A]' is four; the column is
-    // the cell's four plus the pill's ground and NOT the header's eight. A
-    // header that measured would put this column at twice its badge.
     check("a badge column is measured by its BADGE and never by its header",
           [chOf(F.box)[1], "Priority".length, "[#A]".length], [6, 8, 4]);
     check("the state column beside it reads the same rule",
           [chOf(F.box)[0], "TODO".length], [6, 4]);
 
-    // The floor belongs to the TABLE: the title still declares nothing, and
-    // what stops a narrow window crushing it is where the sideways scroll
-    // begins. 40 + 6 + 6 + 12 characters over four cells of padding.
     check("the table's min-width is the sized columns plus the title's floor",
           F.box.querySelector(".tv-table").style.minWidth, "calc(64ch + 96px)");
   }
 
-  // --- the floor is a ceiling on the floor: a short title costs no scrollbar
   {
     const S = driver(widthView("short"));
     check("a title narrower than the floor lowers it to its own content",
@@ -1926,18 +1526,13 @@ async function columnWidths() {
           [[6, 6, null, 12], "calc(29ch + 96px)"]);
   }
 
-  // --- the cap, and what it does instead of wrapping
   {
     const LONG = ":a:tag:run:nobody:should:have:written:but:someone:did:anyway:";
     const C = driver(widthView("short", LONG));
     check("a pathological cell is capped rather than paid for",
           [chOf(C.box)[3], LONG.length], [40, 61]);
-    // The cap is a CEILING, so it cannot reach the column that has no width to
-    // cap: a 200-character title fills, it does not ellipsize at 40.
     const T = driver(widthView("x".repeat(200)));
     check("and the cap never reaches the fill column", chOf(T.box)[2], null);
-    // Capped means ELLIPSIZED, which needs both halves: one line, and an end.
-    // The gutter is out of it — its glyph is exactly its width.
     check("a capped cell ends in an ellipsis on one line",
           [/\.tv-table th,\.tv-table td\{padding:5px 12px;text-align:left;white-space:nowrap/
              .test(cssText()),
@@ -1946,7 +1541,6 @@ async function columnWidths() {
           [true, true]);
   }
 
-  // --- the gutter: the glyph's own measure and no slack
   {
     const G = driver(widthView("short"), { marks: true });
     const css = cssText();
@@ -1954,31 +1548,21 @@ async function columnWidths() {
           [G.box.querySelectorAll(".tv-table colgroup col")[0].classes.has("tv-gut"),
            declared(G.box)[0]],
           [true, ""]);
-    // Three characters because the glyph is three characters, and 24px because
-    // that is the cell padding both sides. Tied to the glyph here rather than
-    // asserted as a number twice: a wider box would have to change both.
     check("and the sheet pins it to [X] plus the cell's padding",
           [css.indexOf(".tv-fill col.tv-gut{width:calc(3ch + 24px)}") !== -1,
            css.indexOf('tr.tv-marked td.tv-box::before{content:"[X]"}') !== -1,
            "[X]".length],
           [true, true, 3]);
-    // Fixed layout reads a col's width and not a cell's, so the coarse-pointer
-    // target has to be restated as one or the touch rule goes quietly inert.
     check("the coarse-pointer target survives the fixed layout, as a width",
           css.indexOf(".tv-fill col.tv-gut{width:max(calc(3ch + 24px),44px)}") !== -1, true);
-    // And it is counted in the floor, or the table's min-width is a gutter short
-    // of the columns standing in it: 3 characters and a fifth cell of padding.
     check("the gutter is counted in the table's floor",
           G.box.querySelector(".tv-table").style.minWidth, "calc(32ch + 120px)");
   }
 
-  // --- a header wider than its cells: the WORD is what gets squeezed
   {
     const K = driver(widthView("short"));
     K.handle.setSort({ column: "priority", ascending: true });
     await painted();
-    // The mark is paid for OUTSIDE the cells' measure — 6 for the badge and 2
-    // for the arrow and its space — where the header's own 8 buys nothing.
     check("a sorted column pays for its mark and still not for its header",
           [chOf(K.box)[1], "Priority".length + 2], [8, 10]);
     const th = K.box.querySelectorAll(".tv-table thead th")[1];
@@ -1986,17 +1570,12 @@ async function columnWidths() {
           [th.querySelectorAll(".tv-hd .tv-hn").length,
            th.querySelectorAll(".tv-hd .tv-arrow").length, th.text],
           [1, 1, "Priority▲"]);
-    // Which is what decides WHICH of them an ellipsis eats. The word flexes and
-    // the mark refuses to, so a squeezed header still says how it is sorted.
     const css = cssText();
     check("the word shrinks and the mark does not",
           [css.indexOf(".tv-fill th .tv-hn{overflow:hidden;text-overflow:ellipsis;"
                        + "min-width:0}") !== -1,
            css.indexOf(".tv-fill th .tv-arrow{flex:none}") !== -1],
           [true, true]);
-    // A flex row does not take the cell's text-align, so the one alignment a
-    // column may declare has to be restated as the row's own or a `right'
-    // header quietly goes left while its cells stay put.
     const A = driver({
       title: "aligned",
       columns: [{ key: "title", header: "Title", type: "text" },
@@ -2009,7 +1588,6 @@ async function columnWidths() {
           [true, true]);
   }
 
-  // --- semantic type: a second line that does not resize the column
   {
     const T = driver({
       title: "typed",
@@ -2028,7 +1606,6 @@ async function columnWidths() {
           chOf(T.box), ["typed row".length]);
   }
 
-  // --- no title column: the convention's fallback, which is what it always was
   {
     const N = driver({
       title: "no title column",
@@ -2040,7 +1617,6 @@ async function columnWidths() {
     check("with nothing to fill, every column keeps a width and the header pays",
           [chOf(N.box), tbl.classes.has("tv-fill"), tbl.style.minWidth || ""],
           [[5, 20], false, ""]);
-    // The same view with the key renamed is the whole of the difference.
     const Y = driver({
       title: "a title column",
       columns: [{ key: "state", header: "State", type: "text", sortable: true },
@@ -2050,8 +1626,6 @@ async function columnWidths() {
     check("and `title' is the whole of what turns the policy on",
           [chOf(Y.box), Y.box.querySelector(".tv-table").classes.has("tv-fill")],
           [[4, null], true]);
-    // Turning it OFF is the path that has something to clear: the class, the
-    // table's floor, and the width the filling column never declared.
     Y.handle.setView({
       title: "renamed away",
       columns: [{ key: "state", header: "State", type: "text" },
@@ -2065,19 +1639,13 @@ async function columnWidths() {
           [[5, 20], false, ""]);
   }
 
-  // --- a resize needs no re-measure; a content change needs one
   {
     const R = driver(widthView("short"));
-    // Every number written is characters and the one padding constant, so not
-    // one of them is a function of the container: the remainder is arithmetic
-    // the browser redoes on a resize for nothing, and there is no observer here
-    // to keep in step with it.
     check("no declared width is a measurement of the container",
           declared(R.box).every((w) => w === "" || /^calc\(\d+ch \+ 24px\)$/.test(w)),
           true);
     check("and the scroller is what a window too narrow for the floor gets",
           cssText().indexOf(".tv-scroll{overflow:auto;position:relative}") !== -1, true);
-    // What DOES re-measure is the content moving under them.
     R.handle.setRows([{ id: "a", cells: { state: "TODO", priority: "[#A]",
                                           title: "short", tag: ":a:" } }]);
     await painted();
@@ -2090,19 +1658,11 @@ async function columnWidths() {
   }
 }
 
-// A multi-valued cell is measured and cut in the TAG TYPE, which is smaller
-// than the table's: 40 characters of column hold 43 of tag. Every run below is
-// written against that number, so the boundary pair is one character apart.
 const TAG_ROOM = 43;
-/** A run of exactly `TAG_ROOM' drawn characters: 37 of letters and three middots. */
 const FITS = ":documentation:engineering:orchestration:";
-/** The same run one character over it — the last value is what will not fit. */
 const OVER = ":documentation:engineering:orchestrations:";
-/** One value too long for any column: not even the first fits whole. */
 const LONE = ":an-uncommonly-long-single-value-nobody-would-write:";
 
-/** Two rows over a multi-valued column; FILLS gives the view a `title' column,
- *  which is what turns the fill policy — and so the 40-character cap — on. */
 const tagView = (tag, fills) => {
   const head = fills ? "title" : "head";
   return {
@@ -2114,12 +1674,6 @@ const tagView = (tag, fills) => {
   };
 };
 
-/**
- * WHOLE VALUES OR NONE: a multi-valued cell too wide for its column drops the
- * values that will not fit ENTIRE and marks their place, rather than cutting
- * one across the middle. What is dropped is paint alone — the cell the
- * producer sent still filters, and the column still measures what it draws.
- */
 async function wholeValues() {
   console.log("\n== whole values");
 
@@ -2127,47 +1681,34 @@ async function wholeValues() {
     box.querySelectorAll(".tv-table tbody tr[data-id]")[0].children[1];
   const drawn = (box) => cellOf(box).text;
   const names = (box) => cellOf(box).querySelectorAll(".tv-tag").map((e) => e.text);
-  /** The tags column's declared width in characters. */
   const wide = (box) => {
     const w = box.querySelectorAll(".tv-table colgroup col")[1].style.width;
     return Number((/^calc\((\d+)ch/.exec(w) || [])[1]);
   };
 
-  // --- the boundary: a run the column was measured for is drawn whole
   {
     const F = driver(tagView(FITS, true));
     check("a run the column pays for is drawn entire, middots and all",
           [drawn(F.box), drawn(F.box).length], [FITS.split(":").filter(Boolean).join(" · "), TAG_ROOM]);
-    // The column is measured on the DRAWN form, so the run it was sized for
-    // always fits: the round trip through the smaller type cannot lose a
-    // character. 43 of tag is 40 of column, which is exactly the cap.
     check("and the column it was measured for is the cap itself", wide(F.box), 40);
   }
 
-  // --- one character over it: the last value goes, and the mark takes its place
   {
     const O = driver(tagView(OVER, true));
     check("a value that will not fit whole is dropped, not cut",
           names(O.box), ["documentation", "engineering"]);
     check("and the mark stands where the dropped values were",
           drawn(O.box), "documentation · engineering …");
-    // The half-word is the bug: `orchestrati…' is a value no query spells and
-    // no reader can trust.
     check("no fragment of the dropped value is drawn anywhere in the cell",
           drawn(O.box).indexOf("orchestrat"), -1);
-    // The mark is not a value, so it wears no value's markup — it is text
-    // inside the run's own span and takes the muted ink from it.
     check("the mark is text in the run, never a value of its own",
           [cellOf(O.box).querySelectorAll(".tv-tag").length,
            cellOf(O.box).querySelector(".tv-tags").text.slice(-2)],
           [2, " …"]);
-    // TRUNCATION IS PAINT. The cell the producer sent is what the filter reads,
-    // so the value that was not drawn still finds the row.
     check("a value the column could not draw still filters the row in",
           [O.shown("tag:orchestrations"), O.shown("tag:documentation")], [1, 1]);
   }
 
-  // --- nothing fits: the mark alone, and no value beside it
   {
     const L = driver(tagView(LONE, true));
     check("a first value too long for the column leaves the mark alone",
@@ -2176,15 +1717,10 @@ async function wholeValues() {
           L.shown("tag:uncommonly"), 1);
   }
 
-  // --- the one resize the renderer has: the fill policy turning on and off
   {
-    // With no column to fill there is no cap, so the column is exactly its own
-    // widest run and nothing is ever dropped.
     const R = driver(tagView(OVER, false));
     check("with no fill policy the column pays for the whole run and cuts nothing",
           [drawn(R.box), wide(R.box)], [OVER.split(":").filter(Boolean).join(" · "), 41]);
-    // Naming the head column `title' is the whole of the difference: the cap
-    // arrives with the fill policy and the same cell is re-cut against it.
     R.handle.setView(tagView(OVER, true));
     await painted();
     check("and the view that turns it on re-cuts the very same cell",
@@ -2195,21 +1731,16 @@ async function wholeValues() {
           drawn(R.box), OVER.split(":").filter(Boolean).join(" · "));
   }
 
-  // --- the rows moving under a standing column re-cut with it
   {
     const U = driver(tagView(FITS, true));
     check("a run that fits stands whole while it is the widest thing there",
           names(U.box).length, 3);
-    // An upsert is the incremental widen (`growWidths'), which has to measure
-    // the multi-valued column the way a full re-measure does or the column and
-    // the cut disagree about what a run costs.
     U.handle.upsertRow({ id: "c", cells: { title: "charlie", tag: LONE } });
     await painted();
     const cut = U.box.querySelectorAll(".tv-table tbody tr[data-id]")
       .find((tr) => tr.dataset.id === "c").children[1];
     check("and the row arriving beside it is cut against the same column",
           [cut.text, wide(U.box), names(U.box).length], ["…", 40, 3]);
-    // A row change re-measures from scratch; the cut has to follow it back down.
     U.handle.setRows([{ id: "a", cells: { title: "alpha", tag: OVER } },
                       { id: "b", cells: { title: "bravo", tag: ":ops:" } }]);
     await painted();
@@ -2218,7 +1749,6 @@ async function wholeValues() {
   }
 }
 
-/** Two rows under a title column, one of which leads somewhere. */
 const LINK_VIEW = {
   title: "linked",
   columns: [{ key: "state", header: "State", type: "text" },
@@ -2227,17 +1757,9 @@ const LINK_VIEW = {
          { id: "b", cells: { state: "TODO", title: "bravo" } }],
 };
 
-/**
- * `linked': a producer's row flag, drawn on the title cell and nowhere else.
- * The whole feature is where the mark lands and what it is made of, so that is
- * what the checks are: the cell it picks, the views it declines to mark, the
- * one rule that inks a link wherever one is drawn, and that ink measured on
- * every ground the other row states write.
- */
 async function linkedRows() {
   console.log("\n== linked rows");
 
-  // --- where the mark lands
   {
     const L = driver(LINK_VIEW);
     const rowOfId = (id) => L.box.querySelectorAll("tbody tr[data-id]")
@@ -2249,17 +1771,12 @@ async function linkedRows() {
           [rowOfId("a").children.filter((td) => td.classes.has("tv-linked")).length,
            rowOfId("a").children.findIndex((td) => td.classes.has("tv-linked"))],
           [1, 1]);
-    // The cell is chosen by KEY, so a view spelling its columns the other way
-    // round marks the other position. Reading it as "the second column" would
-    // pass the check above and fail here.
     const R = driver({ title: "linked", columns: LINK_VIEW.columns.slice().reverse(),
                        rows: LINK_VIEW.rows });
     check("by its key rather than by its position",
           R.box.querySelectorAll("tbody tr[data-id]")[0].children
             .findIndex((td) => td.classes.has("tv-linked")), 0);
 
-    // The flag is row data like a cell is, so it arrives and leaves by the
-    // ordinary row ops rather than by a call of its own.
     L.handle.upsertRow({ id: "b", cells: { state: "TODO", title: "bravo" }, linked: true });
     await painted();
     check("an upsert can hand a row the mark", marked(), ["a", "b"]);
@@ -2268,7 +1785,6 @@ async function linkedRows() {
     check("and take it back off", marked(), ["a"]);
   }
 
-  // --- and the two views it marks nothing in
   {
     const N = driver({ title: "no title column",
                        columns: [{ key: "name", header: "Name" },
@@ -2278,40 +1794,26 @@ async function linkedRows() {
     check("a view with no title column carries no mark, and still renders the row",
           [N.box.querySelectorAll("td.tv-linked").length,
            N.box.querySelectorAll("tbody tr[data-id]").length], [0, 1]);
-    // The field is additive: a producer that never sends it gets the table it
-    // always got, which is the claim the unknown-fields rule rests on.
     const O = driver(10);
     check("and rows that never carry the field are marked nowhere",
           O.box.querySelectorAll("td.tv-linked").length, 0);
   }
 
-  // --- what it is made of: one rule, spelling what a link looks like
   {
     const css = cssText();
     const bare = css.replace(/\/\*[\s\S]*?\*\//g, "");
     const rule = /\.tv-link,\.tv-table tbody td\.tv-linked\{([^}]*)\}/.exec(bare);
     const body = rule ? rule[1].replace(/\s+/g, "") : "";
-    // The anchor a cell's own markup produces and the whole cell of a linked
-    // row are the SAME declaration, which is what makes a half-markup title one
-    // colour: two rules agreeing today is what produced the two-tone cell.
     check("the anchor and the linked cell are one rule, and it is the link treatment",
           [!!rule, body],
           [true, "color:var(--tv-link);text-decoration:underline;text-underline-offset:2px"]);
     check("nothing else in the sheet says either name",
           bare.split("}").filter((r) => /\.tv-link(ed)?\b/.test(r.split("{")[0] || "")).length,
           1);
-    // A ground would contest the four the row states already write; the ink
-    // does not, which is what lets the colour be the whole cell's.
     check("it writes ink and decoration, and no ground", /background/.test(body), false);
-    // The ink is the palette's, never the accent's: the accent is chrome ink
-    // and is measured on the page, where this is measured on the row grounds.
     check("and the ink is --tv-link rather than the accent it came from",
           /var\(--tv-accent\)/.test(body), false);
 
-    // The bug, at the DOM: a title that is half link markup and half plain
-    // words. The markup is an anchor and the words are bare text, so the cell
-    // is uniform only when the one rule inks both -- there is nothing else
-    // inside it to carry a colour of its own.
     const M = driver({ title: "linked", columns: LINK_VIEW.columns,
       rows: [{ id: "a", linked: true,
                cells: { state: "TODO", title: "read [[http://x][the paper]] tonight" } }] });
@@ -2320,8 +1822,6 @@ async function linkedRows() {
           [mixedCell.childNodes.length, mixedCell.children.length,
            mixedCell.children[0].classes.has("tv-link"), mixedCell.text],
           [3, 1, true, "read the paper tonight"]);
-    // The other half of one treatment: a row the producer never flagged still
-    // draws its cell's own links as links, and takes no cell mark for it.
     const U = driver({ title: "unlinked", columns: LINK_VIEW.columns,
       rows: [{ id: "a", cells: { state: "TODO", title: "see [[http://x][x]]" } }] });
     check("a row with no flag keeps its cell's own links and gains no mark",
@@ -2341,18 +1841,11 @@ async function linkedRows() {
            ["tv-marked", "tv-flagged", "tv-sel"]
              .map((c) => cellOf("a").parentNode.classes.has(c))],
           [1, [true, true, true]]);
-    // The washes are the td's own two, and they land on the same cell without
-    // touching the decoration: one writes background, the other text.
     check("and the column band crossing that very cell leaves it standing",
           [cellOf("a").classes.has("tv-colsel"), cellOf("a").classes.has("tv-cell-sel")],
           [true, true]);
   }
 
-  // --- the ink, on every ground a cell can wear
-  // A colour is only a decision once it is measured, and the grounds here are
-  // the ROW's rather than the page: the four row washes, the column band over
-  // each of them, and the crosshair. Read out of the sheet rather than
-  // re-spelled, so moving a wash moves what is asserted.
   {
     const base = paletteIn(".tv-root{");
     for (const theme of ["light", "dark"]) {
@@ -2372,21 +1865,13 @@ async function linkedRows() {
         .filter(([, g]) => ratio(ink, g) < 4.5).map(([what]) => what);
       check(`${theme}: the link ink clears 4.5:1 on all ${Object.keys(grounds).length} of them`,
             under, []);
-      // Hue held, lightness moved -- the operation the palette comment
-      // documents for the light accent, applied to the accent itself.
       check(`${theme}: and it is the accent's own hue, one weight away`,
             [Math.abs(hue(ink) - hue(p.accent)) <= 3, ink === p.accent], [true, false]);
     }
-    // Why the ink is a value of its own: on dark the accent, which is what half
-    // a linked title used to wear, falls under the floor on the amber grounds,
-    // the crosshair being the palest of them.
     const d = paletteIn(':root[data-theme="dark"] .tv-root{');
     const cross = mixed(d.sel, base.col, pctOf(d["cell-wash"]));
     check("the accent would not have cleared the crosshair on dark, and the link ink does",
           [ratio(d.accent, cross) >= 4.5, ratio(d.link, cross) >= 4.5], [false, true]);
-    // The identity, spelled in the const block the frost, the flag and the
-    // column colour are spelled in -- and in TWO weights, where those are one:
-    // a wash can be one colour at two strengths, ink on two grounds cannot.
     check("the ink is one value per theme, in all four palette blocks",
           [base.link, paletteIn(':root[data-theme="light"] .tv-root{').link, d.link,
            paletteIn("@media (prefers-color-scheme:dark){.tv-root{").link],
@@ -2394,18 +1879,6 @@ async function linkedRows() {
   }
 }
 
-/**
- * The ORDER as one of the query's own tokens: `sort:COL', `sort:COL:desc'.
- * SCHEMA's one key that is no predicate — it narrows nothing and states the
- * order instead, written order being precedence — so everything below is about
- * what a token does to the ROW ORDER while the row SET stands still.
- *
- * The refusals are the other half: a sort token names one column in one
- * direction, and a negation, an alternation, a column no view carries and a
- * direction that is neither word are each a query a producer answers as an
- * error. A renderer has nobody to refuse to, so it drops the key and the token
- * narrows nothing, which is what every check below asserts about them.
- */
 async function sortTokens() {
   console.log("\n== sort tokens");
   const cols = [
@@ -2419,43 +1892,27 @@ async function sortTokens() {
     { id: "dot",  cells: { dept: "Sales", score: 70, name: "Dot" } },
     { id: "gil",  cells: { dept: "Ops",   score: 77, name: "Gil" } },
   ];
-  // The view opens on `name', which no reader may promote: a DECLARED sort
-  // opens as written whether or not its column opts in, and this is the order
-  // every case below falls back to.
   const P = driver({ title: "roster", columns: cols, rows,
                      sort: { column: "name", ascending: true } });
-  /** Commit Q from a clean box and read the ids in display order. */
   const ids = (q) => (P.shown(q), P.handle.getVisible().map((r) => r.id));
   const DECLARED = ["ada", "bell", "dot", "gil"];
 
-  // The GRAMMAR — ordering, direction, precedence, and every refusal — is the
-  // parity vectors' (`fixtures/parity/sort-tokens.json`), run over this same
-  // commit path. What is left here is what a vector cannot express: the STRIP
-  // and the headers, promotion writing the query, and the fallback order.
   check("the declared sort opens the view and names no token",
         [ids(""), P.chipsOf()], [DECLARED, []]);
   check("and narrows nothing — the set is the set", P.shown("sort:score"), 4);
   check("taking the tokens off comes home to the declared order", ids(""), DECLARED);
 
-  // --- a predicate and an ordering are different jobs, and compose
   check("a predicate narrows what the token orders",
         ids("dept:Eng sort:score:desc"), ["ada", "bell"]);
   check("and the order is on the headers while the token is in the strip",
         [P.sortsOf(), P.chipsOf()], [["Score▼"], ["dept:Eng", "sort:score:desc"]]);
 
-  // A refused token is still a token: it stays in the query as written, so a
-  // producer sees exactly what the reader typed and can say what is wrong with
-  // it. Dropping it here would answer a different query than the one asked.
   check("a refused token is left in the query as written",
         (P.shown("-sort:score"), P.handle.getQuery()), "-sort:score");
   check("and orders nothing, having been dropped from the chain",
         P.handle.getVisible().map((r) => r.id), DECLARED);
 
-  // --- promotion is query editing: `^' and a header click both land here
   P.shown("dept:Eng");
-  // The first press is where the declared chain becomes tokens, and it becomes
-  // ALL of them: promotion moves the key it names and nothing else, so what the
-  // reader was reading by is still what the rows are in.
   check("promotion writes the chain into the query, keeping the predicate",
         (P.handle.sortPromote("score"), P.handle.getQuery()),
         "dept:Eng sort:score->name");
@@ -2472,9 +1929,6 @@ async function sortTokens() {
   check("`sortable' still gates it, and a refusal writes no token",
         [P.handle.sortPromote("name"), P.handle.getQuery()],
         [false, "dept:Eng sort:dept:desc->score->name"]);
-  // A SORT CHIP IS A CHAIN, so DEL takes off its last KEY rather than the whole
-  // order: the arrow form put every promotion on one chip and the press still
-  // walks them back one at a time.
   check("DEL takes the chain's last key off, leaving the chip standing",
         (P.handle.stripLastToken(), P.handle.getQuery()),
         "dept:Eng sort:dept:desc->score");
@@ -2487,7 +1941,6 @@ async function sortTokens() {
         (P.handle.stripLastToken(), [P.handle.getQuery(), P.sortsOf()]),
         ["dept:Eng", ["Name▲"]]);
 
-  // --- a stated order is the fallback, and a query naming one outranks it
   check("a producer's sortBy restates what the query falls back to",
         (P.handle.sortBy("score", false), P.shown(""),
          P.handle.getVisible().map((r) => r.id)),
@@ -2495,10 +1948,6 @@ async function sortTokens() {
   check("and a token outranks it while it is applied", ids("sort:dept"),
         ["ada", "bell", "gil", "dot"]);
 
-  // --- `*none*': the empty chain, and the only way a reader takes a declared
-  // order off. `stated' is score-descending here, from the `sortBy' above, so
-  // these are the meta beating a producer's own restatement — which is the
-  // whole of what NAMING a sort key means.
   check("`*none*' is the empty chain, and the rows are in the order they arrived",
         [ids("sort:*none*"), P.sortsOf(), P.handle.getSort()],
         [["ada", "bell", "dot", "gil"], [], []]);
@@ -2510,7 +1959,6 @@ async function sortTokens() {
         [["dot", "gil", "bell", "ada"], ["dot", "gil", "bell", "ada"]]);
   check("and the headers then wear the companion alone", P.sortsOf(), ["Score▲"]);
 
-  // --- the `sort:' stage completes what a reader may order by
   check("`sort:' offers the sortable columns, and the empty chain behind them",
         P.type("sort:"), ["dept", "score", "*none*"]);
   check("a prefix narrows to the column it opens", P.type("sort:sc"), ["score"]);
@@ -2522,9 +1970,6 @@ async function sortTokens() {
         P.type("sort:na"), []);
   check("the meta completes star-blind, the way every meta does",
         [P.type("sort:non"), P.type("sort:*non")], [["*none*"], ["*none*"]]);
-  // A `->' RE-OPENS the domain, the way a `|' re-opens a value's: the prefix is
-  // what follows the last arrow, and a chain never names a column twice, so what
-  // is offered is the columns left to order by.
   check("past an arrow the domain is the columns not yet chained",
         P.type("sort:score->"), ["dept"]);
   check("a prefix narrows that domain like any other",
@@ -2538,8 +1983,6 @@ async function sortTokens() {
   check("and the empty chain is offered at the head alone, taking no companion",
         [P.type("sort:"), P.type("sort:score->non")],
         [["dept", "score", "*none*"], []]);
-  // Accepting keeps everything through the last arrow, the way a value keeps
-  // everything through the last bar: the chain grows and stays ONE token.
   P.type("sort:score->de");
   P.box.querySelectorAll(".tv-ac-item")[0].dispatchEvent(new Ev("click"));
   check("accepting past an arrow appends a segment rather than replacing the token",
@@ -2548,7 +1991,6 @@ async function sortTokens() {
         (P.shown("sort:name:desc"), P.handle.getVisible().map((r) => r.id)),
         ["gil", "dot", "bell", "ada"]);
 
-  // --- the strip carries one of each token, however often it is spelled
   check("an exact twin collapses, the first keeping its place",
         (P.shown("dept:Eng dept:Eng dept:Eng"), [P.chipsOf(), P.handle.getQuery()]),
         [["dept:Eng"], "dept:Eng"]);
@@ -2562,11 +2004,6 @@ async function sortTokens() {
         (P.shown("sort:score sort:score"), [P.chipsOf(), P.handle.getQuery()]),
         [["sort:score"], "sort:score"]);
 
-  // --- ONE ORDER, ONE CHIP. Every token that states an order folds into the
-  // chip already stating one, and what lands is the CANONICAL arrow form of the
-  // chain they name together — which is then what the URL carries and what the
-  // producer is asked. A second chip about the order could only describe one the
-  // rows are not in, which is the one thing the strip may not do.
   check("typed repeats fold into one arrow-form chip",
         (P.shown("sort:score sort:dept"), [P.chipsOf(), P.handle.getQuery()]),
         [["sort:score->dept"], "sort:score->dept"]);
@@ -2581,8 +2018,6 @@ async function sortTokens() {
         (P.shown("sort:score->dept sort:name:desc"),
          [P.chipsOf(), P.handle.getSort().map((k) => k.column)]),
         [["sort:score->dept->name:desc"], ["score", "dept", "name"]]);
-  // First-wins dedup, and it spans the arrow: a column already chained keeps its
-  // place and its spelling whichever side of an arrow the twin falls on.
   check("two spellings of one ordering are one chip",
         (P.shown("sort:score sort:score:asc"), [P.chipsOf(), P.handle.getQuery()]),
         [["sort:score"], "sort:score"]);
@@ -2608,9 +2043,6 @@ async function sortTokens() {
   check("a negated one stays as spelled — it is a refusal the reader typed",
         (P.shown("sort:score -sort:score"), P.chipsOf()),
         ["sort:score", "-sort:score"]);
-  // A token this renderer reads NO order from folds into nothing: it is its own
-  // chip as spelled, so the producer is asked the query the reader typed and can
-  // say what is wrong with it.
   check("a refusal is its own chip beside the folded order",
         (P.shown("sort:score sort:nope sort:dept"),
          [P.chipsOf(), P.handle.getQuery()]),
@@ -2618,8 +2050,6 @@ async function sortTokens() {
   check("and a whole token of refusals leaves the order alone",
         (P.shown("sort:score->nope->dept"), [P.chipsOf(), P.handle.getSort().map((k) => k.column)]),
         [["sort:score->dept"], ["score", "dept"]]);
-  // `*none*' is the whole order or none of it. A companion that RESOLVES
-  // outranks it, so what the strip keeps is the companion — mid-chain included.
   check("the empty chain folds away under a key that resolves",
         (P.shown("sort:*none* sort:score"), [P.chipsOf(), P.handle.getQuery()]),
         [["sort:score"], "sort:score"]);
@@ -2631,7 +2061,6 @@ async function sortTokens() {
          (P.shown("sort:*none*->*none*"), [P.chipsOf(), P.handle.getSort()])],
         [["sort:*none*"], [["sort:*none*"], []]]);
 
-  // --- the headers pay for what they wear
   {
     const el = P.box.querySelectorAll(".tv-table thead th");
     const colEls = P.box.querySelectorAll(".tv-table colgroup col");
@@ -2643,10 +2072,7 @@ async function sortTokens() {
           [el[0].text, el[1].text], ["Dept▲¹", "Score▲²"]);
   }
 
-  // --- the strip tells ORDERING from NARROWING. The class is the PARSE: a chip
-  //     says it orders exactly where the chain is built out of its token.
   {
-    /** Whether each live chip says it orders, in strip order. */
     const orders = () => P.box.querySelectorAll(".tv-chip[data-i]")
       .map((c) => c.classes.has("tv-chip-sort"));
     check("a predicate and an ordering are two chips, and one of them orders",
@@ -2656,16 +2082,11 @@ async function sortTokens() {
           (P.shown("sort:*none*"), orders()), [true]);
     check("`sortable' gates the gesture, so a column that opts out orders too",
           (P.shown("sort:name:desc"), orders()), [true]);
-    // Every refusal `sortKeyOf' has, one chip each. The renderer drops the key,
-    // so such a token orders nothing and narrows nothing; the strip shows what
-    // was typed rather than promising an order no rows are in.
     check("and every refusal keeps the ordinary chip",
           (P.shown("-sort:score sort:nope sort:score:sideways sort:score|dept sort:"),
            [P.chipsOf(), orders()]),
           [["-sort:score", "sort:nope", "sort:score:sideways", "sort:score|dept", "sort:"],
            [false, false, false, false, false]]);
-    // A crumb is a LABEL. One that happens to spell a sort token is still where
-    // the reader came FROM, so the ordering's colour may not reach it.
     P.shown("sort:score");
     P.handle.pushCrumb({ label: "sort:score", query: "sort:score" });
     check("a crumb spelling one is a crumb, and no ordering leaks into it",
@@ -2676,8 +2097,6 @@ async function sortTokens() {
     P.handle.setCrumbs([]);
   }
 
-  // --- and the ordering's identity, measured. The GROUND carries the whole of
-  //     it: the silhouette, the ink, the × and the hover are the chip's own.
   {
     const css = cssText();
     const rule = ".tv-pal .tv-chip-sort,.tv-summon .tv-chip-sort";
@@ -2706,16 +2125,11 @@ async function sortTokens() {
             ratio(p.fg, s.wash) >= 4.5, true);
       check(name + ": and so does the hover ink, that being what the chip offers",
             ratio(p.accent, s.wash) >= 4.5, true);
-      // Hue is the identity; weight would have made one chip the louder.
       check(name + ": the two identities are told apart by HUE",
             Math.abs(hue(s.wash) - hue(f.wash)) >= 60, true);
       check(name + ": and not by weight — each sits as far from the page as the other",
             Math.abs(apart(s.ground, s.wash) / apart(f.ground, f.wash) - 1) <= 0.1, true);
     }
-    // A strength is declared in FOUR blocks — base, the media query and the two
-    // stamped themes — so half an edit is a page painting one wash when the
-    // system picks the theme and another when the switch does. Read pairwise:
-    // a literal here would be a second copy of the palette to keep in step.
     const at = [".tv-root{", ':root[data-theme="light"] .tv-root{',
                 "@media (prefers-color-scheme:dark){.tv-root{",
                 ':root[data-theme="dark"] .tv-root{']
@@ -2726,17 +2140,10 @@ async function sortTokens() {
   }
 }
 
-/**
- * The crumb trail and the chip alias: two things a consumer drives that the
- * renderer only draws. Neither touches the grammar — a crumb's query is never
- * read here and an aliased chip is still its token — so everything below is
- * about the strip, what survives, and who owns applying.
- */
 async function crumbTrail() {
   console.log("\n== crumbs and chip labels");
   const crumb = (n) => ({ label: "L" + n, query: "q" + n });
 
-  // --- the strip: crumbs lead, live chips follow
   {
     const C = driver(MARK_VIEW);
     const h = C.handle;
@@ -2745,8 +2152,6 @@ async function crumbTrail() {
     check("pushCrumb answers how deep the trail is now",
           [h.pushCrumb(crumb(1)), h.pushCrumb(crumb(2))], [1, 2]);
     check("and the row shows them, oldest first", C.crumbsOf(), ["L1", "L2"]);
-    // The labels off the crumbs and the queries off the WHOLE row, so an empty
-    // strip cannot answer "no query here" by having nothing in it at all.
     check("a crumb shows its LABEL and never its query",
           [C.crumbsOf().join("|"), C.box.querySelector(".tv-chips").text.indexOf("q")],
           ["L1|L2", -1]);
@@ -2755,14 +2160,11 @@ async function crumbTrail() {
 
     C.commit("alpha");
     check("a committed token joins as a live chip", C.chipsOf(), ["alpha"]);
-    // Source order in the one row IS the reading order, so the crumbs have to
-    // be written before the chips rather than merely styled differently.
     check("crumbs render LEFT of the live chips, in one row",
           C.box.querySelector(".tv-chips").children
             .map((e) => e.classes.has("tv-chip-muted") ? "crumb" : "chip"),
           ["crumb", "crumb", "chip"]);
 
-    // --- a crumb is inert: the click that takes a chip off must pass it by
     const first = C.box.querySelector(".tv-chip-muted");
     if (first) first.click();
     check("clicking a crumb removes nothing — the crumb stands, and so does the chip",
@@ -2772,7 +2174,6 @@ async function crumbTrail() {
            C.box.querySelector(".tv-chip[data-i]").attrs.get("data-i")], [false, "0"]);
   }
 
-  // --- pop hands the crumb back and applies nothing
   {
     const C = driver(MARK_VIEW, { onFilter: () => {} });
     const h = C.handle;
@@ -2783,8 +2184,6 @@ async function crumbTrail() {
     const got = h.popCrumb();
     check("popCrumb returns the last crumb and takes it off",
           [got, h.getCrumbs(), C.crumbsOf()], [crumb(2), [crumb(1)], ["L1"]]);
-    // The point of the whole shape: applying is the consumer's, because the
-    // consumer owns the fetching. The renderer must not have run the query.
     check("and applies nothing — the query is where it was",
           [h.getQuery(), C.chipsOf()], ["", []]);
     check("popping the last one empties the strip again",
@@ -2792,14 +2191,12 @@ async function crumbTrail() {
           [crumb(1), [], "none"]);
     check("and then answers null, as it did before there were any", h.popCrumb(), null);
 
-    // getCrumbs hands out copies: editing what was read must not move the strip.
     h.setCrumbs([crumb(1)]);
     const read = h.getCrumbs();
     read[0].label = "tampered";
     read.push(crumb(9));
     check("getCrumbs answers with copies", [h.getCrumbs(), C.crumbsOf()],
           [[crumb(1)], ["L1"]]);
-    // A crumb is an object carrying the two fields; everything else is dropped.
     h.setCrumbs([crumb(1), null, "L", { label: "bare" }]);
     check("a non-object is dropped and a missing field reads empty",
           h.getCrumbs(), [crumb(1), { label: "bare", query: "" }]);
@@ -2807,7 +2204,6 @@ async function crumbTrail() {
     check("and an empty list clears the trail", h.getCrumbs(), []);
   }
 
-  // --- overflow: the counter takes a slot, so the strip has a fixed width
   {
     const C = driver(MARK_VIEW);
     const h = C.handle;
@@ -2815,8 +2211,6 @@ async function crumbTrail() {
     check("four crumbs are four chips, every one of them a label",
           C.crumbsOf(), ["L1", "L2", "L3", "L4"]);
     h.pushCrumb(crumb(5));
-    // The counter needs a chip of its own, so crossing the boundary folds TWO
-    // crumbs away rather than one — which is what keeps the width fixed.
     check("the fifth collapses the oldest two into one counter, leftmost",
           C.crumbsOf(), ["… +2", "L3", "L4", "L5"]);
     h.pushCrumb(crumb(6));
@@ -2829,8 +2223,6 @@ async function crumbTrail() {
           ["L6", "L5", ["L1", "L2", "L3", "L4"]]);
   }
 
-  // --- what a crumb survives. It is the consumer's trail, so nothing the rows
-  //     do moves it; a new VIEW is a new world and takes it.
   {
     const C = driver(MARK_VIEW, { marks: true });
     const h = C.handle;
@@ -2845,10 +2237,6 @@ async function crumbTrail() {
     h.upsertRow({ id: "a", cells: { state: "WAIT", title: "alpha again" } });
     h.deleteRow("f");
     check("an upsert and a delete leave it too", C.crumbsOf(), ["L1", "L2"]);
-    // The three id-keyed sets are a different question and the trail touches
-    // none of them, in either direction. Asserted before the filter runs: what
-    // a filter does to a selection is a rule of its own (the cursor keeps its
-    // PLACE, not its id) and is pinned where that rule lives.
     check("marks, flags and the selection are untouched by any of it",
           [h.getMarked(), h.getFlagged(), h.getSelection().id], [["a"], ["b"], "c"]);
     C.commit("alpha");
@@ -2864,7 +2252,6 @@ async function crumbTrail() {
            C.box.querySelector(".tv-chips").style.display], [[], [], "none"]);
   }
 
-  // --- chipLabel: the chip lies prettily, the grammar does not
   {
     const asked = [];
     const alias = { "state:DONE": "done", review: "reviewed" };
@@ -2873,27 +2260,21 @@ async function crumbTrail() {
     const h = A.handle;
     A.commit('state:DONE review "two words"');
     check("a mapped token renders its label", A.chipsOf(), ["done", "reviewed", '"two words"']);
-    // The whole point: display moved and nothing else did.
     check("while the query the producer was handed is the tokens as written",
           [h.getQuery(), asked], ['state:DONE review "two words"',
                                   ['state:DONE review "two words"']]);
     check("null from the formatter leaves the token raw",
           A.chipsOf()[2], '"two words"');
-    // A chip still comes off by its own index, whatever it is showing.
     A.box.querySelectorAll(".tv-chip[data-i]")[1].click();
     check("and an aliased chip takes the token behind it off, its label with it",
           [A.chipsOf(), h.getQuery()], [["done", '"two words"'], 'state:DONE "two words"']);
     check("stripLastToken walks the tokens the labels stand for",
           [h.stripLastToken(), h.getQuery()], [true, "state:DONE"]);
-    // Restoration is the remount idiom, so it is the other way a chip is born:
-    // the alias has to reach a query that arrives already committed.
     const R = driver(40, { chipLabel: (tok) => alias[tok] || null,
                            initialQuery: "state:DONE review" });
     check("initialQuery's restored chips are aliased too, the query untouched",
           [R.chipsOf(), R.handle.getQuery()], [["done", "reviewed"], "state:DONE review"]);
 
-    // A formatter that answers with something that is not a label is no
-    // formatter for that token: the raw text is always the fallback.
     const junk = driver(40, { chipLabel: () => "" });
     junk.commit("review");
     check("an empty string is not a label either", junk.chipsOf(), ["review"]);
@@ -2905,7 +2286,6 @@ async function crumbTrail() {
     check("and with no formatter the chip is the token, as it always was",
           none.chipsOf(), ["review"]);
 
-    // Crumbs are not tokens and must never reach the formatter.
     const seen = [];
     const K = driver(MARK_VIEW, { chipLabel: (tok) => (seen.push(tok), "ALIAS") });
     K.handle.setCrumbs([{ label: "state:DONE", query: "state:DONE" }]);
@@ -2916,12 +2296,8 @@ async function crumbTrail() {
           [K.crumbsOf(), K.chipsOf(), seen], [["state:DONE"], ["ALIAS"], ["review"]]);
   }
 
-  // --- the muted identity, measured. A crumb has to read as past rather than
-  //     applied, and still be readable — the floor every wash here answers to.
   {
     const css = cssText();
-    // The inert identity: a crumb is the one thing in the strip that cannot be
-    // clicked off, the order having moved to the headers.
     const inert = ".tv-chips .tv-chip-muted{";
     check("the crumb rule exists, spelled with the row so it outranks the palette's",
           css.indexOf(inert) !== -1, true);
@@ -2932,13 +2308,8 @@ async function crumbTrail() {
     check("it gives up the chip's ground and takes the muted ink",
           [/background:transparent/.test(decl), /color:var\(--tv-muted\)/.test(decl)],
           [true, true]);
-    // Ink and ground carry the whole muting, and the shape carries none of it:
-    // a rule that names no border property cannot move the edge.
     check("and respells no border, so a crumb's edge is whatever the chip's is",
           /border/.test(decl), false);
-    // Both grounds a chip is drawn on: the palette tints an edge with frost,
-    // the bar leaves it the plain hairline, and a crumb takes the SAME one
-    // either way.
     for (const [where, live] of [["palette", [".tv-chip", FROST_RULE]],
                                  ["bar", [".tv-chip"]]]) {
       const chip = boxOf(live), crumb = boxOf([...live, ".tv-chips .tv-chip-muted"]);
@@ -2947,8 +2318,6 @@ async function crumbTrail() {
              crumb["border-radius"]],
             [chip["border-width"], chip["border-style"], chip["border-color"],
              chip["border-radius"]]);
-      // The × is what a live chip's right side is short for, so equalizing it
-      // is what makes the silhouettes match rather than a departure from them.
       check(where + ": and its padding is the chip's rhythm with the × side equalized",
             [crumb["padding-top"], crumb["padding-bottom"], crumb["padding-left"],
              crumb["padding-right"]],
@@ -2965,11 +2334,8 @@ async function crumbTrail() {
            /\.tv-chip-muted:hover/.test(css)], [true, true, false]);
     for (const theme of ["light", "dark"]) {
       const p = paletteIn(`:root[data-theme="${theme}"] .tv-root{`);
-      // Transparent, so what a crumb is drawn on is the page itself.
       check(theme + ": the crumb ink clears the text floor on the page it sits on",
             ratio(p.muted, p.bg) >= 4.5, true);
-      // Distinct from a live chip on BOTH axes — ink and ground — and quieter
-      // on the one that carries the reading.
       const live = chipIn(/** @type {"light"|"dark"} */ (theme));
       check(theme + ": and is a quieter reading than a live chip's, on a different ground",
             [ratio(p.muted, p.bg) < ratio(p.fg, live.wash), p.muted !== p.fg,
@@ -2978,7 +2344,6 @@ async function crumbTrail() {
   }
 }
 
-// ---- benchmark -------------------------------------------------------------
 
 const results = [];
 async function bench(name, run, settle = 200) {
@@ -2991,7 +2356,6 @@ async function bench(name, run, settle = 200) {
 
 const app = new El("div");
 let tv = null;
-/** The filter box under EL (a fresh element every render, before the fix). */
 const filterOf = (el) => el.querySelector(".tv-filter");
 const type = (text) => {
   const box = filterOf(app);
@@ -3020,12 +2384,10 @@ async function measure() {
   await bench("upsertRow (existing)", () => sync(() => tv.upsertRow(hot)));
   await bench("deleteRow", () => sync(() => tv.deleteRow("h-11")));
 
-  // A consumer holding a movement key: ~30 select() calls inside one frame.
   const burst = tv.getVisible().slice(200, 230).map((r) => r.id);
   await bench("select burst x30 (key repeat)",
               () => sync(() => { for (const id of burst) tv.select(id); }));
 
-  // A page turn on a set this size: one slice, one window, one hint.
   const paged = new El("div");
   const pv = TableView.mount(paged, view(COUNT), { pageSize: 100 });
   paged.querySelector(".tv-scroll").clientHeight = 600;
@@ -3047,9 +2409,7 @@ async function measure() {
                       r.bytes.toLocaleString("en-US"), r.listeners.toLocaleString("en-US")]));
 }
 
-// ---- smoke -----------------------------------------------------------------
 
-/** The action legend the fixture's view puts on the hint line. */
 const ACT = " · RET Materialize · t Cycle TODO";
 
 let fails = 0;
@@ -3060,26 +2420,16 @@ const check = (what, got, want) => {
               + (ok ? "" : "  want " + JSON.stringify(want)));
 };
 
-/**
- * SCHEMA.md's filter micro-syntax: the tokenizer, the local semantics it
- * drives, and the suggestion list that helps type it.
- */
 async function filterQuery() {
   console.log("\n== the filter query");
   const KEYS = columns.map((c) => c.key);
   const parse = (q) => TableView.parseQuery(q, KEYS);
-  /** A token as `[negated, key, value, quoted]' — what the grammar decided. */
   const shape = (q) => parse(q).map((t) => [t.negated, t.key, t.value, t.quoted]);
 
   check("key:value is a predicate when the key names a column",
         shape("state:DONE"), [[false, "state", "DONE", false]]);
   check("= is an alias for :", shape("state=DONE"), [[false, "state", "DONE", false]]);
   check("an unknown key is free text", shape("nope:x"), [[false, null, "nope:x", false]]);
-  // A PRODUCER'S OWN KEY (SCHEMA.md, Filter query): glance reads `ref:ID' and
-  // `from:ID' -- one reference edge from either end -- off a link graph no page
-  // holds, so neither reaches `queryKeys' and the token is free text WHOLE, key
-  // half included. The `?' spelling the edge's kind never cuts here: the FIRST
-  // `:' decides the key, and `from' names no column of this view.
   check("a producer's own key is free text, key half and all",
         shape("from:def456"), [[false, null, "from:def456", false]]);
   check("the forward key reads the same, as it always has",
@@ -3089,7 +2439,6 @@ async function filterQuery() {
         [[false, null, "from:def456?kind=blocked-by", false]]);
   check("the existence meta rides it too — no star ever reaches a value",
         shape("ref:*any*"), [[false, null, "ref:*any*", false]]);
-  // The org-text traps: a predicate must never happen by accident.
   check("org tag text stays free text", shape(":work:"), [[false, null, ":work:", false]]);
   check("org verbatim text stays free text", shape("=code="), [[false, null, "=code=", false]]);
   check("a quoted token is free text, spaces and all",
@@ -3109,7 +2458,6 @@ async function filterQuery() {
         [off.start, off.end, "ab state:DONE".slice(off.start, off.end)],
         [3, 13, "state:DONE"]);
 
-  // Local semantics, by column type.
   const Q = driver(40);
   const box = Q.box, q = Q.handle;
   const { reset, shown, type, items, counts } = Q;
@@ -3121,16 +2469,12 @@ async function filterQuery() {
   check("date cells match by prefix", shown("scheduled:2026-03"), 4);
   check("and not by substring", shown("scheduled:03"), 0);
   check("the empty meta matches an empty cell", shown("deadline:*empty*"), 30);
-  // And the bare word is a literal now, which no date cell spells.
   check("where the bare word it replaced is text like any other",
         shown("deadline:none"), 0);
-  // The half-typed state the suggestion list serves: it must not narrow, and
-  // must not narrow differently per column type.
   check("a key with nothing typed after it narrows nothing",
         [shown("state:"), shown("title:"), shown("deadline:")], [40, 40, 40]);
   check("negation excludes", shown("-state:DONE"), 32);
   check("tokens AND together", shown("state:DONE tag:web"), 3);
-  // SCHEMA's one combination rule: TOKENS AND, ALTERNATIVES OR.
   const done = shown("state:DONE"), next = shown("state:NEXT");
   check("a repeated key narrows like any other token",
         shown("state:DONE state:NEXT"), 0);
@@ -3158,11 +2502,6 @@ async function filterQuery() {
   check("free text and a predicate AND too",
         shown("system state:DONE") <= shown("state:DONE"), true);
   check("an unknown key filters as the free text it is", shown("nope:x"), 0);
-  // The subset SCHEMA asks a producer's key to narrow to is EXACT rather than
-  // lucky: the value is an opaque row id, which no cell spells, so both ends of
-  // the reference find nothing here whatever the store answers there. It is the
-  // same fact that keeps a consumer's divergence probe quiet -- what such a
-  // probe searches the page for is the id half, and the page does not carry it.
   check("both reference keys answer no rows here, whatever they answer there",
         [shown("ref:h-7"), shown("from:h-7"), shown("from:h-7?kind=blocked-by")],
         [0, 0, 0]);
@@ -3174,16 +2513,10 @@ async function filterQuery() {
         Q.chipsOf(), ["substring:from:h-7"]);
   shown("");
 
-  // The suggestion list.
   check("a bare word suggests the column keys it opens, under the literal",
         type("sta"), [`"sta"`, "state:"]);
-  // A bare word offers the keys it opens, which are the view's columns and the
-  // two reserved ones — never a tag, which is a VALUE of the tags column.
   check("the prefix narrows them",
         type("s").filter((x) => x.endsWith(":")), ["state:", "scheduled:", "sort:"]);
-  // AND NEITHER REFERENCE KEY IS OFFERED, the roster being the view's own: a
-  // completion for a key this side cannot answer would promise a predicate and
-  // hand back a text search.
   check("no offer names a key only the producer can answer",
         type("f").concat(type("r")).filter((x) => /^(from|ref):/.test(x)), []);
   check("a word matching no key still offers the literal", type("zzz"), [`"zzz"`]);
@@ -3197,11 +2530,8 @@ async function filterQuery() {
   check("the tag column's values are the tags themselves, not the cells",
         type("tag:").sort(),
         ["*empty*", "daemon", "emacs", "glance", "ops", "read", "system", "web"]);
-  // 40 distinct titles, and the cap is 12 — a ceiling of 12 can fail, one of
-  // "some number less than everything" cannot.
   check("the list is capped at twelve, out of forty", type("title:").length, 12);
 
-  // Value counts: how many rows stand behind each suggestion.
   type("state:");
   check("each value carries its row count", counts(), [8, 8, 8, 8, 8]);
   check("and the count is what the predicate actually matches",
@@ -3211,7 +2541,6 @@ async function filterQuery() {
   type("deadline:");
   check("counts are over every row, not the filtered ones",
         counts().reduce((a, b) => a + b, 0), 10);
-  // The cache is thrown away with the text cache, so an edit is reflected.
   q.upsertRow({ id: "h-0", cells: { state: "DONE", priority: "A", title: "moved",
                                     tag: ":web:", scheduled: "2026-01-01 00:00",
                                     deadline: "" } });
@@ -3221,11 +2550,7 @@ async function filterQuery() {
   type("state:");
   check("and putting it back restores them", counts(), [8, 8, 8, 8, 8]);
 
-  // Accept mechanics.
-  // Tab completes and stays; Enter completes and goes.
   const b = filterOf(box);
-  // The literal leads a prefix that spells nothing, so one arrow is what stands
-  // between the caret and the key it opens.
   const down = () => b.dispatchEvent(new Ev("keydown", { key: "ArrowDown" }));
   type("sta");
   const held = b.blurs || 0;
@@ -3245,8 +2570,6 @@ async function filterQuery() {
   check("and an arrow moves which value that is", b.value, "state:" + STATES[1] + " ");
   check("and the list closes once the token is finished", items(), []);
 
-  // A `|' RE-OPENS the domain, so an alternation is completed one alternative
-  // at a time and stays ONE token.
   check("a bar asks for the value domain again", type("state:DONE|"), domain(...STATES));
   check("and the prefix is what follows the LAST bar", type("state:DONE|N"), ["NEXT"]);
   type("state:DONE|N");
@@ -3268,12 +2591,10 @@ async function filterQuery() {
   down();
   b.dispatchEvent(new Ev("keydown", { key: "Tab" }));
   check("a negated token keeps its -", b.value, "-state:");
-  // Including the literal, which is a token like any other and negates like one.
   type("-sta");
   b.dispatchEvent(new Ev("keydown", { key: "Tab" }));
   check("and so does the literal, which is a token like any other", b.value, "-sta ");
 
-  // Precedence: the list gets Enter and Esc first.
   type("sta");
   b.dispatchEvent(new Ev("keydown", { key: "Escape" }));
   check("the first Escape closes the list", items(), []);
@@ -3281,7 +2602,6 @@ async function filterQuery() {
   b.dispatchEvent(new Ev("keydown", { key: "Escape" }));
   check("the second Escape clears the box", b.value, "");
 
-  // Enter on a chosen value is one gesture: complete, commit, hand over.
   type("state:DO");
   const blurs = b.blurs || 0;
   b.dispatchEvent(new Ev("keydown", { key: "ArrowDown" }));
@@ -3302,11 +2622,6 @@ async function filterQuery() {
          !!box.querySelector(".tv-table tbody tr.tv-sel")], [1, "", true, true]);
 }
 
-/**
- * The DATE COMPARISONS: the value forms a date column takes — `>=D', `>D',
- * `<=D', `<D', the range `A..B' and the literal `*today*' — the laws that
- * decide them, and the completion that helps type one.
- */
 async function comparisons() {
   console.log("\n== date comparisons");
   const cols = [
@@ -3314,9 +2629,6 @@ async function comparisons() {
     { key: "scheduled", header: "Scheduled", type: "text" },
     { key: "deadline", header: "Deadline", type: "text" },
   ];
-  // One row per shape the laws tell apart: either side of a month's edge, a
-  // TIMED stamp inside its last day, a row nobody dated, and the pair of dates
-  // law 9 turns on — scheduled long after the range, a deadline long before it.
   const rows = [
     { id: "a", cells: { title: "before", scheduled: "2026-07-31", deadline: "2026-08-15" } },
     { id: "b", cells: { title: "opens the month", scheduled: "2026-08-01", deadline: "" } },
@@ -3328,15 +2640,12 @@ async function comparisons() {
                         deadline: "2020-01-01" } },
   ];
   const D = driver({ columns: cols, rows });
-  /** Commit Q from a clean box and say which rows it left, in row order. */
   const run = (q) => { D.shown(q); return D.handle.getVisible().map((r) => r.id); };
 
-  // --- the atoms, on the month `2026-08'
   check("< is before the literal's first instant", run("scheduled:<2026-08"), ["a"]);
   check("and the bare literal is the interval it names",
         run("scheduled:2026-08"), ["b", "c"]);
   check("and > is after its last", run("scheduled:>2026-08"), ["d", "f"]);
-  // Trichotomy: for a DATED row exactly one of the three holds.
   check("the three partition the dated rows",
         run("scheduled:<2026-08").concat(run("scheduled:2026-08"),
                                          run("scheduled:>2026-08")).sort(),
@@ -3345,7 +2654,6 @@ async function comparisons() {
         [run("scheduled:<=2026-08"), run("scheduled:>=2026-08")],
         [["a", "b", "c"], ["b", "c", "d", "f"]]);
 
-  // --- granularity, where a TIMED stamp sits inside the day the literal names
   check("< and >= cut at the literal's FIRST instant, so nine o'clock is after it",
         [run("scheduled:<2026-08-31"), run("scheduled:>=2026-08-31")],
         [["a", "b"], ["c", "d", "f"]]);
@@ -3355,28 +2663,21 @@ async function comparisons() {
   check("so the bare form is the closed interval, said with two tokens",
         run("scheduled:>=2026-08 scheduled:<=2026-08"), run("scheduled:2026-08"));
 
-  // --- the empty cell, which sits OUTSIDE every comparison
   check("no comparison serves the undated row",
         ["<2026-08", "<=2026-08", ">2026-08", ">=2026-08", "2026-08-01..2026-09-01"]
           .every((v) => run("scheduled:" + v).indexOf("e") === -1), true);
   check("so a negated one does", run("-scheduled:<2026-08").indexOf("e") !== -1, true);
-  // Law 6: the sign is no mirror. The two differ on EXACTLY the undated rows,
-  // which is why the surface must never rewrite one into the other.
   check("and negation is no mirror of the opposite operator",
         [run("-scheduled:<2026-08"), run("scheduled:>=2026-08")],
         [["b", "c", "d", "e", "f"], ["b", "c", "d", "f"]]);
   check("the meta still widens a comparison, both being atoms",
         run("scheduled:<2026-08 +scheduled:*empty*"), ["a", "e"]);
 
-  // --- the range
   check("A..B is >=A and <=B on one axis",
         run("scheduled:2026-08-01..2026-08-31"), ["b", "c"]);
   check("which on a single-cell key two tokens also say",
         run("scheduled:2026-08-01..2026-09-01"),
         run("scheduled:>=2026-08-01 scheduled:<=2026-09-01"));
-  // Law 9, the whole reason `..' exists: ONE ATOM is asked of each date cell in
-  // turn, where two TOKENS let either cell answer either end. Row `f' is
-  // scheduled after the range and due before it, and lies in neither.
   check("but on `planned' the range is ONE CELL INSIDE THE INTERVAL",
         run("planned:2026-08-01..2026-09-01"), ["a", "b", "c", "d"]);
   check("where the two tokens serve a row that lies in neither range",
@@ -3384,7 +2685,6 @@ async function comparisons() {
   check("and `planned' reads both date cells under a comparison, as under a prefix",
         run("planned:<2026-08"), ["a", "f"]);
 
-  // --- the half-typed token, which narrows nothing and establishes no axis
   check("an operator with no literal narrows nothing",
         [run("scheduled:>").length, run("scheduled:>=").length,
          run("scheduled:2026-08..").length, run("scheduled:..2026-08").length], [6, 6, 6, 6]);
@@ -3395,18 +2695,14 @@ async function comparisons() {
   check("a literal opening with no digit matches no row",
         [run("scheduled:>banana").length, run("scheduled:>*empty*").length], [0, 0]);
 
-  // --- alternatives split first, so an OR of comparisons is free
   check("each alternative carries its own operator",
         run("scheduled:<2026-08|>2026-12"), ["a", "f"]);
 
-  // --- conservativity: the operator is read on the DATE columns and nowhere else
   check("on a text column the character is body text, as it has always been",
         [run("title:>"), run("title:> b")], [["f"], ["f"]]);
   check("and free text carrying one is the substring it spells",
         run(">2026-08").length, 0);
   check("a bare prefix reads exactly as it did", run("scheduled:2026-08"), ["b", "c"]);
-  // The separator splits FIRST and a quote strips mid-value, so neither reaches
-  // the operator; a token OPENING with a quote is free text whole.
   check("= is the same comparison, being `:''s alias",
         run("scheduled=>=2026-08"), ["b", "c", "d", "f"]);
   check("and a quote inside the value strips off it",
@@ -3414,12 +2710,10 @@ async function comparisons() {
   check("where a token that opens with one is free text, operator and all",
         run('"scheduled:>=2026-08"').length, 0);
 
-  // --- the chip strip prints the token as written; the operator is value text
   D.shown("scheduled:>=2026-08-01");
   check("a committed comparison is one chip, spelled as it was typed",
         D.chipsOf(), ["scheduled:>=2026-08-01"]);
 
-  // --- THE DAY WORDS, the literals the clock answers
   {
     const day = (delta) => {
       const t = new Date(Date.now() + delta * 864e5);
@@ -3444,8 +2738,6 @@ async function comparisons() {
           [on("scheduled:today..today"), on(`scheduled:${day(-1)}..today`),
            on("scheduled:today..tomorrow")],
           [["t"], ["y", "t"], ["t", "m"]]);
-    // THE OLD SPELLING IS READ AND NEVER OFFERED, so a stored query and a hand
-    // that still types the stars answer exactly what the bare word answers.
     check("`*today*' is the old spelling of `today' and means the very same day",
           [on("scheduled:*today*"), on("scheduled:<=*today*"),
            on("scheduled:*today*..*today*")],
@@ -3453,14 +2745,9 @@ async function comparisons() {
            on("scheduled:today..today")]);
     check("the empty cell stays outside it too",
           on("scheduled:>=today").indexOf("e"), -1);
-    // A NEAR-MISS IS NO WORD: only the roster's spellings are read off the clock.
     check("and a word the roster does not name is the literal it spells, matching nothing",
           [on("scheduled:todayy").length, on("scheduled:tod").length,
            on("scheduled:yesterday").length], [0, 0, 0]);
-    // A DAY WORD IS A DATE COLUMN'S GRAMMAR AND NOWHERE ELSE'S: a text cell
-    // spelling one is a value the rows hold, so it carries its count and is
-    // drawn plain.  Only the dimness catches this — a text column offers the
-    // word either way, its own cell being the source.
     T.type("title:t");
     check("a title spelling a day word is a cell: counted, and drawn as one",
           [T.items(), T.countOf("today"), T.countOf("tomorrow"),
@@ -3468,12 +2755,7 @@ async function comparisons() {
           [["today", "tomorrow"], 1, 1, 0]);
   }
 
-  // --- THE SHIFT a date literal may carry: `BASE(+|-)N UNIT'
   {
-    // One row per day the units and the clip land on, ascending, each ID'D BY
-    // THE DAY IT HOLDS — so a check reads as the days the query left standing.
-    // The clip cases are checked against days SPELLED OUT rather than against a
-    // second copy of the arithmetic, which would pass while the first drifts.
     const S = driver({ columns: cols, rows: [
       "2024-02-29", "2025-02-28", "2025-12-25", "2026-01-01", "2026-01-02",
       "2026-01-02 09:00", "2026-01-08", "2026-01-31", "2026-02-01",
@@ -3488,8 +2770,6 @@ async function comparisons() {
            ["2026-02-01"], ["2027-01-01"]]);
     check("and a week is seven days",
           on("scheduled:2026-01-01+1w"), on("scheduled:2026-01-01+7d"));
-    // The whole law in one line: what resolves is a DAY LITERAL, and nothing
-    // below the resolution can tell a shifted spelling from a spelled one.
     check("a shifted value is ONE MORE SPELLING of the day it lands on",
           on("scheduled:2026-01-01+1w"), on("scheduled:2026-01-08"));
 
@@ -3519,7 +2799,6 @@ async function comparisons() {
           [on("scheduled:2026-01+1m"), on("scheduled:>2026-01+1m"),
            on("scheduled:2026-02-30+1d")], [[], [], []]);
 
-    // --- the half-typed shift, which is the half-typed family one end deeper
     check("a shift with no unit behind it narrows nothing, as an operator with no literal does",
           [on("scheduled:today+").length, on("scheduled:today+30").length,
            on("scheduled:*today*+").length,
@@ -3528,15 +2807,10 @@ async function comparisons() {
           on("scheduled:today+ +scheduled:2026-01-08"), ["2026-01-08"]);
     check("while the negated vacuum empties the table, as `-state:' does",
           on("-scheduled:today+").length, 0);
-    // Law: THE PLUS FAMILY ALONE ends mid-shift. `-' is ISO's own separator, so
-    // a rule reading the incomplete minus would read `2026-01-01' as `2026-01'
-    // moved `01' of no unit and every spelled day would narrow nothing.
     check("THE PLUS FAMILY ALONE is half-typed: an incomplete minus is the literal it was",
           [on("scheduled:today-7").length, on("scheduled:2026-01-01")],
           [0, ["2026-01-01"]]);
 
-    // --- THE BARE SHIFT, which the planning grammar's precedent reads today-relative
-    /** The local day N calendar days off today, stepped in UTC as no zone's clock is. */
     const day = (n) => {
       const t = new Date();
       const u = new Date(Date.UTC(t.getFullYear(), t.getMonth(), t.getDate() + n));
@@ -3557,8 +2831,6 @@ async function comparisons() {
           [["week ago"], ["week ago"]]);
     check("so the thirty-day agenda is ONE TOKEN",
           now("scheduled:today..today+30d"), ["today", "in a month"]);
-    // THE WORD IS A BASE AT BOTH ENDS AND UNDER EITHER SPELLING: a range mixing
-    // them is the one range, so a stored query half-rewritten still answers.
     check("and the old spelling rides either end of it, mixed ends included",
           [now("scheduled:*today*..*today*+30d"), now("scheduled:today..*today*+30d"),
            now("scheduled:*today*..today+30d")],
@@ -3566,15 +2838,12 @@ async function comparisons() {
     check("`tomorrow' is a base like any other, and carries a shift of its own",
           [now("scheduled:tomorrow+29d"), now("scheduled:tomorrow-8d")],
           [["in a month"], ["week ago"]]);
-    // The two signs never meet: the scanner reads a token's off its FIRST
-    // character and stops there, so the value's own is body text to it.
     const tok = TableView.parseQuery("+scheduled:+30d", cols.map((c) => c.key))[0];
     check("A TOKEN'S FIRST CHARACTER IS ITS SIGN and the value's own `+' is the shift's",
           [tok.added, tok.negated, tok.key, tok.value], [true, false, "scheduled", "+30d"]);
     check("so an added bare shift widens its axis rather than reading as two signs",
           now("scheduled:today +scheduled:+30d"), ["today", "in a month"]);
 
-    // --- the QUOTED spelling, folded onto the compact one by the one pre-pass
     check("the quoted form admits spaces and long unit words, and means the compact one",
           [on('scheduled:"<= 2026-01-01 + 1 week"'), on('scheduled:"2026-01-01 + 1 month"'),
            on('scheduled:"2026-01-01+1 day"')],
@@ -3584,10 +2853,6 @@ async function comparisons() {
           on('scheduled:"2026-01-02 09:00"'), ["2026-01-02 09:00"]);
     check("`today' ends in a unit word and is THE DAY WORD, folded by none of it",
           [now("scheduled:today"), now("scheduled:tod").length], [["today"], 0]);
-    // THE UNIT WORD IS CUT AT THE LITERAL, not at the value's end: a range
-    // carries TWO literals, so a fold reading the end alone would cut the high
-    // one and leave the low one spelling no day — and the page would then serve
-    // nothing where the producer serves rows.
     check("the LOW end of a range folds too, nothing behind it being left to fold",
           [on('scheduled:"2026-01-01 + 1 week .. 2026-02-01"'),
            on("scheduled:2026-01-08..2026-02-01")],
@@ -3600,7 +2865,6 @@ async function comparisons() {
     check("and the quoted spelling of the agenda is the agenda",
           now('scheduled:"today .. today + 30 days"'), ["today", "in a month"]);
 
-    // --- conservativity: every form that composed before answers as it did
     check("and every value form that composed before is the answer it was",
           [on("scheduled:2026-01"), on("scheduled:>=2026-02-28"),
            on("scheduled:2026-01-01..2026-01-08"), on("scheduled:*empty*")],
@@ -3610,7 +2874,6 @@ async function comparisons() {
            []]);
   }
 
-  // --- the value stage: the grammar rides the foot of the domain
   const dates = ["2026-07-31", "2026-08-01", "2026-08-31 09:00", "2026-09-01", "2027-01-01"];
   check("a date column offers its cells, then the DAY WORDS, `*empty*' and the heads",
         D.type("scheduled:"),
@@ -3619,8 +2882,6 @@ async function comparisons() {
         D.box.querySelectorAll(".tv-ac-dim").length, 7);
   check("a text column is untouched by any of it",
         D.type("title:").filter((x) => x === "today" || x === ">=").length, 0);
-  // THE OLD SPELLING IS NEVER PROPOSED: `today' is the one word this offers,
-  // and no prefix of `*today*' reaches an offer at all.
   check("the day words are offered bare, and a prefix reaches the ones it opens",
         [D.type("scheduled:tod"), D.type("scheduled:to"), D.type("scheduled:>=tod")],
         [["today"], ["today", "tomorrow"], [">=today"]]);
@@ -3631,8 +2892,6 @@ async function comparisons() {
         D.type("scheduled:>=2026-08"), [">=2026-08-01", ">=2026-08-31 09:00"]);
   check("and drops `*empty*', which no comparison serves",
         D.type("scheduled:>").indexOf("*empty*"), -1);
-  // The heads ride UNDER the values, so the index is the domain's own length:
-  // five cells and the two day words.
   check("a head one character in offers the longer one it opens",
         [D.type("scheduled:>").indexOf(">="), D.type("scheduled:<").indexOf("<="),
          D.type("scheduled:>=").indexOf(">=")], [7, 7, -1]);
@@ -3641,12 +2900,9 @@ async function comparisons() {
          (() => { D.type("scheduled:>="); return D.countOf(">=2026-08-01"); })()],
         [1, null]);
 
-  // --- the SHIFT heads, which ride the foot the operator heads do
   check("a base spelled in full offers the two SHIFT SIGNS behind it",
         [D.type("scheduled:today"), D.type("scheduled:tomorrow")],
         [["today", "today+", "today-"], ["tomorrow", "tomorrow+", "tomorrow-"]]);
-  // THE OLD SPELLING FOLDS AT THE ONE PLACE COMPLETION CANONICALISES A BASE:
-  // typed in full it offers the shift under the bare word, never under itself.
   check("typed in the old spelling it offers them under the canonical one",
         D.type("scheduled:*today*"), ["today+", "today-"]);
   check("but merely OPENING the word offers none, a head waiting for the whole base",
@@ -3670,7 +2926,6 @@ async function comparisons() {
         [D.type("scheduled:").indexOf("+"), D.type("scheduled:+3")],
         [-1, ["+3d", "+3w", "+3m", "+3y"]]);
 
-  // --- accepting one: a head OPENS the value, a value finishes the token
   {
     const b = D.b();
     D.type("scheduled:");
@@ -3685,8 +2940,6 @@ async function comparisons() {
     D.press("Tab");
     check("Tab on the literal behind it finishes the token, space and all",
           b.value, "scheduled:2026-09-01 ");
-    // A SIGN HEAD IS AN OPERATOR HEAD'S TWIN at the keyboard as well as in the
-    // list: it lands bare and leaves the list open for the count and the unit.
     D.type("scheduled:today");
     for (let i = 0; i < D.items().indexOf("today+"); i++) D.press("ArrowDown");
     D.press("Tab");
@@ -3699,18 +2952,12 @@ async function comparisons() {
   }
 }
 
-/**
- * `openFilter({narrow: true})': the box that edits the FILTER half. The key
- * stage offers the narrowing keys alone, a shaping token is refused on commit
- * and left standing, and the chips already applied ride along untouched.
- */
 async function narrowedDoor() {
   console.log("\n== the narrowed door");
   const WHOLE = `key:value · status:open|closed · -word · "some phrase"`;
   const named = Object.assign(view(40), { views: [{ name: "hot", query: "state:NEXT" }] });
   const A = driver(named);
   const ab = A.b();
-  /** Type into the box and read back every label the list offers. */
   const type = (q) => {
     ab.value = q;
     ab.dispatchEvent(new Ev("input"));
@@ -3787,18 +3034,9 @@ async function narrowedDoor() {
         [["state:DONE"], "sort:x", "state:DONE"]);
 }
 
-/**
- * `filterDock': WHERE a summoned box lands, told apart from WHAT summons it.
- * The strip dock lays the box on the chip strip's own row and leaves the rest
- * of the mount standing — the filling table, the sort marks, the hint line and
- * its pager — where the overlay dock raises the veil over all of it. The
- * SUMMONED LADDER travels with the summoning rather than with the veil, and
- * every rung and every measure that are the picker's stay the picker's.
- */
 async function dockedDoor() {
   console.log("\n== the docked door");
   const css = cssText();
-  /** The strip's own rhythm, spelled for every mount that hangs one. */
   const CHIPS_ROW = ".tv-omni > .tv-chips,.tv-pal > .tv-chips,.tv-summon > .tv-chips";
   const asked = [];
   const D = driver(40, { filterDock: "strip", onFilter: (q) => asked.push(q) });
@@ -3807,7 +3045,6 @@ async function dockedDoor() {
   const typing = () => root.classList.contains("tv-typing");
   const items = () => dock.querySelectorAll(".tv-ac-item").length;
 
-  // --- what the dock is
   check("a docked mount marks the dock, and owns the page it is drawn on",
         [root.classList.contains("tv-dock"), root.classList.contains("tv-summon"),
          root.classList.contains("tv-inline"), root.classList.contains("tv-pal")],
@@ -3831,21 +3068,17 @@ async function dockedDoor() {
          boxOf([CHIPS_ROW, ".tv-dock > .tv-chips"])["border-bottom"],
          boxOf([".tv-dock > .tv-scroll"])["border-top"]],
         ["12px", "none", "1px solid var(--tv-border)"]);
-  // The strip's own padding is the air the box is centred in, so the table under
-  // it does not jump down the moment one is summoned.
   check("and the box is centred in that air rather than bringing its own",
         [boxOf([".tv-dock.tv-summon > .tv-bar"])["padding-top"],
          boxOf([".tv-dock.tv-summon > .tv-bar"])["padding-bottom"],
          boxOf([".tv-dock.tv-summon > .tv-bar"])["padding-right"],
          boxOf([".tv-dock"])["align-items"]],
         ["0", "0", "12px", "center"]);
-  // Source position is the whole of that trim, these rules tying on specificity.
   check("which is a matter of where the rules are spelled, so they are pinned in order",
         [css.indexOf(".tv-dock > .tv-chips{") > css.indexOf(CHIPS_ROW + "{"),
          css.indexOf(".tv-inline > .tv-chips{") > css.indexOf(".tv-dock > .tv-chips{")],
         [true, true]);
 
-  // --- and what the dock leaves standing
   check("the hint line is a row of its own, spanning both columns",
         [!!dock.querySelector(".tv-hint"), boxOf([".tv-dock > .tv-hint"])["grid-area"]],
         [true, "3 / 1 / 3 / -1"]);
@@ -3865,7 +3098,6 @@ async function dockedDoor() {
         [css.indexOf(FROST_RULE + "{") !== -1, root.classList.contains("tv-summon")],
         [true, true]);
 
-  // --- summoned onto the strip, and away again
   check("nothing is drawn there before anyone asked", typing(), false);
   dt.openFilter();
   check("openFilter puts the box on the strip's row and takes the keyboard",
@@ -3883,7 +3115,6 @@ async function dockedDoor() {
   dt.closeFilter();
   check("closeFilter takes it off the strip again", [typing(), dbx.focused], [false, false]);
 
-  // --- COMMIT ALONE: the reader called the box up and is looking at it
   dt.openFilter();
   for (const q of ["s", "st", "sta", "state:D"]) {
     dbx.value = q;
@@ -3901,7 +3132,6 @@ async function dockedDoor() {
          !!dock.querySelector(".tv-table tbody tr.tv-sel")],
         [["state:DONE"], ["state:DONE"], "", false, true]);
 
-  // --- ESCAPE IN TWO STEPS: the text first, the box second
   dt.openFilter();
   dbx.value = "sy";
   dbx.dispatchEvent(new Ev("input"));
@@ -3914,7 +3144,6 @@ async function dockedDoor() {
   dbx.dispatchEvent(new Ev("keydown", { key: "Escape" }));
   check("the third takes it off the strip", typing(), false);
 
-  // --- BACKSPACE IS DEAD over the emptied box: the chip is on the page behind
   dt.openFilter();
   check("a chip stands on the page behind the box", chipsOf(), ["state:DONE"]);
   const blurs = dbx.blurs || 0;
@@ -3930,7 +3159,6 @@ async function dockedDoor() {
         [dt.stripLastToken(), chipsOf()], [true, []]);
   dt.closeFilter();
 
-  // --- THE PICKER DOCKS TOO, and keeps every rung and measure of its own
   const P = driver(20, { inline: true });
   const pick = P.box, pt = P.handle, pb = P.b();
   const pRoot = pick.querySelector(".tv-root");
@@ -3941,8 +3169,6 @@ async function dockedDoor() {
   check("with no hint line and no veil, exactly as before",
         [pick.querySelectorAll(".tv-hint").length, pick.querySelectorAll(".tv-veil").length],
         [0, 0]);
-  // The rules were cut in two; the boxes they settle at were not. This is the
-  // cascade the picker actually reads, merged the way the browser merges it.
   const pickBox = (el) => boxOf([CHIPS_ROW, ".tv-dock > " + el, ".tv-inline > " + el]);
   check("and its strip, its bar and its window read byte for byte as they did",
         [pickBox(".tv-chips")["grid-area"], pickBox(".tv-chips")["padding-top"],
@@ -3973,9 +3199,6 @@ async function dockedDoor() {
         [pRoot.classList.contains("tv-typing"),
          pick.querySelectorAll(".tv-chip[data-i]").length],
         [false, 1]);
-  // A PICKER NARROWS AS IT IS TYPED. It is a thing to pick FROM, so the reader
-  // is watching the rows the box is filtering — the one rung of the summoned
-  // ladder the picker does not take.
   const seen = [];
   const L = driver(40, { inline: true, onFilter: (q) => seen.push(q) });
   const lb = L.b();
@@ -3986,7 +3209,6 @@ async function dockedDoor() {
   check("and it filters as the reader types, where a summoned box waits for RET",
         seen, ["system"]);
 
-  // --- THE OVERLAY DOCK is the palette, exactly as it always was
   const V = driver(40, { palette: true });
   const over = V.box, vt = V.handle, vb = V.b();
   const vRoot = over.querySelector(".tv-root");
@@ -4004,7 +3226,6 @@ async function dockedDoor() {
   vt.closeFilter();
   check("and closeFilter puts it away", veil().style.display, "none");
 
-  // --- the option decides where the mode is silent, and only there
   const dockOf = (opts) => {
     const el = new El("div");
     TableView.mount(el, view(5), opts);
@@ -4022,7 +3243,6 @@ async function dockedDoor() {
         dockOf({ filterDock: /** @type {any} */ ("panel") }), [false, false, 0]);
 }
 
-/** Cell-level selection, the action legend, chips and badge pills. */
 async function cellsChipsPills() {
   console.log("\n== cells, chips and pills");
   const box = new El("div");
@@ -4039,12 +3259,9 @@ async function cellsChipsPills() {
     const td = cellSel()[0];
     return td ? td.parentNode.children.indexOf(td) : -1;
   };
-  // The other axis: the band is the column, so it is read across the whole
-  // window rather than off one row.
   const bandCells = () => box.querySelectorAll(".tv-table tbody td.tv-colsel");
   const bandHead = () => box.querySelectorAll(".tv-table th.tv-colsel");
   const dataRows = () => box.querySelectorAll(".tv-table tbody tr[data-id]");
-  /** The column index every band cell sits at — -1 unless they agree on one. */
   const bandAt = () => {
     const ix = bandCells().map((el) => el.parentNode.children.indexOf(el));
     return ix.length && ix.every((v) => v === ix[0]) ? ix[0] : -1;
@@ -4053,14 +3270,9 @@ async function cellsChipsPills() {
     const th = bandHead()[0];
     return th ? th.parentNode.children.indexOf(th) : -1;
   };
-  /**
-   * Whether the band reaches every rendered row and the header, once each —
-   * and that there were rows to reach, so an empty window cannot pass it.
-   */
   const banded = () => [bandAt(), bandCells().length === dataRows().length,
                         bandHead().length, dataRows().length > 0];
 
-  // --- cell selection
   const id = t.getVisible()[3].id;
   const ok = t.select(id);
   check("select answers before it paints", [ok, t.getSelection()], [true, { id, col: null }]);
@@ -4075,18 +3287,11 @@ async function cellsChipsPills() {
   check("the cell is stamped once the frame lands", colOfSel(), 2);
   check("only one cell is ever stamped", cellSel().length, 1);
   check("the row stays selected too", rowOf(id).classes.has("tv-sel"), true);
-  // The column is the second axis, so it is drawn on every row of the window —
-  // and on the header, a band stopping short of which reads as broken.
   check("the band washes that column on every rendered row, and its header",
         [banded(), headAt()], [[2, true, 1, true], 2]);
   check("the crosshair carries both classes: one td, one background slot, the cell winning",
         [cellSel()[0].classes.has("tv-colsel"), cellSel()[0] === rowOf(id).children[2]],
         [true, true]);
-  // --- walking off the ends. Cell movement is the consumer's loop — read the
-  //     column, add a step, hand it back — so the index one past an end is what
-  //     a reader's forward key produces on the last column. `step' is that loop
-  //     as a consumer writes it, the entry rule (a row-only selection enters at
-  //     the first column, whichever way asked) included.
   const step = (d) => {
     const at = t.getSelection().col;
     return t.select(id, at === null ? 0 : at + d);
@@ -4113,15 +3318,10 @@ async function cellsChipsPills() {
         [cellSel().length, bandCells().length, bandHead().length], [0, 0, 0]);
   check("and re-entry from there is the first column too",
         [step(-1), t.getSelection().col], [true, 0]);
-  // Re-anchored rather than carried on from the exits above: a step in the
-  // middle is the case the ends were carved out of, and it has to read the same
-  // whatever the ends do.
   t.select(id, 0);
   check("a step between the ends is one column, as it always was",
         [step(1), step(1), t.getSelection().col], [true, true, 2]);
   check("back the same", [step(-1), t.getSelection().col], [true, 1]);
-  // A column named far outside the table is the same answer as one stepped
-  // there: no such cell, so no cell selection.
   check("a column past the end is no column rather than the last one",
         [t.select(id, 99), t.getSelection().col], [true, null]);
   check("nor is one before the start",
@@ -4139,9 +3339,6 @@ async function cellsChipsPills() {
 
   const sc = box.querySelector(".tv-scroll");
   const at = t.getVisible().findIndex((r) => r.id === id);
-  // Far enough down that the selected row is off the window while rows still
-  // fill it. The band belongs to the COLUMN, so it draws on rows the cursor is
-  // nowhere near, which is the whole of what makes it a locator.
   sc.scrollTop = 700;
   sc.dispatchEvent(new Ev("scroll"));
   await sleep(50);
@@ -4162,7 +3359,6 @@ async function cellsChipsPills() {
   check("and stamps it there and then — a click is not a key repeat", colOfSel(), 3);
   check("moving the whole band with it", [bandAt(), headAt()], [3, 3]);
 
-  // --- coalescing: many moves between frames paint once, at the end
   {
     const ids = t.getVisible().slice(10, 40).map((r) => r.id);
     t.select(ids[0]);
@@ -4173,32 +3369,20 @@ async function cellsChipsPills() {
     check("and the state is already the last of them",
           t.getSelection().id, ids[ids.length - 1]);
     await painted();
-    // A move that leaves the window where it is writes no HTML at all: the
-    // marks are re-stamped on the trs already there, which is what gives them
-    // something to crossfade between.
-    // Thirty per-event paints would be thirty windows; the ease writes one per
-    // frame it travels, and a move that does not shift the window writes none.
     check("far fewer windows than there were calls", bytes < 10 * 18128, true);
     check("landing on the row the last call asked for",
           box.querySelector(".tv-table tbody tr.tv-sel").dataset.id, ids[ids.length - 1]);
   }
 
-  // --- the highlight is the row, and it crossfades where it is
   {
     const css = document.head.children.map((e) => e.text).join("");
     check("the marks are declared with a crossfade",
           css.indexOf("transition:background-color .08s ease-out") !== -1, true);
     check("and a calm root turns it off", css.indexOf(".tv-calm") !== -1, true);
-    // The discarded design put a sliding bar over the table; the shipped one
-    // marks the row itself. Both halves are asserted -- an absence alone would
-    // pass just as well in a renderer that drew no highlight at all.
     check("the mark is a class on the selected row",
           box.querySelectorAll(".tv-table tbody tr.tv-sel").length, 1);
     check("and no overlay is rendered", box.querySelectorAll(".tv-hl").length, 0);
 
-    // A move that leaves the window where it is re-stamps the rows already
-    // rendered — the same elements, so the marks have something to fade
-    // between rather than being rebuilt at their new value.
     const near = t.getVisible()[2].id;
     t.select(near);
     await painted();
@@ -4211,17 +3395,10 @@ async function cellsChipsPills() {
           [false, t.getVisible()[3].id]);
   }
 
-  // --- a whole-row selection is exactly what it was before there were columns
   {
-    // The classes every rendered row and cell carries, sorted, since the two
-    // ways one is written -- the window's HTML and a `classList.toggle' --
-    // leave them in different orders.
     const shape = (el) => el.querySelectorAll(".tv-table tbody tr").map((r) =>
       [[...r.classes].sort().join(" "),
        r.children.map((c) => [...c.classes].sort().join(" ")).join("|")]);
-    // Tall enough, in a short enough port, that a scroll genuinely re-windows:
-    // 40 rows behind a 15-row overscan are the whole window at every scroll
-    // position, and `renderRows' turns back at the door without rewriting one.
     const mounted = async () => {
       const el = new El("div");
       const h = TableView.mount(el, view(300));
@@ -4242,10 +3419,6 @@ async function cellsChipsPills() {
           [B.el.querySelectorAll(".tv-colsel").length,
            B.el.querySelectorAll(".tv-cell-sel").length,
            shape(A.el).length > 0], [0, 0, true]);
-    // And still nowhere after a re-window. `renderRows' writes the rows from
-    // scratch and a scroll asks for no re-stamp afterwards, so a band the
-    // window's own HTML wrote would survive here with nothing to clear it --
-    // which is the whole difference between not writing one and undoing one.
     const scB = B.el.querySelector(".tv-scroll");
     await sleep(400);                     // the ease is done asking for stamps
     scB.scrollTop = 3000;
@@ -4258,18 +3431,13 @@ async function cellsChipsPills() {
           [0, true]);
   }
 
-  // --- two bands and their crossing, and every one of them a ground
   {
     const css = cssText();
     const at = (s) => css.indexOf(s);
-    // One background slot on the one td, settled the way the row stack settles
-    // its own four: equal specificity, and source order is the precedence.
     check("the column's rule is declared before the cell's, which is what wins the crossing",
           [at(".tv-table tbody td.tv-colsel{") !== -1,
            at(".tv-table tbody td.tv-colsel{") < at(".tv-table tbody td.tv-cell-sel{")],
           [true, true]);
-    // Translucent on the rows, which is what leaves the four row washes reading
-    // through the band; opaque on the sticky header, under which rows scroll.
     check("the body band is a translucent film of the one column var",
           /tbody td\.tv-colsel\{background:color-mix\(in srgb,var\(--tv-col\) var\(--tv-col-wash\),transparent\)\}/
             .test(css), true);
@@ -4279,23 +3447,14 @@ async function cellsChipsPills() {
     check("the crossing is one step more of that same colour, on the same slot",
           /tbody td\.tv-cell-sel\{background:color-mix\(in srgb,var\(--tv-col\) var\(--tv-cell-wash\),transparent\)\}/
             .test(css), true);
-    // The sweep. A background assertion cannot catch an outline sitting beside
-    // it, so every rule whose SELECTOR names any part of the selection is read
-    // whole -- and counted, or a rename would empty the sweep and pass it.
-    // Comments come out first: the ones above these rules say the words this is
-    // hunting for, and a sweep that read them would answer about the prose.
     const sel = css.replace(/\/\*[\s\S]*?\*\//g, "").split("}")
       .filter((r) => /\.tv-(sel|colsel|cell-sel)\b/.test((r.split("{")[0] || "")));
     check("the whole selection is four rules and not one of them draws an edge",
           [sel.length, sel.some((r) => /border|outline|box-shadow/.test(r))],
           [4, false]);
-    // The flag's edge is a different channel and must survive the sweep: it is
-    // on the box cell, which no selection rule names.
     check("while the flag keeps the one edge the table does draw",
           /tr\.tv-flagged td\.tv-box\{box-shadow:/.test(css), true);
 
-    // The identity, spelled once for both themes the way the frost and the flag
-    // are, in a hue neither they nor the cursor nor the mark occupies.
     const COL = paletteIn(".tv-root{").col;
     const gap = (a, b) => Math.min(Math.abs(a - b), 360 - Math.abs(a - b));
     check("the column identity is one colour, declared once and inherited by both themes",
@@ -4308,10 +3467,6 @@ async function cellsChipsPills() {
            paletteIn(':root[data-theme="dark"] .tv-root{').muted]
             .every((c) => gap(hue(COL), hue(c)) >= 30), true);
 
-    // The strengths, measured against the grounds each wash can land on -- and
-    // they are different grounds: the band lands on the page, the stripe, a
-    // mark and a flag, while the crossing lands on the cursor row and nowhere
-    // else, the band's own rule losing that one cell to it.
     for (const theme of ["light", "dark"]) {
       const p = paletteIn(`:root[data-theme="${theme}"] .tv-root{`);
       const base = paletteIn(".tv-root{");
@@ -4328,28 +3483,18 @@ async function cellsChipsPills() {
               ratio(p.muted, on) >= 4.5, true);
         check(`${theme}: and body text clears 7:1 there`, ratio(p.fg, on) >= 7, true);
       }
-      // Visible, and quieter than the state it crosses: a locator under a
-      // meaning. Contrast says nothing about either -- the light cursor row is
-      // 1.04:1 against its page -- so both are read as sRGB distance, against
-      // the mark's own step as the yardstick. The zebra will not serve as one:
-      // it is a tenth of the light page and two thirds of the dark one, so a
-      // rule written against it says different things in the two themes.
       const moved = Object.values(grounds).map((g) => apart(mixed(g, band.colour, band.pct), g));
       const markStep = apart(grounds.marked, p.bg);
       check(`${theme}: the band shifts every ground it lands on`,
             Math.min(...moved) > markStep / 5, true);
       check(`${theme}: and never as far as a mark shifts the page, a locator staying under a state`,
             Math.max(...moved) < markStep * 0.9, true);
-      // Translucency is what keeps the four row washes telling themselves apart
-      // inside the band as well as outside it.
       for (const what of ["stripe", "marked", "flagged"]) {
         const inside = apart(mixed(grounds[what], band.colour, band.pct),
                              mixed(grounds.page, band.colour, band.pct));
         check(`${theme}: a ${what} row still reads as one under the band`,
               inside > apart(grounds[what], p.bg) / 2, true);
       }
-      // The crossing. Its one ground is the cursor row, and it has to stay the
-      // most legible cell on the table, being the one being read.
       const cross = mixed(p.sel, band.colour, pctOf(p["cell-wash"]));
       check(`${theme}: the crossing keeps the tag ink above 4.5:1`,
             ratio(p.muted, cross) >= 4.5, true);
@@ -4359,10 +3504,6 @@ async function cellsChipsPills() {
       check(`${theme}: and takes more of the colour than the band does`,
             pctOf(p["cell-wash"]) > band.pct, true);
     }
-    // Which of the two numbers a floor SET, and which was chosen: the same
-    // asymmetry the flag has, the other way up. Dark's cursor row is the
-    // lightest ground either wash lands on, so the ink caps the crossing there
-    // and one point more breaks it; light has room and is set by what reads.
     const inkAt = (theme, pct) => {
       const p = paletteIn(`:root[data-theme="${theme}"] .tv-root{`);
       return ratio(p.muted, mixed(p.sel, paletteIn(".tv-root{").col, pct));
@@ -4373,14 +3514,11 @@ async function cellsChipsPills() {
           [inkAt("dark", dpct) >= 4.5, inkAt("dark", dpct + 0.01) >= 4.5], [true, false]);
     check("light has headroom dark does not, and is set by what reads",
           inkAt("light", lpct + 0.01) >= 4.5, true);
-    // Pale colours need far more of themselves over white than over black --
-    // the frost's story, and this amber's for the same reason.
     check("which is why the two strengths are far apart, as the chip's are",
           washIn("light", "col", "col-wash").pct > washIn("dark", "col", "col-wash").pct * 3,
           true);
   }
 
-  // --- the viewport ease: scroll-margin targeting, one retargeting loop
   {
     const sc = box.querySelector(".tv-scroll");
     sc.clientHeight = 300;                        // ten rows on screen
@@ -4402,13 +3540,11 @@ async function cellsChipsPills() {
     await sleep(400);
     check("moving up stops with the row's head at one third", sc.scrollTop, upTo(8));
 
-    // Inside the band the viewport holds still.
     const held = sc.scrollTop;
     t.select(t.getVisible()[9].id);
     await sleep(300);
     check("a step that stays inside the band moves nothing", sc.scrollTop, held);
 
-    // A held run pins the cursor to the band edge: one row of scroll per row.
     t.select(t.getVisible()[20].id);
     await sleep(400);
     const a = sc.scrollTop;
@@ -4420,7 +3556,6 @@ async function cellsChipsPills() {
     check("and a run down moves exactly one row at a time",
           [b - a, sc.scrollTop - b], [rowH, rowH]);
 
-    // The ends: the cursor walks into the margin rather than the view running on.
     t.select(t.getVisible()[0].id);
     await sleep(500);
     check("at the top it clamps to zero", sc.scrollTop, 0);
@@ -4428,7 +3563,6 @@ async function cellsChipsPills() {
     await sleep(600);
     check("and at the bottom to the last screenful", sc.scrollTop, most());
 
-    // Retargeting: a second move mid-flight changes where the one loop heads.
     sc.scrollTop = 0;
     t.select(t.getVisible()[0].id);
     await sleep(300);
@@ -4437,11 +3571,9 @@ async function cellsChipsPills() {
     const midway = sc.scrollTop;
     t.select(t.getVisible()[20].id);
     await sleep(400);
-    // Retargeting upward, so the new aim is the upward rule's.
     check("a move mid-ease retargets the same loop",
           [midway > 0 && midway < downTo(30), sc.scrollTop], [true, upTo(20)]);
 
-    // The user outranks it.
     sc.scrollTop = 0;
     t.select(t.getVisible()[0].id);
     await sleep(300);
@@ -4453,14 +3585,12 @@ async function cellsChipsPills() {
     check("a wheel cancels the ease where it stands",
           [stoppedAt > 0, sc.scrollTop], [true, stoppedAt]);
 
-    // A rows change is about an order the target no longer describes.
     sc.scrollTop = 0;
     t.select(t.getVisible()[35].id);
     t.setRows(view(40).rows);
     await sleep(300);
     check("and a rows change cancels it too", sc.scrollTop, 0);
 
-    // A click is already looking at its row: it must not yank the viewport.
     t.select(t.getVisible()[20].id);
     await sleep(400);
     const parked = sc.scrollTop;
@@ -4473,7 +3603,6 @@ async function cellsChipsPills() {
     sc.clientHeight = 600;
   }
 
-  // --- reduced motion: no crossfade, no ease, still coalesced
   {
     global.matchMedia = mediaStub({ "prefers-reduced-motion": "reduce" });
     const quiet = new El("div");
@@ -4494,7 +3623,6 @@ async function cellsChipsPills() {
           qt.getVisible()[30].id);
   }
 
-  // --- the action legend, in place of the toolbar
   check("the toolbar is gone", box.querySelectorAll(".tv-btn").length, 0);
   check("the bar holds the title, the chips and the filter, and nothing else",
         box.querySelector(".tv-bar").children.map((e) => e.className),
@@ -4506,7 +3634,6 @@ async function cellsChipsPills() {
   rowOf(id).dispatchEvent(new Ev("dblclick"));
   check("a double click still dispatches the default action", seen.pop(), "materialize " + id);
 
-  // --- badge pills
   const pill = box.querySelector(".tv-table tbody td .tv-pill");
   check("a badge cell renders a pill", !!pill, true);
   check("tinted from its palette colour", pill.attrs.get("style").indexOf("--tv-badge:#") !== -1, true);
@@ -4515,7 +3642,6 @@ async function cellsChipsPills() {
   check("a text cell is untouched",
         rowOf(id).children[2].querySelectorAll(".tv-pill").length, 0);
 
-  // --- chips
   const { box: box2, handle: t2, b: b2El, commit, chipsOf: chipText } = driver(40);
   const b2 = b2El();
   commit("state:DONE");
@@ -4535,7 +3661,6 @@ async function cellsChipsPills() {
   check("chips and box compose into one query", chipText(),
         ["state:DONE", "tag:web", "2026"]);
 
-  // The same query typed whole must filter identically — chips are display.
   const box3 = new El("div");
   const t3 = TableView.mount(box3, view(40));
   const b3 = filterOf(box3);
@@ -4557,9 +3682,6 @@ async function cellsChipsPills() {
   check("a chip shows its token verbatim, quotes and negation and all",
         chipText(), ["tag:web", "-priority:A", '"two words"']);
 
-  // --- the flow the semantics exist for: `/ tanik RET / passport RET'.
-  // Every RET commits what is typed and returns to the table; a longer query is
-  // built by coming back to the box, which reopens empty with its chips intact.
   {
     const F = driver(40);
     const boxF = F.box, tF = F.handle, bF = F.b(), chipsOf = F.chipsOf;
@@ -4585,7 +3707,6 @@ async function cellsChipsPills() {
           [chipsOf(), bF.blurs, !!sel()], [["review", "sync"], 2, true]);
     const both = tF.getVisible().length;
 
-    // The same two tokens typed as one query filter identically.
     const boxW = new El("div");
     const tW = TableView.mount(boxW, view(40));
     const bW = filterOf(boxW);
@@ -4597,8 +3718,6 @@ async function cellsChipsPills() {
           sel().dataset.id, tF.getVisible()[0].id);
   }
 
-  // --- the same flow remotely: one delivery per committed token, and the
-  // selection handed over at once rather than awaiting the producer.
   {
     const askedF = [];
     const boxR = new El("div");
@@ -4617,8 +3736,6 @@ async function cellsChipsPills() {
     check("each committed token is delivered once, joined with the ones before",
           askedF, ["tanik", "tanik passport"]);
     check("the table has the keyboard after every RET", bR.blurs, 2);
-    // `view(10)' sorts by scheduled ascending, and row 0 is the earliest — named
-    // here rather than asked of the handle the assertion is about.
     check("and the selection was handed over at once, both times",
           [rowsAt[0], boxR.querySelector(".tv-table tbody tr.tv-sel").dataset.id],
           ["h-0", "h-0"]);
@@ -4627,7 +3744,6 @@ async function cellsChipsPills() {
           ["tanik", "passport"]);
   }
 
-  // --- remote mode gets the joined query
   const asked = [];
   const box4 = new El("div");
   TableView.mount(box4, view(10), { onFilter: (q) => asked.push(q) });
@@ -4642,18 +3758,12 @@ async function cellsChipsPills() {
   check("and again when a chip is stripped", asked.pop(), "state:DONE");
 }
 
-/** The keys a predicate may name: the view's columns and `planned'. */
 async function queryKeys() {
   console.log("\n== query keys");
   const P = driver(40);
   const box = P.box, t = P.handle, b = P.b();
   const KEYS = columns.map((c) => c.key);
   const { reset, shown, items, counts, countOf, type } = P;
-  /**
-   * The rows of one tier: keys end in `:', a producer meta is dimmed. The
-   * free-text offers — the literal and the whole titles — are neither, and are
-   * told apart by the aside they carry in place of a count.
-   */
   const tier = (n) => box.querySelectorAll(".tv-ac-item").filter((e) => {
     const label = e.querySelector(".tv-ac-label").text;
     if (e.querySelectorAll(".tv-ac-aside").length) return false;
@@ -4661,9 +3771,6 @@ async function queryKeys() {
     return !label.endsWith(":") && !e.classes.has("tv-ac-dim");
   }).map((e) => e.querySelector(".tv-ac-label").text);
 
-  // --- a tag names no key
-  // The fixture tags rows `:web:glance:', `:emacs:', `:ops:system:', `:read:',
-  // `:web:', `:glance:daemon:' in turn.
   check("a tag is not a key, and neither is an unknown word",
         [TableView.parseQuery("glance:review", KEYS)[0].key,
          TableView.parseQuery("tag:glance", KEYS)[0].key], [null, "tag"]);
@@ -4672,13 +3779,9 @@ async function queryKeys() {
   check("where the two tokens it stands for answer",
         shown("tag:glance review") > 0, true);
   check("a word that names no tag was always free text", shown("nosuchtag:x"), 0);
-  // `:web:' names a real tag, and parses as free text: a token opening with a
-  // colon is never a key, which is the trap the rule exists for. It matches the
-  // rows whose tags cell spells it, the way any free text would.
   check("and the org-tag trap holds — a leading colon is never a key",
         [TableView.parseQuery(":web:", KEYS)[0].key, shown(":web:")], [null, 13]);
 
-  // --- semantics
   const web = shown("tag:web");
   const glance = shown("tag:glance");
   check("tag: is the one spelling of a facet", [web, glance], [13, 13]);
@@ -4687,10 +3790,6 @@ async function queryKeys() {
   check("facet and text AND as two tokens do", shown("tag:glance review") < glance, true);
   check("negation is the rows without the tag", shown("-tag:web"), 40 - web);
   {
-    // SCHEMA's one combination rule: tokens AND, alternatives OR. Repeating the
-    // tags column asks for all of them, which a row carrying several tags can
-    // meet; repeating the state column asks a one-value cell for two, which no
-    // row meets — either state is the alternation.
     const ids = (q) => { shown(q); return t.getVisible().map((r) => r.id).sort(); };
     const web = ids("tag:web"), glance = ids("tag:glance");
     const carries = web.filter((x) => glance.indexOf(x) !== -1);
@@ -4705,7 +3804,6 @@ async function queryKeys() {
     check("and the union is the alternation",
           ids("state:TODO|DONE"), Array.from(new Set(todo.concat(done))).sort());
 
-    // One query with both shapes, plus free text, plus a negation.
     const mixed = ids("state:TODO|DONE tag:web tag:glance 2026 -priority:C");
     const byHand = t.getRows().filter((r) => {
       const c = r.cells, tags = String(c.tag).split(":").filter(Boolean);
@@ -4722,7 +3820,6 @@ async function queryKeys() {
   check("and AND across different tags", shown("tag:web tag:glance") <= Math.min(web, glance),
         true);
 
-  // --- a tag cannot take a column's key
   {
     const shadow = new El("div");
     const rows = view(6).rows.map((r) => ({ id: r.id, cells: { ...r.cells, tag: ":title:" } }));
@@ -4730,9 +3827,6 @@ async function queryKeys() {
     const sb = filterOf(shadow);
     sb.value = "title:review";
     sb.dispatchEvent(new Ev("keydown", { key: "Enter" }));
-    // Every row carries the tag, so a tag reading would keep all six; the column
-    // reading keeps the one whose title holds the word. Counted off the fixture
-    // rather than derived from the renderer the assertion is about.
     check("a column keeps its key against a tag spelled alike", st.getVisible().length, 1);
     check("and the fixture would have told the two readings apart", (() => {
       const withWord = rows.filter((r) => String(r.cells.title).indexOf("review") !== -1).length;
@@ -4740,14 +3834,12 @@ async function queryKeys() {
     })(), [6, 1]);
   }
 
-  // --- the value domain follows the rows, where the vocabulary used to
   check("a tag no row carries any more leaves the tags column's domain",
         (() => { t.setRows([makeRow(1)]); return type("tag:").indexOf("daemon"); })(), -1);
   t.setRows(view(40).rows);
   check("and comes back with them", type("tag:").indexOf("daemon") !== -1, true);
   reset();
 
-  // Tier 2: values a column has, reached by prefix as well as in full.
   type("TODO");
   check("a word that names a column value completes to it", tier(2), ["state:TODO"]);
   check("with the rows behind it", counts()[0], Math.round(40 / 5));
@@ -4766,17 +3858,12 @@ async function queryKeys() {
         items().some((x) => x === "web:"), false);
   type("d");
   check("a one-letter prefix still reaches values", tier(2).length > 0, true);
-  // Row one is the choice whatever tier it came from. A prefix that spells
-  // nothing leads with the literal, and everything the tiers found sits behind
-  // it — an open list always has an answer for RET.
   const guesses = type("rev");
   check("the literal leads where nothing spells the word",
         [guesses[0], guesses.length > 1,
          box.querySelectorAll(".tv-ac-on").length], [`"rev"`, true, 1]);
   check("and where a column completion leads",
         (() => { type("sta"); return box.querySelectorAll(".tv-ac-on").length; })(), 1);
-  // A whole word no key or value completes still has the literal to choose,
-  // which is the free text RET always applied there.
   check("a word no key or value completes still leads with the literal",
         [type("sync")[0], tier(1).length, tier(2).length,
          box.querySelectorAll(".tv-ac-on").length], [`"sync"`, 0, 0, 1]);
@@ -4801,7 +3888,6 @@ async function queryKeys() {
   check("and `planned', the one key with no column, offers no value list",
         (() => { reset(); return type("planned:"); })(), []);
 
-  // A tag completes to the tags COLUMN, value and all: one token, finished.
   reset();
   const keyed = type("sys");
   check("a tag prefix completes through the column, under the literal",
@@ -4819,7 +3905,6 @@ async function queryKeys() {
   check("and RET commits it whole, there being nothing left to type",
         [t.getQuery(), t.getVisible().length > 0], ["tag:system", true]);
 
-  // --- the contract, on data shaped like the one it was written for
   {
     const own = [
       { key: "title", header: "Headline", type: "text" },
@@ -4842,17 +3927,12 @@ async function queryKeys() {
     check("and the facet the pairing stood for is two tokens, which answer",
           (() => {
             cb.value = "tag:contact tanik";
-            // Typed rather than assigned: the box the previous case left open
-            // still holds a list over the OLD text, and RET is the list's key
-            // before it is the query's.
             cb.dispatchEvent(new Ev("input"));
             cb.dispatchEvent(new Ev("keydown", { key: "Escape" }));
             cb.dispatchEvent(new Ev("keydown", { key: "Enter" }));
             return ct.getVisible().length;
           })(), 2);
 
-    // A prefix of a tag reaches it through the tags column, which is now the
-    // only door: there is no key row beside it.
     const dim = () => cbox.querySelectorAll(".tv-ac-item")
       .filter((e) => e.classes.has("tv-ac-dim"))
       .map((e) => e.querySelector(".tv-ac-label").text);
@@ -4869,11 +3949,6 @@ async function queryKeys() {
     offer("alberblanc");
     check("typed in full it is exact, and nothing is a guess",
           [plain().indexOf("tag:alberblanc") !== -1, dim().length], [true, 0]);
-    // The live report: a corpus whose tag cells are colon-wrapped, with one
-    // that is not. Detection has to survive the stray, and the values offered
-    // for the column have to be the split tags — the raw `:a:b:' cell can
-    // never prefix-match a bare word, so a reroute failure looks exactly like
-    // this: no `tag:alberblanc' for `alb'.
     {
       const messy = rows.concat([
         { id: "f", cells: { title: "imported from elsewhere", tag: "alberblanc" } }]);
@@ -4893,13 +3968,9 @@ async function queryKeys() {
             mOffer("tag:").indexOf("alberblanc") !== -1, true);
       mb.value = "tag:alberblanc";
       mb.dispatchEvent(new Ev("keydown", { key: "Enter" }));
-      // The well-formed row and the stray one, which is the point: the bare
-      // cell is a member of the vocabulary rather than an outsider to it.
       check("and it matches both the list row and the bare one",
             mt.getVisible().length, 2);
 
-      // A colon arranged some other way is evidence against, and is taken as
-      // such — a time column must not become a tag vocabulary.
       const timed = new El("div");
       TableView.mount(timed, {
         columns: [{ key: "title", header: "H", type: "text" },
@@ -4916,7 +3987,6 @@ async function queryKeys() {
             true);
     }
 
-    // A single-valued column keeps its distinct cells, whole.
     {
       const single = new El("div");
       TableView.mount(single, {
@@ -4932,7 +4002,6 @@ async function queryKeys() {
       check("a single-valued column offers its distinct cells, unsplit",
             single.querySelectorAll(".tv-ac-label").map((e) => e.text),
             domain("ada lovelace", "alan turing"));
-      // The meta shows no count, so a column of two values still prints two.
       check("counted as cells", single.querySelectorAll(".tv-ac-n").map((e) => Number(e.text)),
             [2, 1]);
     }
@@ -4942,11 +4011,8 @@ async function queryKeys() {
           [plain().indexOf("tag:book") !== -1, plain().some((x) => x === "book:")],
           [true, false]);
 
-    // --- ROW ONE IS THE CHOICE, and the ordering is the whole of what RET means
     const chosen = () => cbox.querySelectorAll(".tv-ac-item")
       .findIndex((e) => e.classes.has("tv-ac-on"));
-    // Typed in full, the value leads: it is the one offer that needs no more
-    // typing, and the literal beside it is the letters back again.
     offer("book");
     check("a word that SPELLS a tag leads with the value, ahead of the literal",
           plain().slice(0, 2), ["tag:book", `"book"`]);
@@ -4956,8 +4022,6 @@ async function queryKeys() {
           [ct.getQuery(), cb.value], ["tag:book", ""]);
     check("finding the rows the tag holds", ct.getVisible().length, 2);
 
-    // A prefix has nothing spelled in full to lead with, so the literal takes
-    // row one and the value it opens is one arrow behind.
     check("a prefix leads with the literal, the value being only opened",
           offer("boo").slice(0, 2), [`"boo"`, "tag:book"]);
     check("chosen there too", chosen(), 0);
@@ -4969,8 +4033,6 @@ async function queryKeys() {
     cb.dispatchEvent(new Ev("keydown", { key: "ArrowDown" }));
     check("an arrow still walks on from row one", chosen(), 1);
 
-    // A token that already OPENS with a quote is free text as written, so it
-    // asks for no suggestions — the literal row would be the token back again.
     check("a quoted word offers nothing to hijack RET", offer(`"boo"`).length, 0);
     cb.dispatchEvent(new Ev("keydown", { key: "Enter" }));
     check("so RET applies it as written",
@@ -4980,9 +4042,6 @@ async function queryKeys() {
     cb.dispatchEvent(new Ev("keydown", { key: "Enter" }));
     check("so it too applies literally", [ct.getQuery(), ct.getVisible().length], ["zzz", 0]);
 
-    // The value stage ranks the same way, against a domain whose DECLARED
-    // order buries the exact match — row one is what RET takes, so the value
-    // typed in full has to be there whatever the column's own order says.
     {
       const deep = new El("div");
       const dt = TableView.mount(deep, {
@@ -4999,8 +4058,6 @@ async function queryKeys() {
       check("the value typed in full leads the ones it merely opens",
             deep.querySelectorAll(".tv-ac-label").map((e) => e.text),
             ["course", "course-notes", "coursework"]);
-      // And the domain is the whole of what it offers: a half-typed `key:value'
-      // is already an intent, so neither free-text offer belongs under it.
       check("with no free-text offer among them — the value stage has none",
             deep.querySelectorAll(".tv-ac-aside").length, 0);
       db.dispatchEvent(new Ev("keydown", { key: "Enter" }));
@@ -5009,10 +4066,6 @@ async function queryKeys() {
     }
   }
 
-  // --- the two free-text offers: the literal, and the whole titles
-  // Row one is what RET takes, so a plain search has to BE an offer; and a
-  // reader typing a fragment of a headline is after the row, so the row's own
-  // title is one too. Both commit free text, and each says which it is.
   {
     const cols = [{ key: "title", header: "Headline", type: "text" },
                   { key: "tag", header: "Tags", type: "text" }];
@@ -5027,7 +4080,6 @@ async function queryKeys() {
       .findIndex((e) => e.classes.has("tv-ac-on"));
     const key = (k) => lb.dispatchEvent(new Ev("keydown", { key: k }));
 
-    // --- the literal
     check("a prefix nothing spells leads with the text itself, quoted",
           [offer("rf")[0], L.asideOf(`"rf"`), at()], [`"rf"`, "text search", 0]);
     key("Enter");
@@ -5039,14 +4091,11 @@ async function queryKeys() {
           offer("tag").slice(0, 2), ["tag:", `"tag"`]);
     check("and so does one that spells a value", offer("article").slice(0, 2),
           ["tag:article", `"article"`]);
-    // Whitespace can only reach a bare token through a quote written inside
-    // one, and there the bare spelling would break into two tokens.
     check("text holding whitespace commits quoted, since bare would break up",
           offer(`a"b c"`)[0], `"ab c"`);
     key("Enter");
     check("and that is what lands", lt.getQuery(), `"ab c"`);
 
-    // --- the titles
     L.reset();
     const said = offer("tanik");
     check("a title fragment offers the whole title, shown in full",
@@ -5063,8 +4112,6 @@ async function queryKeys() {
     check("a title the text merely holds comes after one it opens",
           rf.slice(1, 3), ["rfcs worth reading this winter", "a second look at the rfcs"]);
 
-    // Two rows spelling one title are one offer: the tier is the distinct
-    // titles, and a query naming one finds every row that carries it.
     {
       const twin = driver({ columns: cols, rows: rows.concat([
         { id: "4", cells: { title: "rfcs worth reading this winter", tag: ":read:" } }]) });
@@ -5076,7 +4123,6 @@ async function queryKeys() {
       check("and committing it finds both of them", twin.handle.getVisible().length, 2);
     }
 
-    // Five is the cap, inside the twelve the whole list takes.
     {
       const many = driver({ columns: cols, rows: Array.from({ length: 9 }, (_, i) =>
         ({ id: "m" + i, cells: { title: `quarterly report ${i}`, tag: ":ops:" } })) });
@@ -5086,8 +4132,6 @@ async function queryKeys() {
       check("and the list is inside its own ceiling", capped.length <= 12, true);
     }
 
-    // A title is a fact about a row, so it stands even where a value is spelled
-    // in full — what an exact match suppresses is the guessing tier alone.
     {
       const ex = driver({ columns: cols, rows: [
         { id: "1", cells: { title: "book the flight", tag: ":book:" } },
@@ -5100,10 +4144,6 @@ async function queryKeys() {
     }
   }
 
-  // --- `planned': the reserved key over the date columns
-  // The semantics are the parity vectors' (fixtures/parity/filter-query.json);
-  // what belongs here is the key's standing in the vocabulary, which vectors
-  // over one query cannot show.
   {
     const cols = [
       { key: "title", header: "Headline", type: "text" },
@@ -5121,15 +4161,11 @@ async function queryKeys() {
     ];
     const P2 = driver({ columns: cols, rows });
     const pbox = P2.box, pt = P2.handle, pb = P2.b();
-    // Each query from a clean box: a committed one becomes a chip, and two of
-    // them would AND rather than replace.
     const run = (q) => { P2.shown(q); return pt.getVisible().map((r) => r.id); };
     check("planned reads every date column, not one of them",
           run("-planned:*empty*"), ["1", "2"]);
     check("and the empty meta is the row neither column speaks for",
           run("planned:*empty*"), ["3"]);
-    // The fixture tags every row `:planned:', so a tag reading would keep all
-    // three of them where the key's own reading keeps one.
     check("a tag spelled like it is shadowed, the way a column would shadow it",
           [run("planned:*empty*").length, rows.length], [1, 3]);
     check("the tag is still reachable through the column that holds it",
@@ -5143,7 +4179,6 @@ async function queryKeys() {
           P2.type("planned:").length, 0);
   }
 
-  // --- C-n and C-p drive the list, and only while it is open
   {
     const at = () => box.querySelectorAll(".tv-ac-item")
       .findIndex((e) => e.classes.has("tv-ac-on"));
@@ -5158,8 +4193,6 @@ async function queryKeys() {
     check("C-p steps back up", at(), 1);
     check("and they are taken from the page", press("n", true).defaultPrevented, true);
 
-    // Up from row one wraps to the end — a list is a ring, and reaching the
-    // last offer should not mean walking the whole of it.
     type("sy");
     const many = box.querySelectorAll(".tv-ac-item").length;
     check("there is more than one offer to wrap between", many > 1, true);
@@ -5169,7 +4202,6 @@ async function queryKeys() {
     press("ArrowUp");
     check("and ArrowUp is that same motion", at(), many - 1);
 
-    // Parity: the arrows land in the same place from the same start.
     type("sy");
     press("ArrowDown"); press("ArrowDown");
     const byArrow = at();
@@ -5177,7 +4209,6 @@ async function queryKeys() {
     press("n", true); press("n", true);
     check("C-n and ArrowDown are the same motion", at(), byArrow);
 
-    // With no list they are the browser's, and the table's keymap reserves them.
     reset();
     b.dispatchEvent(new Ev("input"));                 // empty box: no list
     check("with the list closed C-n is left alone",
@@ -5186,7 +4217,6 @@ async function queryKeys() {
     check("and so is C-p", press("p", true).defaultPrevented, false);
   }
 
-  // --- omnibox: the filter is the bar
   {
     const css = document.head.children.map((e) => e.text).join("");
     const plain = new El("div");
@@ -5208,9 +4238,6 @@ async function queryKeys() {
     check("the applied parts get a row of their own, under it",
           hero.querySelector(".tv-root").children.map((e) => e.className),
           ["tv-bar", "tv-chips", "tv-scroll", "tv-hint"]);
-    // Nothing is applied, so the row collapses: the declared sort is written
-    // over the column it orders rather than into a chip, and a strip with
-    // nothing in it claims nothing about the filter.
     check("which is collapsed until something is applied",
           [hero.querySelector(".tv-chips").style.display,
            sortMarks(hero),
@@ -5219,8 +4246,6 @@ async function queryKeys() {
     check("while the classic bar keeps its inline chips",
           plain.querySelector(".tv-bar").children.map((e) => e.className),
           ["tv-title", "tv-chips", "tv-filter-wrap"]);
-    // The box teaches the grammar, which is the part nobody can guess, in
-    // every mode — the control is the same control wherever it is put.
     const TEACH = `key:value · status:open|closed · -word · "some phrase"`;
     const summoned = new El("div");
     TableView.mount(summoned, view(20), { palette: true });
@@ -5229,9 +4254,6 @@ async function queryKeys() {
            filterOf(summoned).placeholder], [TEACH, TEACH, TEACH]);
     check("in a muted colour that Firefox cannot dim further",
           css.indexOf(".tv-filter::placeholder{color:var(--tv-muted);opacity:1}") !== -1, true);
-    // INLINE: the HOST drew the box, so the mount brings no chrome of its own —
-    // no hint line, no sort marks — and its editor is summoned onto the chips'
-    // line by `openFilter' rather than sitting there.
     const inlined = new El("div");
     const inl = TableView.mount(inlined, view(20), { inline: true });
     const inlRoot = inlined.querySelector(".tv-root");
@@ -5245,10 +4267,6 @@ async function queryKeys() {
            (inl.openFilter(), inlRoot.classList.contains("tv-typing")),
            (inl.closeFilter(), inlRoot.classList.contains("tv-typing"))],
           [false, true, false]);
-    // AND BACKSPACE OVER AN EMPTIED BOX TAKES THE BOX, not the chip behind it —
-    // the summoned editor was the last thing put there.  `hero' above pins the
-    // opposite for `omnibox', which `inline' implies, so an implementation that
-    // branched on the wrong flag turns one of the two red.
     inl.setQuery("state:DONE");
     inl.openFilter();
     const inlBox = filterOf(inlined);
@@ -5268,11 +4286,9 @@ async function queryKeys() {
           [css.indexOf(".tv-omni .tv-filter-wrap{flex:1 1 auto}") !== -1,
            css.indexOf(".tv-omni .tv-filter{flex:1 1 auto;font-size:15px") !== -1],
           [true, true]);
-    // The list is positioned against the control, so filling the bar fills it.
     check("and the dropdown hangs under the whole of it",
           css.indexOf(".tv-ac{position:absolute;top:100%;left:0;min-width:100%") !== -1, true);
 
-    // Every flow the bar carries works the same with the title gone.
     const hb = filterOf(hero);
     hb.value = "review";
     hb.dispatchEvent(new Ev("keydown", { key: "Enter" }));
@@ -5293,11 +4309,8 @@ async function queryKeys() {
           [hero.querySelectorAll(".tv-chip").length, ht.getQuery()], [0, ""]);
   }
 
-  // --- the danneskjold light palette, and the idle-built word index
   {
     const css = document.head.children.map((e) => e.text).join("");
-    // Role for role from danneskjold-theme.el's light-* block; the values are
-    // written down here so a drift in either file shows up as a failure.
     for (const [role, hex] of [["--tv-bg", "#FFFFFF"], ["--tv-fg", "#000000"],
                                ["--tv-alt", "#F8F8FF"], ["--tv-border", "#E3E6EA"],
                                ["--tv-muted", "#667071"], ["--tv-sel", "#F0FFF0"],
@@ -5312,8 +4325,6 @@ async function queryKeys() {
       check(`dark ${role} is the theme's`, css.indexOf(role + ":" + hex) !== -1, true);
     check("and the sheet names where they came from",
           css.indexOf("danneskjold-theme.el") !== -1, true);
-    // The floors, checked with an implementation of WCAG that is this file's
-    // own — the renderer's must agree with something, not with itself.
 
     const light = paletteIn(".tv-root{");
     const dark = paletteIn("@media (prefers-color-scheme:dark){.tv-root{");
@@ -5338,7 +4349,6 @@ async function queryKeys() {
           [Math.abs(hue("#667071") - hue("#7F8C8D")) <= 3,
            Math.abs(hue("#31769F") - hue("#4CB5F5")) <= 3], [true, true]);
 
-    // Badge ink: the producer's hex is identity, the renderer owns legibility.
     const inkOf = (el) => /--tv-ink:(#[0-9a-f]{6})/i.exec(el.attrs.get("style") || "")[1];
     const bright = [{ value: "GO", color: "#B6E63E" }, { value: "OK", color: "#9ece6a" }];
     const shape = (dark) => {
@@ -5366,7 +4376,6 @@ async function queryKeys() {
             [true, bright[i].color.toLowerCase()]);
     }
 
-    // A theme flip redraws, so the ink follows.
     {
       Watcher.made.length = 0;
       global.MutationObserver = Watcher;
@@ -5391,15 +4400,12 @@ async function queryKeys() {
       delete global.matchMedia;
     }
 
-    // Borders carry nothing, so they stay hairlines in both themes.
     check("every rule is one pixel",
           (css.match(/border(-top|-bottom|-left|-right)?:\s*\d+px/g) || [])
             .every((d) => /:\s*1px/.test(d)), true);
     check("and no border is asked to be prominent",
           [css.indexOf("--tv-border:#E3E6EA") !== -1,
            css.indexOf("--tv-border:#2a2d3d") !== -1], [true, true]);
-    // Golden is full strength, so the active suggestion reads by weight and the
-    // foreground rather than by an accent colour that would vanish on it.
     check("the active suggestion does not colour its label with the accent",
           css.indexOf(".tv-ac-on{background:var(--tv-sel);color:var(--tv-fg);font-weight:600}")
             !== -1, true);
@@ -5407,7 +4413,6 @@ async function queryKeys() {
           css.indexOf(".tv-ac-item:hover{background:var(--tv-hover)") !== -1, true);
   }
 
-  // --- the index is built when the rows settle, not when someone types
   {
     const many = (n) => ({
       columns: [{ key: "title", header: "H", type: "text" },
@@ -5434,16 +4439,10 @@ async function queryKeys() {
     cb2.value = "sy"; cb2.dispatchEvent(new Ev("input"));
     check("a keystroke that beats it still gets an answer",
           cold.querySelectorAll(".tv-ac-item").length > 0, true);
-    // What the two paths cost is no longer worth timing: the index is the
-    // distinct TITLES, where it used to be every title word with the tags it
-    // sat under, and the build a cold keystroke pays for is small enough that
-    // the two orders overlap run to run. What still holds — and is the whole
-    // point of building early — is that neither answer depends on the timing.
     check("both answer the same thing",
           warm.querySelectorAll(".tv-ac-label").map((e) => e.text),
           cold.querySelectorAll(".tv-ac-label").map((e) => e.text));
 
-    // Invalidation re-queues it rather than leaving a stale index behind.
     const before = idles;
     const wt = TableView.mount(warm, many(200));
     wt.setRows(many(300).rows);
@@ -5457,7 +4456,6 @@ async function queryKeys() {
     delete global.requestIdleCallback;
   }
 
-  // --- initialQuery: chips a consumer is putting back, not a query being run
   {
     const asked = [];
     const back = new El("div");
@@ -5470,7 +4468,6 @@ async function queryKeys() {
     check("getQuery answers it", bt.getQuery(), 'state:DONE "two words"');
     check("and nothing was delivered for it — the rows already match", asked, []);
 
-    // From there it behaves as if the chips had been typed.
     bb.value = "review";
     bb.dispatchEvent(new Ev("keydown", { key: "Enter" }));
     check("a commit on top joins them and delivers once",
@@ -5482,7 +4479,6 @@ async function queryKeys() {
     check("and stripLastToken reaches them",
           [bt.stripLastToken(), bt.getQuery()], [true, "state:DONE"]);
 
-    // Locally, the rows have to catch up to what was restored.
     const local = new El("div");
     const lt = TableView.mount(local, view(40), { initialQuery: "state:DONE" });
     check("filtering locally, a restored query is applied at once",
@@ -5493,14 +4489,12 @@ async function queryKeys() {
           none.querySelectorAll(".tv-chip").length, 0);
   }
 
-  // --- palette mode: the filter is summoned, not resident
   {
     const css = document.head.children.map((e) => e.text).join("");
     const P = driver(40, { palette: true });
     const pal = P.box, pt = P.handle, pb = P.b(), chipsOf = P.chipsOf;
     const sortsOf = P.sortsOf;
     const veil = () => pal.querySelector(".tv-veil");
-    /** Whether the overlay is up -- the palette's own sense of "shown". */
     const shown = () => veil().style.display !== "none";
 
     check("the page carries the chip row and nothing else",
@@ -5521,13 +4515,11 @@ async function queryKeys() {
           css.indexOf("width:min(560px,80vw)") !== -1
             && css.indexOf("padding-top:18vh") !== -1, true);
 
-    // --- summon and dissolve
     pt.openFilter();
     check("openFilter raises it and takes the keyboard", [shown(), pb.focused], [true, true]);
     pt.closeFilter();
     check("closeFilter puts it away", [shown(), pb.focused], [false, false]);
 
-    // --- RET: commit, dissolve, hand over
     pt.openFilter();
     pb.value = "review";
     pb.dispatchEvent(new Ev("keydown", { key: "Enter" }));
@@ -5543,7 +4535,6 @@ async function queryKeys() {
     pb.dispatchEvent(new Ev("keydown", { key: "Enter" }));   // empty box
     check("RET on an empty box dissolves and hands over", shown(), false);
 
-    // --- the Escape ladder ends in dissolve
     pt.openFilter();
     pb.value = "sy";
     pb.dispatchEvent(new Ev("input"));
@@ -5557,7 +4548,6 @@ async function queryKeys() {
     pb.dispatchEvent(new Ev("keydown", { key: "Escape" }));
     check("the third dissolves it", shown(), false);
 
-    // --- the Backspace ladder stops at the bottom here, rather than leaving
     pt.openFilter();
     pb.value = "sync";
     pb.dispatchEvent(new Ev("keydown", { key: "Enter" }));
@@ -5581,7 +4571,6 @@ async function queryKeys() {
     check("nor is there a rung left that would take one",
           chipsOf().length > 0 && shown(), true);
 
-    // The ways out still work from exactly that state.
     pb.dispatchEvent(new Ev("keydown", { key: "Escape" }));
     check("Escape leaves from the emptied box", shown(), false);
     pt.openFilter();
@@ -5590,9 +4579,6 @@ async function queryKeys() {
     await painted();
     check("and so does RET", [shown(), pb.blurs > blurs], [false, true]);
 
-    // --- the list's keys work here too. The palette relocates the box into an
-    // overlay, and the handler travels with it — this pins that, because a
-    // relocation is exactly the sort of change that quietly unhooks a key.
     pt.openFilter();
     pb.value = "sy";
     pb.dispatchEvent(new Ev("input"));
@@ -5609,7 +4595,6 @@ async function queryKeys() {
     check("C-n steps down it", [pPress("n", true).defaultPrevented, pAt()], [true, 1]);
     check("and again", (pPress("n", true), pAt()), 2);
     check("C-p steps back up", [pPress("p", true).defaultPrevented, pAt()], [true, 1]);
-    // Parity with the arrows from the same start, in the same place.
     pb.value = "sy";
     pb.dispatchEvent(new Ev("input"));
     pPress("ArrowDown"); pPress("ArrowDown");
@@ -5622,7 +4607,6 @@ async function queryKeys() {
     pb.dispatchEvent(new Ev("keydown", { key: "Escape" }));
     pt.closeFilter();
 
-    // --- the palette filters on commit, not as you type
     {
       const asked = [];
       const live = new El("div");
@@ -5669,22 +4653,11 @@ async function queryKeys() {
             [asked.length - said, live.querySelectorAll(".tv-chip").length], [0, 2]);
     }
 
-    // --- clicking off is the Escape gesture
     pt.openFilter();
     pb.value = "half";
     veil().dispatchEvent(new Ev("mousedown"));
     check("a click on the backdrop puts it away", shown(), false);
 
-    // --- frost chips: the hue is the identity, the volume is low
-    // The chip wears the theme's frost as a wash: a fraction of it over
-    // whatever the theme's own background is, a hairline of more of the same,
-    // and the ordinary foreground for ink. Every value below is read out of
-    // the emitted sheet, so swapping the identity swaps what is asserted —
-    // what is pinned here is that it stays pale, stays a wash, and stays
-    // apart from the accent.
-    // Both properties come off `--tv-frost', so the identity is one constant:
-    // asserted as a shape rather than as a colour, since the colour is read
-    // from the sheet below.
     check("both chip properties mix the one frost var with the page",
           (css.match(/color-mix\(in srgb,var\(--tv-frost\) var\(--tv-chip-\w+\),transparent\)/g)
            || []).length, 2);
@@ -5697,8 +4670,6 @@ async function queryKeys() {
     check("no stripe, no border, no shadow on it",
           /tr\.tv-sel\{[^}]*(border|box-shadow)/.test(css), false);
 
-    // What the browser paints, per theme, resolved from the sheet: the frost
-    // cascades from the base rule and each theme says how much of it it wants.
     const L = chipIn("light"), D = chipIn("dark");
     const FROST = L.frost;
     check("both themes resolve a chip colour from the one frost var",
@@ -5706,9 +4677,6 @@ async function queryKeys() {
     check("the cursor row is a different role and never wears it",
           [paletteIn(':root[data-theme="light"] .tv-root{').sel !== FROST,
            paletteIn(':root[data-theme="dark"] .tv-root{').sel !== FROST], [true, true]);
-    // Frost is pale, so the two strengths are far apart on purpose: a sixth of
-    // it reads over black, and it takes nearly half to read over white. Both
-    // stay under the half that would make the chip a panel.
     check("both themes ask for a modest amount of it",
           [L.washPct > 0 && L.washPct <= 0.5, D.washPct > 0 && D.washPct <= 0.25],
           [true, true]);
@@ -5723,26 +4691,15 @@ async function queryKeys() {
     check("and both clear the stricter one too, the ink being ordinary text",
           [ratio(L.ground === "#FFFFFF" ? "#000000" : "#FFFFFF", L.wash) >= 7,
            ratio(D.ground === "#000000" ? "#FFFFFF" : "#000000", D.wash) >= 7], [true, true]);
-    // A wash is a wash: the tint has to sit nearer its own ground than the
-    // solid frost, or it is a slab again. Measured as a distance to each
-    // rather than as an absolute, because contrast against a black ground
-    // exaggerates any lift at all. This is what caps the light strength — at
-    // 55% the tint crosses over and is nearer the solid than the page.
     check("each tint sits nearer its ground than the solid frost",
           [ratio(L.ground, L.wash) < ratio(L.wash, FROST),
            ratio(D.ground, D.wash) < ratio(D.wash, FROST)], [true, true]);
     check("and the solid is a long way off in the dark, where the wash bites",
           ratio(D.wash, FROST) > 5, true);
-    // Integer compositing moves a hue by a degree; the point is that it is the
-    // same colour, not that the arithmetic is exact.
     check("the hue survives the wash, so it still reads as the frost",
           [Math.abs(hue(L.wash) - hue(FROST)) <= 3,
            Math.abs(hue(D.wash) - hue(FROST)) <= 6], [true, true]);
 
-    // Frost and the link accent are both blue; they have to stay tellable
-    // apart, or an applied filter reads as a link. What separates them is
-    // saturation, not lightness: against the dark accent frost is only 1.7:1,
-    // which would pass a luminance test while looking like the same colour.
     const satFrost = sat(FROST);
     check("frost is a pale blue, not a saturated one", satFrost <= 0.25, true);
     for (const theme of ["light", "dark"]) {
@@ -5754,7 +4711,6 @@ async function queryKeys() {
             [satAccent >= 0.5, satAccent - satFrost >= 0.4], [true, true]);
     }
 
-    // --- restoration and the handle work the same here
     const back = new El("div");
     const bt = TableView.mount(back, view(40),
                                { palette: true, initialQuery: "state:DONE review" });
@@ -5768,7 +4724,6 @@ async function queryKeys() {
     check("and stripLastToken walks them off as ever",
           [bt.stripLastToken(), bt.getQuery()], [true, "state:DONE"]);
 
-    // --- omnibox is untouched by any of it
     const omni = new El("div");
     TableView.mount(omni, view(20), { omnibox: true });
     check("omnibox still keeps its control on the page",
@@ -5780,23 +4735,18 @@ async function queryKeys() {
           omni.querySelector(".tv-root").classes.has("tv-omni"), true);
   }
 
-  // --- RET is stage-aware: a key completes and waits, a value completes and goes
   {
     const asked = [];
     const S = driver(40, { onFilter: (q) => asked.push(q) });
     const st = S.box, t = S.handle, b = S.b();
     const labels = S.items, counts = S.counts;
-    // Types without clearing first: this section walks one query forward.
     const type = (q) => { b.value = q; b.dispatchEvent(new Ev("input")); };
     const on = () => st.querySelectorAll(".tv-ac-on").length;
 
-    // A prefix spells nothing, so the literal has row one and the key it opens
-    // is behind it. Typed in full the key IS an answer, and leads again.
     type("ta");
     check("a prefix leads with the literal, the key behind it",
           labels().slice(0, 2), [`"ta"`, "tag:"]);
 
-    // The contract: `tag:' by RET, then the tags with their counts.
     type("tag");
     check("a bare word spelling the column key offers it first", labels()[0], "tag:");
     check("which is the one thing preselected", on(), 1);
@@ -5810,8 +4760,6 @@ async function queryKeys() {
     check("each with the rows behind it", counts().every((n) => n > 0), true);
     check("with row one of them chosen, the way every list opens", on(), 1);
 
-    // From there: RET again takes that row. A list with something to offer has
-    // an answer for RET, so the value is one keystroke rather than two.
     const leading = labels()[0];
     b.dispatchEvent(new Ev("keydown", { key: "Enter" }));
     await painted();
@@ -5820,7 +4768,6 @@ async function queryKeys() {
           [["tag:" + leading], ["tag:" + leading]]);
     check("and hands the table over", b.blurs, 1);
 
-    // And RET on a value finishes the whole thing.
     asked.length = 0;
     b.focus();
     type("state:");
@@ -5834,7 +4781,6 @@ async function queryKeys() {
           ["state:" + picked, "", 0]);
     check("delivering once, with the table taking over", [asked.length, b.blurs], [1, 2]);
 
-    // Tab is unchanged at both stages: accept and stay, either way.
     b.focus();
     type("tag");
     b.dispatchEvent(new Ev("keydown", { key: "Tab" }));
@@ -5846,7 +4792,6 @@ async function queryKeys() {
     check("and commits nothing on its own",
           st.querySelectorAll(".tv-chip").length, 2);
 
-    // A whole token offered at the key stage still goes on RET.
     b.value = "";
     b.dispatchEvent(new Ev("input"));
     type("TODO");
@@ -5856,8 +4801,6 @@ async function queryKeys() {
           [st.querySelectorAll(".tv-chip").map((c) => c.text.replace("×", "")).pop(),
            b.value], ["state:TODO", ""]);
 
-    // The presence predicate is reached by putting the list away first, which
-    // is the one ladder Escape has always walked.
     b.focus();
     type("tag");
     b.dispatchEvent(new Ev("keydown", { key: "Enter" }));      // `tag:', values listed
@@ -5869,7 +4812,6 @@ async function queryKeys() {
            b.value], ["tag:", ""]);
   }
 
-  // --- where the browser eats C-n, the list says so rather than going quiet
   {
     const { box, b: bEl } = driver(40);
     const b = bEl();
@@ -5881,8 +4823,6 @@ async function queryKeys() {
     check("with no browser to ask, nothing is claimed", note(), []);
     const was = items();
 
-    // Node defines its own `navigator' as getter-only, so it is replaced
-    // rather than assigned.
     const ua = (s) => Object.defineProperty(global, "navigator",
       { value: s === null ? undefined : { userAgent: s }, configurable: true });
     ua("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -5913,9 +4853,6 @@ async function queryKeys() {
     open();
     check("nor Safari, which is not of that family", note(), []);
 
-    // The version slash is what makes the token the product rather than a word
-    // that starts the same way. A shell naming itself after the engine still
-    // gets its own keys, and is told nothing about somebody else's.
     ua("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) "
        + "Chromeless/2.1 Safari/537.36");
     open();
@@ -5929,7 +4866,6 @@ async function queryKeys() {
     ua(null);
   }
 
-  // --- prose never composes a key, there being no key it could compose
   {
     const own = [{ key: "title", header: "H", type: "text" },
                  { key: "tag", header: "T", type: "text" }];
@@ -5943,13 +4879,8 @@ async function queryKeys() {
     const W = driver({ columns: own, rows });
     const offer = W.type;
 
-    // The reported title, verbatim. A word out of a title is offered as the
-    // WHOLE TITLE now — free text, quoted — so a colon in it is the title's own
-    // and can compose nothing: the only keys are `title', `tag' and `planned'.
     check("a title wearing a colon is offered whole, colons and all",
           offer("lis").some((x) => x.indexOf("Lisp:") !== -1), true);
-    // The free-text offers aside — a whole title shows the title, colons and
-    // all, which is the one place a colon here is nobody's doing.
     check("and no predicate offer names a key the view does not have",
           ["lisp", "gabriel", "radio", "quot", "snake_"].every(
             (q) => (offer(q), W.offers().every((x) => {
@@ -5958,13 +4889,10 @@ async function queryKeys() {
             }))), true);
   }
 
-  // --- the multi-valued verdict dies with the rows it was read from
   {
     const own = [{ key: "title", header: "H", type: "text" },
                  { key: "tag", header: "T", type: "text" }];
     const box = new El("div");
-    // Mounted before its rows arrive, which is what a store still loading, or
-    // a query that matched nothing, looks like.
     const P = driver({ columns: own, rows: [] });
     const t = P.handle, b = P.b();
     check("nothing to go on yet", t.getVisible().length, 0);
@@ -5985,7 +4913,6 @@ async function queryKeys() {
           P.type("tag:").sort(), ["*empty*", "alpha", "beta"]);
   }
 
-  // --- a date column survives a stamp it does not recognise
   {
     const own = [{ key: "title", header: "H", type: "text" },
                  { key: "scheduled", header: "S", type: "text" },
@@ -6001,7 +4928,6 @@ async function queryKeys() {
           D.shown("scheduled:2026-08"), 2);
     check("and prefix it is, not substring", D.shown("scheduled:08"), 0);
 
-    // A column of prose is still no date column, whatever dates fall in it.
     const R = driver({ columns: own, rows: rows.map((r, i) => ({
       id: r.id, cells: { title: i < 2 ? "2026-08-0" + i : "a sentence about things",
                          scheduled: r.cells.scheduled, tag: ":x:" } })) });
@@ -6009,7 +4935,6 @@ async function queryKeys() {
           R.shown("title:sentence"), 2);
   }
 
-  // --- three roles, three shapes: filled pill, frost chip, ghost tag
   {
     const css = document.head.children.map((e) => e.text).join("");
     const T = driver(40, { pageSize: 0 });
@@ -6017,7 +4942,6 @@ async function queryKeys() {
     const tagCell = () => box.querySelectorAll(".tv-table tbody tr[data-id]")[0]
       .children[columns.findIndex((c) => c.key === "tag")];
 
-    // --- the cell
     const cell = tagCell();
     const chips = cell.querySelectorAll(".tv-tag").map((e) => e.text);
     check("a multi-valued cell renders one tag per value",
@@ -6030,14 +4954,10 @@ async function queryKeys() {
             .children[columns.findIndex((c) => c.key === "title")]
             .querySelectorAll(".tv-tag").length, 0);
 
-    // --- the style
-    // The quietest of the three roles wears nothing: no box of any kind.
     const tagRule = css.slice(css.indexOf(".tv-tag,.tv-tags{"));
     const decl = tagRule.slice(0, tagRule.indexOf("}"));
     for (const box of ["border", "background", "padding", "border-radius"])
       check(`a tag draws no ${box}`, decl.indexOf(box) !== -1, false);
-    // The size is written from TAG_EM, the const the width arithmetic spends;
-    // 40 characters of column hold TAG_ROOM of tag because of this number.
     check("it is muted ink at a smaller size, and that is all",
           [decl.indexOf("color:var(--tv-muted)") !== -1,
            decl.indexOf("font-size:0.92em") !== -1,
@@ -6045,8 +4965,6 @@ async function queryKeys() {
     check("and the two never compound their size",
           css.indexOf(".tv-tags .tv-tag{font-size:inherit") !== -1, true);
 
-    // Shown in the form a query spells them, without the markup losing the form
-    // the file holds.
     check("tags are lowercased for reading",
           css.indexOf(".tv-tag{text-transform:lowercase}") !== -1, true);
     {
@@ -6074,7 +4992,6 @@ async function queryKeys() {
       check("the raw case still matching as a value, as it always did",
             shown("tag:MixedCase"), 2);
     }
-    // The floor, with this file's own WCAG, on every ground a tag sits on.
     for (const [theme, ink, grounds] of [
       ["dark", "#A4C2EB", ["#000000", "#21252B", "#373D4F"]],
       ["light", "#667071", ["#FFFFFF", "#F8F8FF", "#F0FFF0"]]])
@@ -6083,9 +5000,6 @@ async function queryKeys() {
     check("the theme's own comment colour would not have, on light",
           ratio("#7F8C8D", "#FFFFFF") < 4.5, true);
 
-    // --- the dropdown
-    // A suggestion is a token, drawn as the text it commits: with no tag KEY
-    // left to name, no row of the list wears a tag of its own.
     for (const typed of ["sys", "sy", "sta", "tag:"]) {
       b.value = typed;
       b.dispatchEvent(new Ev("input"));
@@ -6095,7 +5009,6 @@ async function queryKeys() {
     }
     b.dispatchEvent(new Ev("keydown", { key: "Escape" }));
 
-    // --- the applied filter outranks the tag it names
     b.value = "tag:web";
     b.dispatchEvent(new Ev("keydown", { key: "Enter" }));
     await painted();
@@ -6103,7 +5016,6 @@ async function queryKeys() {
     check("an applied filter is a frost chip, whatever it names",
           [!!chip, chip.querySelectorAll(".tv-tag").length], [true, 0]);
 
-    // --- and none of it moved the data
     b.dispatchEvent(new Ev("keydown", { key: "Backspace" }));
     check("filtering still reads the raw text",
           (() => { b.value = "tag:web";
@@ -6119,7 +5031,6 @@ async function queryKeys() {
     })(), "NEXT");
   }
 
-  // --- the preferences, asked properly
   {
     const calm = (value) => {
       global.matchMedia = mediaStub({ "prefers-reduced-motion": value });
@@ -6149,8 +5060,6 @@ async function queryKeys() {
     check("dark is read as dark", scheme("dark"), "#b6e63e");
     check("and light as light, the ink moving to suit", scheme("light") !== "#b6e63e", true);
 
-    // The system changing its mind under a running page — a path no check could
-    // reach while the stub had no way to notify anyone.
     const flip = mediaStub({ "prefers-color-scheme": "light" });
     global.matchMedia = flip;
     const live = new El("div");
@@ -6160,9 +5069,6 @@ async function queryKeys() {
     check("the system turning dark redraws what depended on it",
           [before !== "#b6e63e", inkIn(live)], [true, "#b6e63e"]);
 
-    // The page's own choice outranks the system's, and is read off the root's
-    // `data-theme'. Both directions are driven: an attribute agreeing with the
-    // system proves nothing, since the system alone would give that answer.
     const DARK = "#b6e63e";
     const root$ = document.documentElement;
     const themed = (asked, system) => {
@@ -6180,7 +5086,6 @@ async function queryKeys() {
     check("with nothing asked, the system is what answers",
           [themed(null, "dark"), themed(null, "light") !== DARK], [DARK, true]);
 
-    // The attribute moving under a mounted table is what the observer is for.
     Watcher.made.length = 0;
     global.MutationObserver = Watcher;
     global.matchMedia = mediaStub({ "prefers-color-scheme": "light" });
@@ -6196,7 +5101,6 @@ async function queryKeys() {
     delete global.matchMedia;
   }
 
-  // --- the paginator
   {
     const P = driver(250, { pageSize: 100 }, 600);
     const box = P.box, t = P.handle, b = P.b();
@@ -6204,7 +5108,6 @@ async function queryKeys() {
     const ids = () => t.getVisible().map((r) => r.id);
     const rowsIn = () => box.querySelectorAll(".tv-table tbody tr[data-id]").length;
 
-    // --- slicing
     check("getVisible is the page, not the set", t.getVisible().length, 100);
     check("and it is the first hundred of the sorted set",
           ids()[0], t.getRows().slice().sort((x, y) =>
@@ -6216,7 +5119,6 @@ async function queryKeys() {
           [{ page: 3, pages: 3, from: 201, to: 250, total: 250 }, 50]);
     check("the window renders inside the page", rowsIn() <= 50, true);
 
-    // --- the line
     check("the range stands where the count did, with the way either side",
           hintOf().slice(0, hintOf().indexOf(" · sort")),
           "201–250 of 250 · ‹ prev · next ›");
@@ -6238,7 +5140,6 @@ async function queryKeys() {
           [["‹ prev"], ["next ›"]]);
     t.previousPage(); t.previousPage();
 
-    // --- off, and with one page, the line is what it always was
     check("one page hides the pager entirely", (() => {
       const small = new El("div");
       TableView.mount(small, view(40), { pageSize: 100 });
@@ -6258,7 +5159,6 @@ async function queryKeys() {
     })(), [0, 0]);
     check("while the paged one does", box.querySelectorAll(".tv-pg").length, 2);
 
-    // --- resets and clamps
     t.nextPage();
     check("on page two", t.pageInfo().page, 2);
     b.value = "system";
@@ -6278,7 +5178,6 @@ async function queryKeys() {
           t.pageInfo(), { page: 2, pages: 2, from: 101, to: 120, total: 120 });
     t.setRows(view(250).rows);
 
-    // --- continuous movement
     const pg = new El("div");
     const pt = TableView.mount(pg, view(250), { pageSize: 100 });
     pg.querySelector(".tv-scroll").clientHeight = 300;
@@ -6294,19 +5193,8 @@ async function queryKeys() {
     check("landing on the first row of the next, column carried",
           [pt.pageInfo().page, pt.getSelection().id, pt.getSelection().col],
           [2, pt.getVisible()[0].id, 2]);
-    // The seam is where the old presentation turned a page and jumped the
-    // scroller to 0. It now steps one row and the band eases, which is one
-    // row of travel rather than a hundred -- what makes a held key flow.
-    // The old presentation turned the page and snapped the scroller to 0 --
-    // a 2,724px jump from where this sits. It now travels the width of the
-    // scrolloff band re-establishing itself (the paged scroller was clamped at
-    // its own page's end, so the band had no room below the cursor until the
-    // whole set was under it), which is a fraction of a viewport and eases.
     check("the viewport eases by a fraction of a screen rather than snapping",
           [sc.scrollTop !== 0, Math.abs(sc.scrollTop - before) < 300], [true, true]);
-    // The seam itself: the window now holds rows from BOTH pages at once,
-    // which is the thing a page turn can never do and the reason there is no
-    // blink to see.
     const spans = pg.querySelectorAll(".tv-table tbody tr[data-id]").map((tr) => tr.dataset.id);
     const all = pt.getRows();
     const pageOf = (id) => Math.floor(all.findIndex((r) => r.id === id) / 100);
@@ -6333,7 +5221,6 @@ async function queryKeys() {
     check("at the far end likewise",
           [pt.selectStep(1), pt.pageInfo().page], [false, 3]);
 
-    // --- the pointer reaches the same thing
     pt.previousPage(); pt.previousPage();
     const next = pg.querySelectorAll(".tv-pg").filter((e) => e.dataset.pg === "1")[0];
     next.dispatchEvent(new Ev("click"));
@@ -6344,10 +5231,6 @@ async function queryKeys() {
     prev.dispatchEvent(new Ev("click"));
     check("a dead one does nothing", pt.pageInfo().page, 1);
 
-    // --- nothing to page through
-    // An empty set is one page of nothing: no first row, so no row one, and
-    // nowhere to turn either way. The zeros are the arm a set with rows in it
-    // never reaches, and the arm a reader sees the moment a query misses.
     {
       const none = new El("div");
       const nt = TableView.mount(none, view(250), { pageSize: 100 });
@@ -6374,7 +5257,6 @@ async function queryKeys() {
             })(), { page: 1, pages: 1, from: 0, to: 0, total: 0 });
     }
 
-    // --- off mode keeps every promise it had
     const off = new El("div");
     const ot = TableView.mount(off, view(40));
     check("with no page size there is one page of everything",
@@ -6384,12 +5266,8 @@ async function queryKeys() {
           [ot.selectStep(1), ot.getSelection().id], [true, ot.getVisible()[0].id]);
   }
 
-  // --- the touch pass: bigger targets, and a long press for the row action
   {
     const css = document.head.children.map((e) => e.text).join("");
-    // To the media block's own closing brace, counted — `indexOf("}")' stops at
-    // the first rule inside it, so everything after the first declaration was
-    // being read as though it were outside the query.
     const coarse = (() => {
       const at = css.indexOf("@media (pointer:coarse){");
       let depth = 0;
@@ -6402,12 +5280,8 @@ async function queryKeys() {
     check("there is a coarse-pointer block", coarse.indexOf("@media (pointer:coarse){"), 0);
     for (const [what, rule] of [
       ["rows grow by padding", ".tv-table th,.tv-table td{padding:12px}"],
-      // The one target a finger has to hit dead on: three characters of box are
-      // narrower than a fingertip whatever the padding does for the height.
       ["and the mark box widens to a real target", ".tv-table td.tv-box{min-width:44px}"],
       ["suggestions too", ".tv-ac-item{padding:12px 12px}"],
-      // Every chip in the strip, crumbs included: the row is one row and a
-      // finger meets all of it at once.
       ["and chips", ".tv-chip{padding:13px 8px 13px 12px}"],
       ["the remove mark stops waiting for a hover", ".tv-chip-x{opacity:1"],
       ["and the box clears iOS's zoom threshold", ".tv-panel .tv-filter{font-size:16px}"]])
@@ -6415,9 +5289,6 @@ async function queryKeys() {
     check("nothing in it sets a row height — the height is the padding's business",
           /(^|[;{])height:/.test(coarse), false);
 
-    // The windowing reads a measured height, so the coarse padding carries into
-    // it with nothing else changed. Standing in for that here by moving what
-    // the shim reports a row measures.
     const tall = new El("div");
     ROW_PX = 44;
     const tt = TableView.mount(tall, view(500));
@@ -6429,14 +5300,12 @@ async function queryKeys() {
     const pad = tall.querySelectorAll(".tv-table tbody tr.tv-pad")[0];
     const first = tt.getVisible()
       .findIndex((r) => r.id === tall.querySelectorAll("tbody tr[data-id]")[0].dataset.id);
-    // Written into the markup, so it is read back off the attribute.
     check("the spacers are sized from the measured height, not from 30",
           pad.attrs.get("style"), "height:" + first * 44 + "px");
     check("and the window sits where that height puts it",
           first, Math.max(0, Math.floor((44 * 20 - HEAD_PX) / 44) - 15));
     ROW_PX = 30;
 
-    // --- the long press
     const box = new El("div");
     const seen = [];
     const t = TableView.mount(box, view(40), {
@@ -6464,7 +5333,6 @@ async function queryKeys() {
     const plain = finger("touchend", tr, 100, 100);
     check("while an ordinary one is left alone", plain.defaultPrevented, false);
 
-    // Drift means it was a scroll all along.
     const tr2 = rowAt(6);
     finger("touchstart", tr2.children[1], 100, 100);
     finger("touchmove", sc2, 100, 118);
@@ -6472,24 +5340,18 @@ async function queryKeys() {
     check("a finger that slid is a scroll, not an action", seen.length, 0);
     check("and it left the selection alone", t.getSelection().id, id);
 
-    // Inside the slop it still counts.
     finger("touchstart", tr2.children[1], 100, 100);
     finger("touchmove", sc2, 104, 106);
     await sleep(600);
     check("a small tremor does not call it off", seen.pop(), "materialize " + tr2.dataset.id);
     finger("touchend", tr2, 104, 106);
 
-    // A scroll of any size calls it off, whoever started it.
     const tr3 = rowAt(8);
     finger("touchstart", tr3.children[1], 100, 100);
     sc2.dispatchEvent(new Ev("scroll"));
     await sleep(600);
     check("and a scroll calls it off outright", seen.length, 0);
 
-    // The mark box takes no long press: a finger resting on it is still aiming
-    // at it, and the touchend that completed a press would swallow the click
-    // the toggle arrives on — leaving the box unreachable on the one pointer
-    // its 44px target exists for.
     {
       const mbox = new El("div");
       const acts = [];
@@ -6511,7 +5373,6 @@ async function queryKeys() {
       check("which is what checks the box", mt.getMarked(), [mrow.dataset.id]);
     }
 
-    // The ease still gives way to a finger — the regression that pass rests on.
     check("touchmove still cancels the scroll ease",
           (() => {
             sc2.scrollTop = 0;
@@ -6526,7 +5387,6 @@ async function queryKeys() {
     check("so a touch-scroll is never fought for the viewport", sc2.scrollTop, stopped);
   }
 
-  // --- the handle: stripLastToken and getQuery
   {
     const asked = [];
     const h = new El("div");
@@ -6554,10 +5414,6 @@ async function queryKeys() {
     check("focus is the caller's business", (hb.blurs || 0) - blurs, 0);
   }
 
-  // --- the bar's debounce, and the edge that keeps it honest. Typing that is
-  // deleted again leaves a delivery owing; RET on the emptied box settles it
-  // rather than dropping it. Dead in the palette, which arms nothing — live
-  // here, which is why the branch stays.
   {
     const asked = [];
     const d = new El("div");
@@ -6584,7 +5440,6 @@ async function queryKeys() {
           asked.length, 3);
   }
 
-  // --- the Backspace ladder: characters, chips, then the table
   {
     const l = new El("div");
     const lt = TableView.mount(l, view(40));
@@ -6617,7 +5472,6 @@ async function queryKeys() {
           [lb.blurs - blurs, !!l.querySelector(".tv-table tbody tr.tv-sel")], [1, true]);
   }
 
-  // --- a held Backspace stops at the first chip
   {
     const h = new El("div");
     const ht = TableView.mount(h, view(40));
@@ -6648,7 +5502,6 @@ async function queryKeys() {
     check("taken only on a press of its own", hb.blurs - held, 1);
   }
 
-  // --- the selection keeps its place when the row under it goes
   {
     const k = new El("div");
     const kt = TableView.mount(k, view(40));
@@ -6662,7 +5515,6 @@ async function queryKeys() {
     check("deleting it leaves the selection where it was, on the row that took the place",
           [at(), kt.getSelection().id !== null], [10, true]);
 
-    // A filter that excludes it: the place survives, clamped to what is left.
     const kb = filterOf(k);
     kb.value = "review";
     kb.dispatchEvent(new Ev("keydown", { key: "Enter" }));
@@ -6724,8 +5576,6 @@ async function smoke() {
   check("a double click runs the RET action", seen.pop(), "materialize " + id);
   rows()[3].querySelector(".tv-link").click();
   check("a link click follows it", seen.pop(), "link org-glance:" + id);
-  // With no handler given, the renderer opens an http link itself — and only
-  // an http one, an org link being the consumer's to resolve.
   {
     const bare = new El("div");
     TableView.mount(bare, { columns: [{ key: "title", header: "H", type: "text" }],
@@ -6741,8 +5591,6 @@ async function smoke() {
     check("and any other scheme is left to the consumer", opened, null);
   }
 
-  // The view declared `scheduled asc'; a click PROMOTES state above it rather
-  // than throwing it away, and the hint spells the whole chain.
   box.querySelector("th[data-key=state]").click();
   check("a header click promotes the column it lands on",
         hint(), "40 rows · sort state asc → scheduled asc" + ACT);
@@ -6767,11 +5615,7 @@ async function smoke() {
   t.applyDelta([{ op: "delete", index: 0 }, { op: "insert", index: 0, row: makeRow(999) }]);
   check("apply-delta keeps the count", t.getRows().length, 40);
 
-  // --- what an upsert does to the lists standing between the store and the page
   {
-    // Unsorted, the cached list mirrors the store, so a row that is upserted
-    // goes back where it was rather than to the end — the order on screen is
-    // the producer's, and an edit is not a reordering.
     const keep = new El("div");
     const kt = TableView.mount(keep, {
       columns: [{ key: "t", header: "T", type: "text" }],
@@ -6784,10 +5628,6 @@ async function smoke() {
     check("while an unknown id lands at the end",
           kt.getVisible().map((r) => r.id), ["a", "b", "c", "d"]);
 
-    // Widths: sorted, so the upsert is spliced into the cached order and the
-    // cached widths are what the page is drawn to. Nothing recomputes them
-    // there, so the upsert has to widen them itself or the longer cell is drawn
-    // into a column measured before it existed.
     const wide = new El("div");
     const wt = TableView.mount(wide, {
       columns: [{ key: "t", header: "T", type: "text" }],
@@ -6800,9 +5640,6 @@ async function smoke() {
     wt.upsertRow({ id: "b", cells: { t: LONG } });
     check("a longer upserted cell widens its column",
           [narrow < LONG.length, ch()], [true, LONG.length]);
-    // An upsert can only add text: the widths are a high-water mark until the
-    // order is recomputed, so a shorter cell does not pull the column back in
-    // under the rows still holding the long one.
     wt.upsertRow({ id: "b", cells: { t: "bb" } });
     check("and a shorter one does not narrow it back", ch(), LONG.length);
   }
@@ -6814,7 +5651,6 @@ async function smoke() {
   check("getVisible() is the display order", t.getVisible().length, 40);
 
   {
-    // onFilter: the producer narrows, the renderer shows what it is given.
     const asked = [], filterInputs = [], filterKeys = [];
     const remote = new El("div");
     const rt = TableView.mount(remote, view(10), {
@@ -6838,7 +5674,6 @@ async function smoke() {
     check("onFilter takes the query", asked, ["system"]);
     check("and the rows stay as given", rt.getVisible().length, 10);
 
-    // Enter flushes the pending debounce: one call, with the text as it stands.
     asked.length = 0;
     rbox.value = "sys";
     rbox.dispatchEvent(new Ev("input"));          // debounce armed, not yet due
@@ -6857,7 +5692,6 @@ async function smoke() {
   }
 
   {
-    // Enter and Escape, filtering locally.
     const keyed = new El("div");
     const seenUp = [];
     keyed.addEventListener("keydown", (e) => seenUp.push(e.key));
@@ -6881,7 +5715,6 @@ async function smoke() {
           kSel().dataset.id, narrowed[0].id);
     check("the key stops at the input", seenUp, []);
 
-    // Enter committed the box, so the token is a chip and the box is empty.
     check("the committed token became a chip",
           keyed.querySelectorAll(".tv-chip").map((c) => c.text), ["system×"]);
     check("and left the box empty", kbox.value, "");
@@ -6892,8 +5725,6 @@ async function smoke() {
     check("a further Enter keeps a selection that is still visible",
           kSel().dataset.id, held);
 
-    // A row that survives the query, so "the selection stayed put" is visible
-    // below rather than vacuously true.
     const survivor = narrowed[narrowed.length - 1].id;
 
     const blurs = kbox.blurs;
@@ -6915,7 +5746,6 @@ async function smoke() {
     check("Enter with nothing matching selects nothing", kSel(), null);
     kbox.dispatchEvent(new Ev("keydown", { key: "Backspace" }));
 
-    // Only Enter touches focus or the selection.
     kt.select(survivor);
     await painted();
     const quiet = kbox.blurs;
@@ -6934,9 +5764,6 @@ async function smoke() {
   t.setView(view(5));
   check("setView reloads", hint(), "5 rows · sort scheduled asc" + ACT);
 
-  // The surface itself, asserted rather than felt for. A guard that skips a
-  // section when its entry point is missing is a suite that cannot report the
-  // one failure that matters most — a renamed or dropped export.
   console.log("\n== the handle");
   for (const name of ["setView", "setRows", "upsertRow", "deleteRow", "applyDelta",
                       "getRows", "getVisible", "select", "getSelection", "getQuery",
@@ -6948,11 +5775,6 @@ async function smoke() {
   for (const name of ["mount", "parseQuery", "displayText", "comparator"])
     check(`TableView exposes ${name}`, typeof TableView[name], "function");
 
-  // Nothing, handed in: a producer between answers, a view that has not
-  // arrived, a mount that will be filled a moment later. Each is an empty
-  // table rather than an exception thrown into the consumer's page — asserted
-  // by value, since a throw here would take the whole suite with it and say
-  // only where it landed.
   const answer = (fn) => { try { return fn(); } catch (e) { return "threw: " + (e && e.message); } };
   check("setRows with nothing is an empty table",
         answer(() => {
@@ -6991,9 +5813,6 @@ async function smoke() {
   await parityVectors();
 
   console.log("\n== the window");
-  // The header and a row measure differently, and everything below sums over
-  // both. Asserted here so a shim that ever collapses them again is caught by
-  // the check that says they are apart, not by five that quietly still pass.
   check("the header and a row are not the same height", HEAD_PX === ROW_PX, false);
   const W = driver(500, undefined, 300);      // 10 rows on screen
   const far = W.box, big = W.handle;
@@ -7012,11 +5831,6 @@ async function smoke() {
         [shown()[0], shown()[1]].map((tr) => tr.classes.has("tv-alt")),
         [at % 2 === 1, at % 2 === 0]);
 
-  // The header stands above row zero, so which row the window starts at is the
-  // scroll position less the header's height — a row's height is a different
-  // number and gives a different row. Parked where the two answers differ by a
-  // whole row, the window says which of them was subtracted: (3024 - 24) / 30
-  // is a row boundary and (3024 - 30) / 30 is not.
   sc.scrollTop = 3024;
   sc.dispatchEvent(new Ev("scroll"));
   await sleep(50);
@@ -7032,27 +5846,15 @@ async function smoke() {
   check("and the ease carries the window to it",
         far.querySelector("tbody tr.tv-sel").dataset.id, last);
 
-  // --- the ease aims at a row, and a row is measured when it is drawn
-  // A move works its target out from the geometry the last render read, so a
-  // measure landing after that target was set describes a table the target no
-  // longer fits. Standing in for a web font arriving mid-run by moving what the
-  // shim reports a row and the header measure, the way the coarse-pointer check
-  // moves what it reports about the pointer.
   {
     const queue = [];
     const realFrame = global.requestAnimationFrame;
     global.requestAnimationFrame = (fn) => queue.push(timed(fn));
-    /** Run the queued frame callbacks once. */
     const oneFrame = () => queue.splice(0).forEach((fn) => fn());
-    /** Run them, and whatever they queue, to a standstill. */
     const settle = () => { for (let i = 0; i < 200 && queue.length; i++) oneFrame(); };
-    /** How far the last row's foot falls below the fold. */
     const hidden = (sc, rows, port) =>
       Math.max(0, HEAD_PX + rows * ROW_PX - (sc.scrollTop + port));
 
-    // Moves outrunning the frames: every target lands before a single render,
-    // so the one that survives is the one worked out from the stalest geometry
-    // of the run and nothing follows to work it out again.
     const burst = new El("div");
     const bt = TableView.mount(burst, view(300));
     const bs = burst.querySelector(".tv-scroll");
@@ -7066,11 +5868,6 @@ async function smoke() {
           [hidden(bs, 300, 300), !!burst.querySelector("tbody tr.tv-sel")], [0, true]);
     ROW_PX = 30;
 
-    // One move a frame, which is the cadence a held key runs at. Every target
-    // but the last is corrected by the move after it; the last one is measured
-    // against on the frame the run ends on, and there is no move after it. The
-    // header is the thing that re-measures here, so what the stale target is
-    // short by is its 16px whatever the set is long.
     const held = new El("div");
     const ht = TableView.mount(held, view(300));
     const hs = held.querySelector(".tv-scroll");
@@ -7087,15 +5884,6 @@ async function smoke() {
     global.requestAnimationFrame = realFrame;
   }
 
-  // --- the tail is never under the hint bar
-  // The hint is the scroller's next sibling, so ITS TOP IS THE FOLD and "the
-  // last row is covered" is exactly "the content runs past the viewport at the
-  // end of the travel". A row's box is fractional -- 13px/1.5, padding and a
-  // hairline -- and a browser hands back a SNAPPED rect, so a viewport clamped
-  // to `head + rows * one sampled rect' stops a fraction of a pixel per row
-  // short: over a page of a hundred, twenty, which is the last row two thirds
-  // under the bar. Run at a fractional row height, because at a whole one the
-  // sample IS the height and there is nothing here to catch.
   {
     ROW_PX = 30.4;
     const port = 300;
@@ -7103,32 +5891,18 @@ async function smoke() {
     const tt = TableView.mount(tail, view(250), { pageSize: 100, palette: true });
     const ts = tail.querySelector(".tv-scroll");
     ts.clientHeight = port;
-    // The worst case for the strip, which is what glance shows: crumbs from a
-    // drill-down and live filter chips, the order among them as its own tokens.
     tt.pushCrumb({ label: "inbox", query: "q1" });
     tt.pushCrumb({ label: "2026", query: "q2" });
     probe(tail, tt).commit("2026 sort:state sort:scheduled:desc");
     await sleep(50);
-    // Two crumbs and two live chips: the free text, and the ORDER as the one
-    // chip every sort token folds into.
     check("the strip is populated — crumbs, and the applied tokens with them",
           [tail.querySelectorAll(".tv-chip-muted").length,
            tail.querySelectorAll(".tv-chip[data-i]").length,
            sortMarks(tail)],
           [2, 2, ["State▲¹", "Scheduled▼²"]]);
 
-    /**
-     * How much of the page's last row falls past the fold, in whole pixels:
-     * the scroller's own content less the travel and the port. Positive is the
-     * row hanging under the hint bar, negative is the viewport run on past the
-     * rows; zero is its foot ON the fold, which is what the clamp is for. Read
-     * off the CONTENT rather than off `head + rows * ROW_PX', because the
-     * spacers are sized in `geom.row' and the drawn rows are not — which is the
-     * very gap this is about.
-     */
     const pastFold = () => Math.round(trueHeight(ts) - (ts.scrollTop + port));
 
-    /** Walk to the end of what is on show and answer where the tail landed. */
     const toTail = async () => {
       const on = tt.getVisible();
       tt.select(on[on.length - 1].id);
@@ -7143,8 +5917,6 @@ async function smoke() {
     tt.nextPage();
     check("and the last page's, which is a partial one", await toTail(), 0);
 
-    // Continuous: the seam turns the window over the WHOLE set, so the travel
-    // is 250 rows rather than 100 and the same clamp has to hold over it.
     tt.previousPage(); tt.previousPage();
     tt.select(tt.getVisible()[99].id);
     await sleep(400);
@@ -7155,10 +5927,6 @@ async function smoke() {
     check("and in continuous the end of the whole set does the same",
           [pastFold(), !!tail.querySelector("tbody tr.tv-sel")], [0, true]);
 
-    // A viewport that will not take the step it is given: a browser at its own
-    // end, where `scrollHeight' is rounded over content that is not. The ease
-    // has to read that as an arrival, or it runs a frame loop for as long as
-    // the page is open.
     const stuck = new El("div");
     const st = TableView.mount(stuck, view(250), { pageSize: 100 });
     const ss = stuck.querySelector(".tv-scroll");

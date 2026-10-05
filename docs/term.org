@@ -14,7 +14,7 @@ ghcup toolchain and rendered a full-screen pebble table — header, per-row stat
 badges, a selection-scoped detail pane, key navigation — captured from a fixed
 tmux/pty geometry.  This document is the design record for landing it here.
 
-* Why a rewrite, not a reuse
+* Why the terminal renderer is a rewrite
 
 The Emacs and web deliveries are each one file, hand-maintained, because each
 targets a runtime that already draws (redisplay; the DOM).  A terminal draws
@@ -27,8 +27,8 @@ the terminal must pass, so "written again" does not mean "free to differ".
 *brick* over *vty*, both on Hackage, both resolving clean under the repo's ghc
 (9.6.7) — the spike compiled from a cold store.  brick is The Elm Architecture
 for terminals, the same Model/Update/View shape the web renderer runs and that
-glance's own frontend is built on, so a reader crossing from one delivery to
-the other meets one idea, not three.
+glance's own frontend is built on, so readers meet one shared design across
+deliveries.
 
 #+begin_src haskell
 data St = St { rows :: [Row], sel :: Int, scroll :: Int, filterQ :: Text }

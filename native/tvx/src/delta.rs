@@ -1,9 +1,6 @@
-//! Live-layer value types: subscribed window (`Sub`), row snapshot (`RowSnap`), and the prefix/suffix diff.
 
 use serde_json::{json, Value};
 
-/// A client's subscribed window and its last-pushed rows; `gen` bumps on every
-/// (re)subscribe so a client showing a stale window rejects the delta.
 pub struct Sub {
     pub offset: usize,
     pub limit: usize,
@@ -22,8 +19,6 @@ pub struct RowSnap {
     pub cells: Value,
 }
 
-/// Prefix/suffix diff of two row windows into ops: deletes descend, inserts
-/// ascend, applied left-to-right (mirrors the elisp incremental renderer).
 pub fn diff_ops(old: &[RowSnap], new: &[RowSnap]) -> Vec<Value> {
     let (no, nn) = (old.len(), new.len());
     let mut p = 0;
