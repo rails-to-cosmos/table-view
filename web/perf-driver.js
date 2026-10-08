@@ -3029,9 +3029,34 @@ async function narrowedDoor() {
   db.value = "sort:x state:DONE ";
   db.dispatchEvent(new Ev("input"));
   await sleep(250);
-  check("a settling debounce chips what narrows and keeps back what shapes",
+  check("a settling debounce filters without committing either half",
         [D.chipsOf(), db.value, D.handle.getQuery()],
-        [["state:DONE"], "sort:x", "state:DONE"]);
+        [[], "sort:x state:DONE ", "state:DONE"]);
+
+  db.value = "Messaging House ";
+  db.dispatchEvent(new Ev("input"));
+  await sleep(250);
+  check("SPC keeps autocomplete text as one live substring phrase",
+        [D.chipsOf(), db.value, D.handle.getQuery()],
+        [[], "Messaging House ", 'substring:"Messaging House"']);
+  D.press("Enter");
+  check("RET commits the multi-word substring as one chip",
+        [D.chipsOf(), db.value, D.handle.getQuery()],
+        [['substring:"Messaging House"'], "", 'substring:"Messaging House"']);
+
+  const E = driver({
+    columns: [{ key: "title", header: "Headline", type: "text" }],
+    rows: [{ id: "mh", cells: { title: "Messaging House" } }],
+  });
+  E.handle.openFilter({ narrow: true });
+  const phraseOffers = E.type("Messaging H");
+  check("autocomplete keeps the complete phrase after SPC",
+        [phraseOffers[0], phraseOffers.includes("Messaging House")],
+        ['substring:"Messaging H"', true]);
+  E.press("Enter");
+  check("RET takes the phrase literal without manual dropdown selection",
+        [E.chipsOf(), E.handle.getQuery(), E.handle.getVisible().length],
+        [['substring:"Messaging H"'], 'substring:"Messaging H"', 1]);
 }
 
 async function dockedDoor() {

@@ -3367,6 +3367,18 @@
     /** @type {string[]} */
     let chips = [];
 
+    /** @param {string} value  @returns {string|null} */
+    function phraseQuery(value) {
+      const text = value.trim();
+      if (!narrowing || !/[ \t\n]/.test(value) || text.indexOf('"') !== -1)
+        return null;
+      const toks = parseQuery(text, queryKeys());
+      if (!toks.length || toks.some((t) => t.key !== null || t.negated
+                                           || t.added || t.quoted))
+        return null;
+      return `${SUBSTRING_KEY}:"${text}"`;
+    }
+
     /**
      * @type {Crumb[]}
      */
@@ -3378,6 +3390,8 @@
     function typedQuery() {
       const v = input.value;
       if (!narrowing || !v.trim()) return v.trim();
+      const phrase = phraseQuery(v);
+      if (phrase !== null) return phrase;
       const kept = [];
       for (const t of parseQuery(v, queryKeys()))
         if (!shapesView(t.key)) kept.push(v.slice(t.start, t.end));
@@ -3557,6 +3571,14 @@
      */
     function chipUp(all) {
       const v = input.value;
+      const phrase = all ? phraseQuery(v) : null;
+      if (phrase !== null) {
+        commitChip(phrase, parseQuery(phrase, queryKeys())[0]);
+        input.value = "";
+        renderNegation();
+        renderChips();
+        return true;
+      }
       const toks = parseQuery(v, queryKeys());
       if (!toks.length) return false;
       const last = toks[toks.length - 1];
@@ -3632,7 +3654,6 @@
       if (debounce) clearTimeout(debounce);
       debounce = setTimeout(() => {
         debounce = 0;
-        chipUp(false);
         deliver(true);
       }, DEBOUNCE);
     }
@@ -3704,6 +3725,13 @@
      * @returns {{stage: string, tok: Token, col: Column|null, prefix: string}|null}
      */
     function stageAt() {
+      const phrase = phraseQuery(input.value);
+      if (phrase !== null) {
+        const value = input.value.trim(), start = input.value.indexOf(value);
+        const tok = { negated: false, added: false, key: null, value,
+                      quoted: false, start, end: start + value.length, sep: -1 };
+        return { stage: "key", tok, col: null, prefix: value };
+      }
       const t = tokenAtCaret();
       if (!t || t.quoted) return null;
       if (t.key !== null) {
