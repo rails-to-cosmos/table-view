@@ -71,4 +71,5 @@ bump-version:
 	sed -i -E "s/^;; Version: [0-9.]+/;; Version: $$new/" $(EL); \
 	sed -i -E "s/\(table-view \"[0-9.]+\"\)/(table-view \"$$new\")/" table-view-native.el; \
 	sed -i -E "s/^version = \"[0-9.]+\"/version = \"$$new\"/" native/tvx/Cargo.toml; \
+	sed -i -E '/^name = \"tvx\"$$/{n;s/^version = \"[0-9.]+\"/version = \"'"$$new"'\"/;}' native/tvx/Cargo.lock; \
 	echo "table-view: $$cur -> $$new"
