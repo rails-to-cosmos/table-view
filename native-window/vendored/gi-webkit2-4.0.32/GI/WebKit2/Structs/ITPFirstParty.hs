@@ -255,7 +255,7 @@ foreign import ccall "webkit_itp_first_party_get_last_update_time" webkit_itp_fi
 
 -- | Get the last time a t'GI.WebKit2.Structs.ITPThirdParty.ITPThirdParty' has been seen under /@itpFirstParty@/.
 -- 
--- Each /@webKitITPFirstParty@/ is created by 'GI.WebKit2.Structs.ITPThirdParty.iTPThirdPartyGetFirstParties' and
+-- Each t'GI.WebKit2.Structs.ITPFirstParty.ITPFirstParty' is created by 'GI.WebKit2.Structs.ITPThirdParty.iTPThirdPartyGetFirstParties' and
 -- therefore corresponds to exactly one t'GI.WebKit2.Structs.ITPThirdParty.ITPThirdParty'.
 -- 
 -- /Since: 2.30/
@@ -320,7 +320,7 @@ foreign import ccall "webkit_itp_first_party_get_website_data_access_allowed" we
 
 -- | Get whether /@itpFirstParty@/ has granted website data access to its t'GI.WebKit2.Structs.ITPThirdParty.ITPThirdParty'.
 -- 
--- Each /@webKitITPFirstParty@/ is created by 'GI.WebKit2.Structs.ITPThirdParty.iTPThirdPartyGetFirstParties' and
+-- Each t'GI.WebKit2.Structs.ITPFirstParty.ITPFirstParty' is created by 'GI.WebKit2.Structs.ITPThirdParty.iTPThirdPartyGetFirstParties' and
 -- therefore corresponds to exactly one t'GI.WebKit2.Structs.ITPThirdParty.ITPThirdParty'.
 -- 
 -- /Since: 2.30/

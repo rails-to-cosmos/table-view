@@ -5,15 +5,15 @@
 -- License    : LGPL-2.1
 -- Maintainer : Iñaki García Etxebarria
 -- 
--- Manages aspects common to all t'GI.WebKit2.Objects.WebView.WebView's
+-- Manages aspects common to all t'GI.WebKit2.Objects.WebView.WebView' objects
 -- 
 -- The t'GI.WebKit2.Objects.WebContext.WebContext' manages all aspects common to all
--- t'GI.WebKit2.Objects.WebView.WebView's.
+-- t'GI.WebKit2.Objects.WebView.WebView' objects.
 -- 
 -- You can define the t'GI.WebKit2.Enums.CacheModel' with
 -- 'GI.WebKit2.Objects.WebContext.webContextSetCacheModel', depending on the needs of
 -- your application. You can access the t'GI.WebKit2.Objects.SecurityManager.SecurityManager' to specify
--- the behaviour of your application regarding security using
+-- the behavior of your application regarding security using
 -- 'GI.WebKit2.Objects.WebContext.webContextGetSecurityManager'.
 -- 
 -- It is also possible to change your preferred language or enable
@@ -460,7 +460,7 @@ module GI.WebKit2.Objects.WebContext
 
 
 -- ** processSwapOnCrossSiteNavigationEnabled #attr:processSwapOnCrossSiteNavigationEnabled#
--- | Whether swap Web processes on cross-site navigations is enabled.
+-- | Whether swapping Web processes on cross-site navigations is enabled.
 -- 
 -- When enabled, pages from each security origin will be handled by
 -- their own separate Web processes, which are started (and
@@ -506,7 +506,7 @@ module GI.WebKit2.Objects.WebContext
 -- | Whether to use system appearance for rendering scrollbars.
 -- 
 -- This is enabled by default for backwards compatibility, but it\'s only
--- recommened to use when the application includes other widgets to ensure
+-- recommended to use when the application includes other widgets to ensure
 -- consistency, or when consistency with other applications is required too.
 -- 
 -- /Since: 2.30/
@@ -1397,7 +1397,7 @@ instance AttrInfo WebContextProcessSwapOnCrossSiteNavigationEnabledPropertyInfo 
 -- VVV Prop "time-zone-override"
    -- Type: TBasicType TUTF8
    -- Flags: [PropertyReadable,PropertyWritable,PropertyConstructOnly]
-   -- Nullable: (Just False,Nothing)
+   -- Nullable: (Just True,Nothing)
 
 -- | Get the value of the “@time-zone-override@” property.
 -- When <https://github.com/haskell-gi/haskell-gi/wiki/Overloading overloading> is enabled, this is equivalent to
@@ -1405,8 +1405,8 @@ instance AttrInfo WebContextProcessSwapOnCrossSiteNavigationEnabledPropertyInfo 
 -- @
 -- 'Data.GI.Base.Attributes.get' webContext #timeZoneOverride
 -- @
-getWebContextTimeZoneOverride :: (MonadIO m, IsWebContext o) => o -> m T.Text
-getWebContextTimeZoneOverride obj = MIO.liftIO $ checkUnexpectedNothing "getWebContextTimeZoneOverride" $ B.Properties.getObjectPropertyString obj "time-zone-override"
+getWebContextTimeZoneOverride :: (MonadIO m, IsWebContext o) => o -> m (Maybe T.Text)
+getWebContextTimeZoneOverride obj = MIO.liftIO $ B.Properties.getObjectPropertyString obj "time-zone-override"
 
 -- | Construct a t'GValueConstruct' with valid value for the “@time-zone-override@” property. This is rarely needed directly, but it is used by `Data.GI.Base.Constructible.new`.
 constructWebContextTimeZoneOverride :: (IsWebContext o, MIO.MonadIO m) => T.Text -> m (GValueConstruct o)
@@ -1421,7 +1421,7 @@ instance AttrInfo WebContextTimeZoneOverridePropertyInfo where
     type AttrSetTypeConstraint WebContextTimeZoneOverridePropertyInfo = (~) T.Text
     type AttrTransferTypeConstraint WebContextTimeZoneOverridePropertyInfo = (~) T.Text
     type AttrTransferType WebContextTimeZoneOverridePropertyInfo = T.Text
-    type AttrGetType WebContextTimeZoneOverridePropertyInfo = T.Text
+    type AttrGetType WebContextTimeZoneOverridePropertyInfo = (Maybe T.Text)
     type AttrLabel WebContextTimeZoneOverridePropertyInfo = "time-zone-override"
     type AttrOrigin WebContextTimeZoneOverridePropertyInfo = WebContext
     attrGet = getWebContextTimeZoneOverride
@@ -1611,7 +1611,7 @@ foreign import ccall "webkit_web_context_new_ephemeral" webkit_web_context_new_e
 -- An ephemeral t'GI.WebKit2.Objects.WebContext.WebContext' is a context
 -- created with an ephemeral t'GI.WebKit2.Objects.WebsiteDataManager.WebsiteDataManager'. This is just a convenient method
 -- to create ephemeral contexts without having to create your own t'GI.WebKit2.Objects.WebsiteDataManager.WebsiteDataManager'.
--- All t'GI.WebKit2.Objects.WebView.WebView's associated with this context will also be ephemeral. Websites will
+-- All t'GI.WebKit2.Objects.WebView.WebView' objects associated with this context will also be ephemeral. Websites will
 -- not store any data in the client storage.
 -- This is normally used to implement private instances.
 -- 
@@ -1864,7 +1864,7 @@ foreign import ccall "webkit_web_context_allow_tls_certificate_for_host" webkit_
     CString ->                              -- host : TBasicType TUTF8
     IO ()
 
--- | Ignore further TLS errors on the /@host@/ for the certificate present in /@info@/.
+-- | Ignore further TLS errors on the /@host@/ for /@certificate@/.
 -- 
 -- If /@host@/ is an IPv6 address, it should not be surrounded by brackets. This
 -- expectation matches 'GI.GLib.Structs.Uri.uriGetHost'.
@@ -2015,7 +2015,7 @@ foreign import ccall "webkit_web_context_download_uri" webkit_web_context_downlo
 
 -- | Requests downloading of the specified URI string.
 -- 
--- The download operation will not be associated to any t'GI.WebKit2.Objects.WebView.WebView',
+-- The download operation will not be associated with any t'GI.WebKit2.Objects.WebView.WebView',
 -- if you are interested in starting a download from a particular t'GI.WebKit2.Objects.WebView.WebView' use
 -- 'GI.WebKit2.Objects.WebView.webViewDownloadUri' instead.
 webContextDownloadUri ::
@@ -2578,7 +2578,7 @@ webContextGetPluginsFinish ::
     -- ^ /@result@/: a t'GI.Gio.Interfaces.AsyncResult.AsyncResult'
     -> m [WebKit2.Plugin.Plugin]
     -- ^ __Returns:__ a t'GI.GLib.Structs.List.List' of t'GI.WebKit2.Objects.Plugin.Plugin'. You must free the t'GI.GLib.Structs.List.List' with
-    --    @/g_list_free()/@ and unref the t'GI.WebKit2.Objects.Plugin.Plugin's with 'GI.GObject.Objects.Object.objectUnref' when you\'re done with them. /(Can throw 'Data.GI.Base.GError.GError')/
+    --    @/g_list_free()/@ and unref the t'GI.WebKit2.Objects.Plugin.Plugin' objects with 'GI.GObject.Objects.Object.objectUnref' when you\'re done with them. /(Can throw 'Data.GI.Base.GError.GError')/
 webContextGetPluginsFinish context result_ = liftIO $ do
     context' <- unsafeManagedPtrCastPtr context
     result_' <- unsafeManagedPtrCastPtr result_
@@ -2887,9 +2887,9 @@ foreign import ccall "webkit_web_context_get_spell_checking_languages" webkit_we
     Ptr WebContext ->                       -- context : TInterface (Name {namespace = "WebKit2", name = "WebContext"})
     IO (Ptr CString)
 
--- | Get the the list of spell checking languages.
+-- | Get the list of spell checking languages.
 -- 
--- Get the the list of spell checking languages associated with
+-- Get the list of spell checking languages associated with
 -- /@context@/, or 'P.Nothing' if no languages have been previously set.
 -- 
 -- See 'GI.WebKit2.Objects.WebContext.webContextSetSpellCheckingLanguages' for more
@@ -2962,18 +2962,20 @@ webContextGetTimeZoneOverride ::
     (B.CallStack.HasCallStack, MonadIO m, IsWebContext a) =>
     a
     -- ^ /@context@/: a t'GI.WebKit2.Objects.WebContext.WebContext'
-    -> m T.Text
+    -> m (Maybe T.Text)
+    -- ^ __Returns:__ the time zone override, or 'P.Nothing' if none was set.
 webContextGetTimeZoneOverride context = liftIO $ do
     context' <- unsafeManagedPtrCastPtr context
     result <- webkit_web_context_get_time_zone_override context'
-    checkUnexpectedReturnNULL "webContextGetTimeZoneOverride" result
-    result' <- cstringToText result
+    maybeResult <- convertIfNonNull result $ \result' -> do
+        result'' <- cstringToText result'
+        return result''
     touchManagedPtr context
-    return result'
+    return maybeResult
 
 #if defined(ENABLE_OVERLOADING)
 data WebContextGetTimeZoneOverrideMethodInfo
-instance (signature ~ (m T.Text), MonadIO m, IsWebContext a) => O.OverloadedMethod WebContextGetTimeZoneOverrideMethodInfo a signature where
+instance (signature ~ (m (Maybe T.Text)), MonadIO m, IsWebContext a) => O.OverloadedMethod WebContextGetTimeZoneOverrideMethodInfo a signature where
     overloadedMethod = webContextGetTimeZoneOverride
 
 instance O.OverloadedMethodInfo WebContextGetTimeZoneOverrideMethodInfo a where
@@ -3018,7 +3020,7 @@ foreign import ccall "webkit_web_context_get_tls_errors_policy" webkit_web_conte
     Ptr WebContext ->                       -- context : TInterface (Name {namespace = "WebKit2", name = "WebContext"})
     IO CUInt
 
-{-# DEPRECATED webContextGetTlsErrorsPolicy ["(Since version 2.32.)","Use 'GI.WebKit2.Objects.WebsiteDataManager.websiteDataManagerGetTlsErrorsPolicy' instead."] #-}
+{-# DEPRECATED webContextGetTlsErrorsPolicy ["(Since version 2.32)","Use 'GI.WebKit2.Objects.WebsiteDataManager.websiteDataManagerGetTlsErrorsPolicy' instead."] #-}
 -- | Get the TLS errors policy of /@context@/.
 webContextGetTlsErrorsPolicy ::
     (B.CallStack.HasCallStack, MonadIO m, IsWebContext a) =>
@@ -3087,7 +3089,7 @@ webContextGetUseSystemAppearanceForScrollbars ::
     a
     -- ^ /@context@/: a t'GI.WebKit2.Objects.WebContext.WebContext'
     -> m Bool
-    -- ^ __Returns:__ 'P.True' if scrollbars are rendering using the system appearance, or 'P.False' otherwise
+    -- ^ __Returns:__ 'P.True' if scrollbars are rendered using the system appearance, or 'P.False' otherwise
 webContextGetUseSystemAppearanceForScrollbars context = liftIO $ do
     context' <- unsafeManagedPtrCastPtr context
     result <- webkit_web_context_get_use_system_appearance_for_scrollbars context'
@@ -3685,7 +3687,7 @@ foreign import ccall "webkit_web_context_register_uri_scheme" webkit_web_context
 
 -- | Register /@scheme@/ in /@context@/.
 -- 
--- Register /@scheme@/ in /@context@/, so that when an URI request with /@scheme@/ is made in the
+-- Register /@scheme@/ in /@context@/, so that when a URI request with /@scheme@/ is made in the
 -- t'GI.WebKit2.Objects.WebContext.WebContext', the t'GI.WebKit2.Callbacks.URISchemeRequestCallback' registered will be called with a
 -- t'GI.WebKit2.Objects.URISchemeRequest.URISchemeRequest'.
 -- It is possible to handle URI scheme requests asynchronously, by calling 'GI.GObject.Objects.Object.objectRef' on the
@@ -3805,7 +3807,7 @@ foreign import ccall "webkit_web_context_send_message_to_all_extensions" webkit_
     Ptr WebKit2.UserMessage.UserMessage ->  -- message : TInterface (Name {namespace = "WebKit2", name = "UserMessage"})
     IO ()
 
--- | Send /@message@/ to all web process extensions associated to /@context@/.
+-- | Send /@message@/ to all web process extensions associated with /@context@/.
 -- 
 -- If /@message@/ is floating, it\'s consumed.
 -- 
@@ -4064,7 +4066,7 @@ foreign import ccall "webkit_web_context_set_cache_model" webkit_web_context_set
 -- Specifies a usage model for WebViews, which WebKit will use to
 -- determine its caching behavior. All web views follow the cache
 -- model. This cache model determines the RAM and disk space to use
--- for caching previously viewed content .
+-- for caching previously viewed content.
 -- 
 -- Research indicates that users tend to browse within clusters of
 -- documents that hold resources in common, and to revisit previously
@@ -4157,7 +4159,7 @@ foreign import ccall "webkit_web_context_set_disk_cache_directory" webkit_web_co
     CString ->                              -- directory : TBasicType TUTF8
     IO ()
 
-{-# DEPRECATED webContextSetDiskCacheDirectory ["(Since version 2.10.)","Use 'GI.WebKit2.Objects.WebContext.webContextNewWithWebsiteDataManager' instead."] #-}
+{-# DEPRECATED webContextSetDiskCacheDirectory ["(Since version 2.10)","Use 'GI.WebKit2.Objects.WebContext.webContextNewWithWebsiteDataManager' instead."] #-}
 -- | Set the directory where disk cache files will be stored.
 -- 
 -- This method must be called before loading anything in this context, otherwise
@@ -4364,7 +4366,7 @@ foreign import ccall "webkit_web_context_set_network_proxy_settings" webkit_web_
     Ptr WebKit2.NetworkProxySettings.NetworkProxySettings -> -- proxy_settings : TInterface (Name {namespace = "WebKit2", name = "NetworkProxySettings"})
     IO ()
 
-{-# DEPRECATED webContextSetNetworkProxySettings ["(Since version 2.32.)","Use 'GI.WebKit2.Objects.WebsiteDataManager.websiteDataManagerSetNetworkProxySettings' instead."] #-}
+{-# DEPRECATED webContextSetNetworkProxySettings ["(Since version 2.32)","Use 'GI.WebKit2.Objects.WebsiteDataManager.websiteDataManagerSetNetworkProxySettings' instead."] #-}
 -- | Set the network proxy settings to be used by connections started in /@context@/.
 -- 
 -- By default 'GI.WebKit2.Enums.NetworkProxyModeDefault' is used, which means that the
@@ -4901,7 +4903,7 @@ foreign import ccall "webkit_web_context_set_tls_errors_policy" webkit_web_conte
     CUInt ->                                -- policy : TInterface (Name {namespace = "WebKit2", name = "TLSErrorsPolicy"})
     IO ()
 
-{-# DEPRECATED webContextSetTlsErrorsPolicy ["(Since version 2.32.)","Use 'GI.WebKit2.Objects.WebsiteDataManager.websiteDataManagerSetTlsErrorsPolicy' instead."] #-}
+{-# DEPRECATED webContextSetTlsErrorsPolicy ["(Since version 2.32)","Use 'GI.WebKit2.Objects.WebsiteDataManager.websiteDataManagerSetTlsErrorsPolicy' instead."] #-}
 -- | Set the TLS errors policy of /@context@/ as /@policy@/.
 webContextSetTlsErrorsPolicy ::
     (B.CallStack.HasCallStack, MonadIO m, IsWebContext a) =>

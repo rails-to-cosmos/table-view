@@ -171,6 +171,9 @@ data WebViewIsPlayingAudioPropertyInfo
 data WebViewIsWebProcessResponsivePropertyInfo
 #endif
 #if defined(ENABLE_OVERLOADING)
+data WebViewMagnificationPropertyInfo
+#endif
+#if defined(ENABLE_OVERLOADING)
 data WebViewMicrophoneCaptureStatePropertyInfo
 #endif
 #if defined(ENABLE_OVERLOADING)
@@ -289,6 +292,9 @@ data WebViewGetIsMutedMethodInfo
 #endif
 #if defined(ENABLE_OVERLOADING)
 data WebViewGetIsWebProcessResponsiveMethodInfo
+#endif
+#if defined(ENABLE_OVERLOADING)
+data WebViewGetMagnificationMethodInfo
 #endif
 #if defined(ENABLE_OVERLOADING)
 data WebViewGetMainResourceMethodInfo
@@ -460,6 +466,9 @@ data WebViewSetInputMethodContextMethodInfo
 #endif
 #if defined(ENABLE_OVERLOADING)
 data WebViewSetIsMutedMethodInfo
+#endif
+#if defined(ENABLE_OVERLOADING)
+data WebViewSetMagnificationMethodInfo
 #endif
 #if defined(ENABLE_OVERLOADING)
 data WebViewSetMicrophoneCaptureStateMethodInfo

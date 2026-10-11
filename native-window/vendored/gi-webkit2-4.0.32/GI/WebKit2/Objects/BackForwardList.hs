@@ -17,7 +17,7 @@
 -- Methods 'GI.WebKit2.Objects.WebView.webViewGoBack' and 'GI.WebKit2.Objects.WebView.webViewGoForward' move
 -- the current item backward or forward by one. Method
 -- 'GI.WebKit2.Objects.WebView.webViewGoToBackForwardListItem' sets the current item to the
--- specified item. All other methods returning t'GI.WebKit2.Objects.BackForwardListItem.BackForwardListItem's
+-- specified item. All other methods returning t'GI.WebKit2.Objects.BackForwardListItem.BackForwardListItem' objects
 -- do not change the value of the current item, they just return the requested
 -- item or items.
 
@@ -285,13 +285,13 @@ instance (info ~ ResolveBackForwardListMethod t BackForwardList, O.OverloadedMet
 -- | This signal is emitted when /@backForwardList@/ changes. This happens
 -- when the current item is updated, a new item is added or one or more
 -- items are removed. Note that both /@itemAdded@/ and /@itemsRemoved@/ can
--- 'P.Nothing' when only the current item is updated. Items are only removed
+-- be 'P.Nothing' when only the current item is updated. Items are only removed
 -- when the list is cleared or the maximum items limit is reached.
 type BackForwardListChangedCallback =
     Maybe WebKit2.BackForwardListItem.BackForwardListItem
     -- ^ /@itemAdded@/: the t'GI.WebKit2.Objects.BackForwardListItem.BackForwardListItem' added or 'P.Nothing'
     -> Ptr ()
-    -- ^ /@itemsRemoved@/: a t'GI.GLib.Structs.List.List' of t'GI.WebKit2.Objects.BackForwardListItem.BackForwardListItem's
+    -- ^ /@itemsRemoved@/: a t'GI.GLib.Structs.List.List' of t'GI.WebKit2.Objects.BackForwardListItem.BackForwardListItem' objects
     -> IO ()
 
 type C_BackForwardListChangedCallback =

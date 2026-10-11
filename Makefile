@@ -57,7 +57,7 @@ patch: BUMP := patch
 major minor patch: bump-version
 
 bump-version:
-	@cur=`sed -n 's/^;; Version: \([0-9.]*\)/\1/p' $(EL)`; \
+	@cur=`sed -n 's/^;; Version: \([0-9.]*\)/\1/p' table-view.el`; \
 	test -n "$$cur" || { echo "error: could not read version from $(EL)"; exit 1; }; \
 	set -- `echo "$$cur" | tr '.' ' '`; \
 	maj=$${1:-0}; min=$${2:-0}; pat=$${3:-0}; \
@@ -68,7 +68,7 @@ bump-version:
 	  *) echo "usage: make major|minor|patch"; exit 1 ;; \
 	esac; \
 	new="$$maj.$$min.$$pat"; \
-	sed -i "s/^;; Version: $$cur/;; Version: $$new/" $(EL) table-view-native.el; \
-	sed -i "s/(table-view \"$$cur\")/(table-view \"$$new\")/" table-view-native.el; \
-	sed -i "s/^version = \"$$cur\"/version = \"$$new\"/" native/tvx/Cargo.toml; \
+	sed -i -E "s/^;; Version: [0-9.]+/;; Version: $$new/" $(EL); \
+	sed -i -E "s/\(table-view \"[0-9.]+\"\)/(table-view \"$$new\")/" table-view-native.el; \
+	sed -i -E "s/^version = \"[0-9.]+\"/version = \"$$new\"/" native/tvx/Cargo.toml; \
 	echo "table-view: $$cur -> $$new"

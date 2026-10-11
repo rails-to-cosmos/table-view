@@ -94,6 +94,7 @@ interface TableViewMountOptions {
   omnibox?: boolean;
   palette?: boolean;
   marks?: boolean;
+  markGutter?: boolean;
   flags?: boolean;
   actionHints?: boolean;
   flagHelp?: string;

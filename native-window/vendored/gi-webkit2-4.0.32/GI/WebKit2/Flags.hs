@@ -300,7 +300,7 @@ data InputHints =
     | InputHintsSpellcheck
     -- ^ Suggest spell checking
     | InputHintsLowercase
-    -- ^ Suggest to not autocapitlize
+    -- ^ Suggest to not autocapitalize
     | InputHintsUppercaseChars
     -- ^ Suggest to capitalize all text
     | InputHintsUppercaseWords
@@ -414,7 +414,7 @@ data FindOptions =
     -- ^ case insensitive search.
     | FindOptionsAtWordStarts
     -- ^ search text only at the
-    --   begining of the words.
+    --   beginning of the words.
     | FindOptionsTreatMedialCapitalAsWordStart
     -- ^ treat
     --   capital letters in the middle of words as word start.

@@ -9,7 +9,7 @@
 -- 
 -- You can use WebKitWebsiteDataManager to configure the local directories
 -- where website data will be stored. Use [WebsiteDataManager:baseDataDirectory]("GI.WebKit2.Objects.WebsiteDataManager#g:attr:baseDataDirectory")
--- and [WebsiteDataManager:baseCacheDirectory]("GI.WebKit2.Objects.WebsiteDataManager#g:attr:baseCacheDirectory") set a common base directory for all
+-- and [WebsiteDataManager:baseCacheDirectory]("GI.WebKit2.Objects.WebsiteDataManager#g:attr:baseCacheDirectory") to set a common base directory for all
 -- website data and caches.
 -- 
 -- A WebKitWebsiteDataManager can be ephemeral, in which case all the directory configuration
@@ -43,10 +43,10 @@ module GI.WebKit2.Objects.WebsiteDataManager
 -- [bindProperty]("GI.GObject.Objects.Object#g:method:bindProperty"), [bindPropertyFull]("GI.GObject.Objects.Object#g:method:bindPropertyFull"), [clear]("GI.WebKit2.Objects.WebsiteDataManager#g:method:clear"), [clearFinish]("GI.WebKit2.Objects.WebsiteDataManager#g:method:clearFinish"), [fetch]("GI.WebKit2.Objects.WebsiteDataManager#g:method:fetch"), [fetchFinish]("GI.WebKit2.Objects.WebsiteDataManager#g:method:fetchFinish"), [forceFloating]("GI.GObject.Objects.Object#g:method:forceFloating"), [freezeNotify]("GI.GObject.Objects.Object#g:method:freezeNotify"), [getv]("GI.GObject.Objects.Object#g:method:getv"), [isEphemeral]("GI.WebKit2.Objects.WebsiteDataManager#g:method:isEphemeral"), [isFloating]("GI.GObject.Objects.Object#g:method:isFloating"), [notify]("GI.GObject.Objects.Object#g:method:notify"), [notifyByPspec]("GI.GObject.Objects.Object#g:method:notifyByPspec"), [ref]("GI.GObject.Objects.Object#g:method:ref"), [refSink]("GI.GObject.Objects.Object#g:method:refSink"), [remove]("GI.WebKit2.Objects.WebsiteDataManager#g:method:remove"), [removeFinish]("GI.WebKit2.Objects.WebsiteDataManager#g:method:removeFinish"), [runDispose]("GI.GObject.Objects.Object#g:method:runDispose"), [stealData]("GI.GObject.Objects.Object#g:method:stealData"), [stealQdata]("GI.GObject.Objects.Object#g:method:stealQdata"), [thawNotify]("GI.GObject.Objects.Object#g:method:thawNotify"), [unref]("GI.GObject.Objects.Object#g:method:unref"), [watchClosure]("GI.GObject.Objects.Object#g:method:watchClosure").
 -- 
 -- ==== Getters
--- [getBaseCacheDirectory]("GI.WebKit2.Objects.WebsiteDataManager#g:method:getBaseCacheDirectory"), [getBaseDataDirectory]("GI.WebKit2.Objects.WebsiteDataManager#g:method:getBaseDataDirectory"), [getCookieManager]("GI.WebKit2.Objects.WebsiteDataManager#g:method:getCookieManager"), [getData]("GI.GObject.Objects.Object#g:method:getData"), [getDiskCacheDirectory]("GI.WebKit2.Objects.WebsiteDataManager#g:method:getDiskCacheDirectory"), [getDomCacheDirectory]("GI.WebKit2.Objects.WebsiteDataManager#g:method:getDomCacheDirectory"), [getHstsCacheDirectory]("GI.WebKit2.Objects.WebsiteDataManager#g:method:getHstsCacheDirectory"), [getIndexeddbDirectory]("GI.WebKit2.Objects.WebsiteDataManager#g:method:getIndexeddbDirectory"), [getItpDirectory]("GI.WebKit2.Objects.WebsiteDataManager#g:method:getItpDirectory"), [getItpEnabled]("GI.WebKit2.Objects.WebsiteDataManager#g:method:getItpEnabled"), [getItpSummary]("GI.WebKit2.Objects.WebsiteDataManager#g:method:getItpSummary"), [getItpSummaryFinish]("GI.WebKit2.Objects.WebsiteDataManager#g:method:getItpSummaryFinish"), [getLocalStorageDirectory]("GI.WebKit2.Objects.WebsiteDataManager#g:method:getLocalStorageDirectory"), [getOfflineApplicationCacheDirectory]("GI.WebKit2.Objects.WebsiteDataManager#g:method:getOfflineApplicationCacheDirectory"), [getPersistentCredentialStorageEnabled]("GI.WebKit2.Objects.WebsiteDataManager#g:method:getPersistentCredentialStorageEnabled"), [getProperty]("GI.GObject.Objects.Object#g:method:getProperty"), [getQdata]("GI.GObject.Objects.Object#g:method:getQdata"), [getServiceWorkerRegistrationsDirectory]("GI.WebKit2.Objects.WebsiteDataManager#g:method:getServiceWorkerRegistrationsDirectory"), [getTlsErrorsPolicy]("GI.WebKit2.Objects.WebsiteDataManager#g:method:getTlsErrorsPolicy"), [getWebsqlDirectory]("GI.WebKit2.Objects.WebsiteDataManager#g:method:getWebsqlDirectory").
+-- [getBaseCacheDirectory]("GI.WebKit2.Objects.WebsiteDataManager#g:method:getBaseCacheDirectory"), [getBaseDataDirectory]("GI.WebKit2.Objects.WebsiteDataManager#g:method:getBaseDataDirectory"), [getCookieManager]("GI.WebKit2.Objects.WebsiteDataManager#g:method:getCookieManager"), [getData]("GI.GObject.Objects.Object#g:method:getData"), [getDiskCacheDirectory]("GI.WebKit2.Objects.WebsiteDataManager#g:method:getDiskCacheDirectory"), [getDomCacheDirectory]("GI.WebKit2.Objects.WebsiteDataManager#g:method:getDomCacheDirectory"), [getFaviconDatabase]("GI.WebKit2.Objects.WebsiteDataManager#g:method:getFaviconDatabase"), [getFaviconsEnabled]("GI.WebKit2.Objects.WebsiteDataManager#g:method:getFaviconsEnabled"), [getHstsCacheDirectory]("GI.WebKit2.Objects.WebsiteDataManager#g:method:getHstsCacheDirectory"), [getIndexeddbDirectory]("GI.WebKit2.Objects.WebsiteDataManager#g:method:getIndexeddbDirectory"), [getItpDirectory]("GI.WebKit2.Objects.WebsiteDataManager#g:method:getItpDirectory"), [getItpEnabled]("GI.WebKit2.Objects.WebsiteDataManager#g:method:getItpEnabled"), [getItpSummary]("GI.WebKit2.Objects.WebsiteDataManager#g:method:getItpSummary"), [getItpSummaryFinish]("GI.WebKit2.Objects.WebsiteDataManager#g:method:getItpSummaryFinish"), [getLocalStorageDirectory]("GI.WebKit2.Objects.WebsiteDataManager#g:method:getLocalStorageDirectory"), [getOfflineApplicationCacheDirectory]("GI.WebKit2.Objects.WebsiteDataManager#g:method:getOfflineApplicationCacheDirectory"), [getPersistentCredentialStorageEnabled]("GI.WebKit2.Objects.WebsiteDataManager#g:method:getPersistentCredentialStorageEnabled"), [getProperty]("GI.GObject.Objects.Object#g:method:getProperty"), [getQdata]("GI.GObject.Objects.Object#g:method:getQdata"), [getServiceWorkerRegistrationsDirectory]("GI.WebKit2.Objects.WebsiteDataManager#g:method:getServiceWorkerRegistrationsDirectory"), [getTlsErrorsPolicy]("GI.WebKit2.Objects.WebsiteDataManager#g:method:getTlsErrorsPolicy"), [getWebsqlDirectory]("GI.WebKit2.Objects.WebsiteDataManager#g:method:getWebsqlDirectory").
 -- 
 -- ==== Setters
--- [setData]("GI.GObject.Objects.Object#g:method:setData"), [setDataFull]("GI.GObject.Objects.Object#g:method:setDataFull"), [setItpEnabled]("GI.WebKit2.Objects.WebsiteDataManager#g:method:setItpEnabled"), [setNetworkProxySettings]("GI.WebKit2.Objects.WebsiteDataManager#g:method:setNetworkProxySettings"), [setPersistentCredentialStorageEnabled]("GI.WebKit2.Objects.WebsiteDataManager#g:method:setPersistentCredentialStorageEnabled"), [setProperty]("GI.GObject.Objects.Object#g:method:setProperty"), [setTlsErrorsPolicy]("GI.WebKit2.Objects.WebsiteDataManager#g:method:setTlsErrorsPolicy").
+-- [setData]("GI.GObject.Objects.Object#g:method:setData"), [setDataFull]("GI.GObject.Objects.Object#g:method:setDataFull"), [setFaviconsEnabled]("GI.WebKit2.Objects.WebsiteDataManager#g:method:setFaviconsEnabled"), [setItpEnabled]("GI.WebKit2.Objects.WebsiteDataManager#g:method:setItpEnabled"), [setNetworkProxySettings]("GI.WebKit2.Objects.WebsiteDataManager#g:method:setNetworkProxySettings"), [setPersistentCredentialStorageEnabled]("GI.WebKit2.Objects.WebsiteDataManager#g:method:setPersistentCredentialStorageEnabled"), [setProperty]("GI.GObject.Objects.Object#g:method:setProperty"), [setTlsErrorsPolicy]("GI.WebKit2.Objects.WebsiteDataManager#g:method:setTlsErrorsPolicy").
 
 #if defined(ENABLE_OVERLOADING)
     ResolveWebsiteDataManagerMethod         ,
@@ -122,6 +122,22 @@ module GI.WebKit2.Objects.WebsiteDataManager
     WebsiteDataManagerGetDomCacheDirectoryMethodInfo,
 #endif
     websiteDataManagerGetDomCacheDirectory  ,
+
+
+-- ** getFaviconDatabase #method:getFaviconDatabase#
+
+#if defined(ENABLE_OVERLOADING)
+    WebsiteDataManagerGetFaviconDatabaseMethodInfo,
+#endif
+    websiteDataManagerGetFaviconDatabase    ,
+
+
+-- ** getFaviconsEnabled #method:getFaviconsEnabled#
+
+#if defined(ENABLE_OVERLOADING)
+    WebsiteDataManagerGetFaviconsEnabledMethodInfo,
+#endif
+    websiteDataManagerGetFaviconsEnabled    ,
 
 
 -- ** getHstsCacheDirectory #method:getHstsCacheDirectory#
@@ -247,6 +263,14 @@ module GI.WebKit2.Objects.WebsiteDataManager
     WebsiteDataManagerRemoveFinishMethodInfo,
 #endif
     websiteDataManagerRemoveFinish          ,
+
+
+-- ** setFaviconsEnabled #method:setFaviconsEnabled#
+
+#if defined(ENABLE_OVERLOADING)
+    WebsiteDataManagerSetFaviconsEnabledMethodInfo,
+#endif
+    websiteDataManagerSetFaviconsEnabled    ,
 
 
 -- ** setItpEnabled #method:setItpEnabled#
@@ -459,7 +483,7 @@ module GI.WebKit2.Objects.WebsiteDataManager
 
 
 -- ** serviceWorkerRegistrationsDirectory #attr:serviceWorkerRegistrationsDirectory#
--- | The directory where service workers registrations will be stored.
+-- | The directory where service worker registrations will be stored.
 -- 
 -- /Since: 2.30/
 
@@ -543,6 +567,7 @@ import qualified Foreign.C.Types as FCT
 
 -- Workaround for https://gitlab.haskell.org/ghc/ghc/-/issues/23392
 #if MIN_VERSION_base(4,18,0)
+import qualified GI.Cairo.Structs.Surface as Cairo.Surface
 import qualified GI.GLib.Structs.DateTime as GLib.DateTime
 import qualified GI.GObject.Objects.Object as GObject.Object
 import qualified GI.Gio.Callbacks as Gio.Callbacks
@@ -552,6 +577,7 @@ import qualified GI.Soup.Structs.Cookie as Soup.Cookie
 import {-# SOURCE #-} qualified GI.WebKit2.Enums as WebKit2.Enums
 import {-# SOURCE #-} qualified GI.WebKit2.Flags as WebKit2.Flags
 import {-# SOURCE #-} qualified GI.WebKit2.Objects.CookieManager as WebKit2.CookieManager
+import {-# SOURCE #-} qualified GI.WebKit2.Objects.FaviconDatabase as WebKit2.FaviconDatabase
 import {-# SOURCE #-} qualified GI.WebKit2.Structs.ITPFirstParty as WebKit2.ITPFirstParty
 import {-# SOURCE #-} qualified GI.WebKit2.Structs.ITPThirdParty as WebKit2.ITPThirdParty
 import {-# SOURCE #-} qualified GI.WebKit2.Structs.MemoryPressureSettings as WebKit2.MemoryPressureSettings
@@ -566,6 +592,7 @@ import qualified GI.Gio.Objects.Cancellable as Gio.Cancellable
 import {-# SOURCE #-} qualified GI.WebKit2.Enums as WebKit2.Enums
 import {-# SOURCE #-} qualified GI.WebKit2.Flags as WebKit2.Flags
 import {-# SOURCE #-} qualified GI.WebKit2.Objects.CookieManager as WebKit2.CookieManager
+import {-# SOURCE #-} qualified GI.WebKit2.Objects.FaviconDatabase as WebKit2.FaviconDatabase
 import {-# SOURCE #-} qualified GI.WebKit2.Structs.ITPThirdParty as WebKit2.ITPThirdParty
 import {-# SOURCE #-} qualified GI.WebKit2.Structs.MemoryPressureSettings as WebKit2.MemoryPressureSettings
 import {-# SOURCE #-} qualified GI.WebKit2.Structs.NetworkProxySettings as WebKit2.NetworkProxySettings
@@ -643,6 +670,8 @@ type family ResolveWebsiteDataManagerMethod (t :: Symbol) (o :: DK.Type) :: DK.T
     ResolveWebsiteDataManagerMethod "getData" o = GObject.Object.ObjectGetDataMethodInfo
     ResolveWebsiteDataManagerMethod "getDiskCacheDirectory" o = WebsiteDataManagerGetDiskCacheDirectoryMethodInfo
     ResolveWebsiteDataManagerMethod "getDomCacheDirectory" o = WebsiteDataManagerGetDomCacheDirectoryMethodInfo
+    ResolveWebsiteDataManagerMethod "getFaviconDatabase" o = WebsiteDataManagerGetFaviconDatabaseMethodInfo
+    ResolveWebsiteDataManagerMethod "getFaviconsEnabled" o = WebsiteDataManagerGetFaviconsEnabledMethodInfo
     ResolveWebsiteDataManagerMethod "getHstsCacheDirectory" o = WebsiteDataManagerGetHstsCacheDirectoryMethodInfo
     ResolveWebsiteDataManagerMethod "getIndexeddbDirectory" o = WebsiteDataManagerGetIndexeddbDirectoryMethodInfo
     ResolveWebsiteDataManagerMethod "getItpDirectory" o = WebsiteDataManagerGetItpDirectoryMethodInfo
@@ -659,6 +688,7 @@ type family ResolveWebsiteDataManagerMethod (t :: Symbol) (o :: DK.Type) :: DK.T
     ResolveWebsiteDataManagerMethod "getWebsqlDirectory" o = WebsiteDataManagerGetWebsqlDirectoryMethodInfo
     ResolveWebsiteDataManagerMethod "setData" o = GObject.Object.ObjectSetDataMethodInfo
     ResolveWebsiteDataManagerMethod "setDataFull" o = GObject.Object.ObjectSetDataFullMethodInfo
+    ResolveWebsiteDataManagerMethod "setFaviconsEnabled" o = WebsiteDataManagerSetFaviconsEnabledMethodInfo
     ResolveWebsiteDataManagerMethod "setItpEnabled" o = WebsiteDataManagerSetItpEnabledMethodInfo
     ResolveWebsiteDataManagerMethod "setNetworkProxySettings" o = WebsiteDataManagerSetNetworkProxySettingsMethodInfo
     ResolveWebsiteDataManagerMethod "setPersistentCredentialStorageEnabled" o = WebsiteDataManagerSetPersistentCredentialStorageEnabledMethodInfo
@@ -1864,7 +1894,7 @@ websiteDataManagerFetchFinish ::
     -- ^ /@result@/: a t'GI.Gio.Interfaces.AsyncResult.AsyncResult'
     -> m [WebKit2.WebsiteData.WebsiteData]
     -- ^ __Returns:__ a t'GI.GLib.Structs.List.List' of t'GI.WebKit2.Structs.WebsiteData.WebsiteData'. You must free the t'GI.GLib.Structs.List.List' with
-    --    @/g_list_free()/@ and unref the t'GI.WebKit2.Structs.WebsiteData.WebsiteData's with 'GI.WebKit2.Structs.WebsiteData.websiteDataUnref' when you\'re done with them. /(Can throw 'Data.GI.Base.GError.GError')/
+    --    @/g_list_free()/@ and unref the t'GI.WebKit2.Structs.WebsiteData.WebsiteData' objects with 'GI.WebKit2.Structs.WebsiteData.websiteDataUnref' when you\'re done with them. /(Can throw 'Data.GI.Base.GError.GError')/
 websiteDataManagerFetchFinish manager result_ = liftIO $ do
     manager' <- unsafeManagedPtrCastPtr manager
     result_' <- unsafeManagedPtrCastPtr result_
@@ -2121,7 +2151,7 @@ foreign import ccall "webkit_website_data_manager_get_disk_cache_directory" webk
     Ptr WebsiteDataManager ->               -- manager : TInterface (Name {namespace = "WebKit2", name = "WebsiteDataManager"})
     IO CString
 
-{-# DEPRECATED websiteDataManagerGetDiskCacheDirectory ["(Since version 2.40)",", use 'GI.WebKit2.Objects.WebsiteDataManager.websiteDataManagerGetBaseCacheDirectory' instead."] #-}
+{-# DEPRECATED websiteDataManagerGetDiskCacheDirectory ["(Since version 2.40)","Use 'GI.WebKit2.Objects.WebsiteDataManager.websiteDataManagerGetBaseCacheDirectory' instead."] #-}
 -- | Get the [WebsiteDataManager:diskCacheDirectory]("GI.WebKit2.Objects.WebsiteDataManager#g:attr:diskCacheDirectory") property.
 -- 
 -- /Since: 2.10/
@@ -2186,7 +2216,7 @@ foreign import ccall "webkit_website_data_manager_get_dom_cache_directory" webki
     Ptr WebsiteDataManager ->               -- manager : TInterface (Name {namespace = "WebKit2", name = "WebsiteDataManager"})
     IO CString
 
-{-# DEPRECATED websiteDataManagerGetDomCacheDirectory ["(Since version 2.40)",", use 'GI.WebKit2.Objects.WebsiteDataManager.websiteDataManagerGetBaseCacheDirectory' instead."] #-}
+{-# DEPRECATED websiteDataManagerGetDomCacheDirectory ["(Since version 2.40)","Use 'GI.WebKit2.Objects.WebsiteDataManager.websiteDataManagerGetBaseCacheDirectory' instead."] #-}
 -- | Get the [WebsiteDataManager:domCacheDirectory]("GI.WebKit2.Objects.WebsiteDataManager#g:attr:domCacheDirectory") property.
 -- 
 -- /Since: 2.30/
@@ -2214,6 +2244,134 @@ instance O.OverloadedMethodInfo WebsiteDataManagerGetDomCacheDirectoryMethodInfo
     overloadedMethodInfo = P.Just (O.ResolvedSymbolInfo {
         O.resolvedSymbolName = "GI.WebKit2.Objects.WebsiteDataManager.websiteDataManagerGetDomCacheDirectory",
         O.resolvedSymbolURL = "https://hackage.haskell.org/package/gi-webkit2-4.0.32/docs/GI-WebKit2-Objects-WebsiteDataManager.html#v:websiteDataManagerGetDomCacheDirectory"
+        })
+
+
+#endif
+
+-- method WebsiteDataManager::get_favicon_database
+-- method type : OrdinaryMethod
+-- Args: [ Arg
+--           { argCName = "manager"
+--           , argType =
+--               TInterface
+--                 Name { namespace = "WebKit2" , name = "WebsiteDataManager" }
+--           , argCType = Just "WebKitWebsiteDataManager*"
+--           , direction = DirectionIn
+--           , mayBeNull = False
+--           , argDoc =
+--               Documentation
+--                 { rawDocText = Just "a #WebKitWebsiteDataManager"
+--                 , sinceVersion = Nothing
+--                 }
+--           , argScope = ScopeTypeInvalid
+--           , argClosure = -1
+--           , argDestroy = -1
+--           , argCallerAllocates = False
+--           , argCallbackUserData = False
+--           , transfer = TransferNothing
+--           }
+--       ]
+-- Lengths: []
+-- returnType: Just
+--               (TInterface
+--                  Name { namespace = "WebKit2" , name = "FaviconDatabase" })
+-- throws : False
+-- Skip return : False
+
+foreign import ccall "webkit_website_data_manager_get_favicon_database" webkit_website_data_manager_get_favicon_database :: 
+    Ptr WebsiteDataManager ->               -- manager : TInterface (Name {namespace = "WebKit2", name = "WebsiteDataManager"})
+    IO (Ptr WebKit2.FaviconDatabase.FaviconDatabase)
+
+-- | Get the t'GI.WebKit2.Objects.FaviconDatabase.FaviconDatabase' of /@manager@/.
+-- 
+-- /Since: 2.40/
+websiteDataManagerGetFaviconDatabase ::
+    (B.CallStack.HasCallStack, MonadIO m, IsWebsiteDataManager a) =>
+    a
+    -- ^ /@manager@/: a t'GI.WebKit2.Objects.WebsiteDataManager.WebsiteDataManager'
+    -> m (Maybe WebKit2.FaviconDatabase.FaviconDatabase)
+    -- ^ __Returns:__ a t'GI.WebKit2.Objects.FaviconDatabase.FaviconDatabase', or 'P.Nothing' if website icons are disabled
+websiteDataManagerGetFaviconDatabase manager = liftIO $ do
+    manager' <- unsafeManagedPtrCastPtr manager
+    result <- webkit_website_data_manager_get_favicon_database manager'
+    maybeResult <- convertIfNonNull result $ \result' -> do
+        result'' <- (newObject WebKit2.FaviconDatabase.FaviconDatabase) result'
+        return result''
+    touchManagedPtr manager
+    return maybeResult
+
+#if defined(ENABLE_OVERLOADING)
+data WebsiteDataManagerGetFaviconDatabaseMethodInfo
+instance (signature ~ (m (Maybe WebKit2.FaviconDatabase.FaviconDatabase)), MonadIO m, IsWebsiteDataManager a) => O.OverloadedMethod WebsiteDataManagerGetFaviconDatabaseMethodInfo a signature where
+    overloadedMethod = websiteDataManagerGetFaviconDatabase
+
+instance O.OverloadedMethodInfo WebsiteDataManagerGetFaviconDatabaseMethodInfo a where
+    overloadedMethodInfo = P.Just (O.ResolvedSymbolInfo {
+        O.resolvedSymbolName = "GI.WebKit2.Objects.WebsiteDataManager.websiteDataManagerGetFaviconDatabase",
+        O.resolvedSymbolURL = "https://hackage.haskell.org/package/gi-webkit2-4.0.32/docs/GI-WebKit2-Objects-WebsiteDataManager.html#v:websiteDataManagerGetFaviconDatabase"
+        })
+
+
+#endif
+
+-- method WebsiteDataManager::get_favicons_enabled
+-- method type : OrdinaryMethod
+-- Args: [ Arg
+--           { argCName = "manager"
+--           , argType =
+--               TInterface
+--                 Name { namespace = "WebKit2" , name = "WebsiteDataManager" }
+--           , argCType = Just "WebKitWebsiteDataManager*"
+--           , direction = DirectionIn
+--           , mayBeNull = False
+--           , argDoc =
+--               Documentation
+--                 { rawDocText = Just "a #WebKitWebsiteDataManager"
+--                 , sinceVersion = Nothing
+--                 }
+--           , argScope = ScopeTypeInvalid
+--           , argClosure = -1
+--           , argDestroy = -1
+--           , argCallerAllocates = False
+--           , argCallbackUserData = False
+--           , transfer = TransferNothing
+--           }
+--       ]
+-- Lengths: []
+-- returnType: Just (TBasicType TBoolean)
+-- throws : False
+-- Skip return : False
+
+foreign import ccall "webkit_website_data_manager_get_favicons_enabled" webkit_website_data_manager_get_favicons_enabled :: 
+    Ptr WebsiteDataManager ->               -- manager : TInterface (Name {namespace = "WebKit2", name = "WebsiteDataManager"})
+    IO CInt
+
+-- | Get whether website icons are enabled.
+-- 
+-- /Since: 2.40/
+websiteDataManagerGetFaviconsEnabled ::
+    (B.CallStack.HasCallStack, MonadIO m, IsWebsiteDataManager a) =>
+    a
+    -- ^ /@manager@/: a t'GI.WebKit2.Objects.WebsiteDataManager.WebsiteDataManager'
+    -> m Bool
+    -- ^ __Returns:__ 'P.True' if website icons are enabled, or 'P.False' otherwise.
+websiteDataManagerGetFaviconsEnabled manager = liftIO $ do
+    manager' <- unsafeManagedPtrCastPtr manager
+    result <- webkit_website_data_manager_get_favicons_enabled manager'
+    let result' = (/= 0) result
+    touchManagedPtr manager
+    return result'
+
+#if defined(ENABLE_OVERLOADING)
+data WebsiteDataManagerGetFaviconsEnabledMethodInfo
+instance (signature ~ (m Bool), MonadIO m, IsWebsiteDataManager a) => O.OverloadedMethod WebsiteDataManagerGetFaviconsEnabledMethodInfo a signature where
+    overloadedMethod = websiteDataManagerGetFaviconsEnabled
+
+instance O.OverloadedMethodInfo WebsiteDataManagerGetFaviconsEnabledMethodInfo a where
+    overloadedMethodInfo = P.Just (O.ResolvedSymbolInfo {
+        O.resolvedSymbolName = "GI.WebKit2.Objects.WebsiteDataManager.websiteDataManagerGetFaviconsEnabled",
+        O.resolvedSymbolURL = "https://hackage.haskell.org/package/gi-webkit2-4.0.32/docs/GI-WebKit2-Objects-WebsiteDataManager.html#v:websiteDataManagerGetFaviconsEnabled"
         })
 
 
@@ -2251,7 +2409,7 @@ foreign import ccall "webkit_website_data_manager_get_hsts_cache_directory" webk
     Ptr WebsiteDataManager ->               -- manager : TInterface (Name {namespace = "WebKit2", name = "WebsiteDataManager"})
     IO CString
 
-{-# DEPRECATED websiteDataManagerGetHstsCacheDirectory ["(Since version 2.40)",", use 'GI.WebKit2.Objects.WebsiteDataManager.websiteDataManagerGetBaseCacheDirectory' instead."] #-}
+{-# DEPRECATED websiteDataManagerGetHstsCacheDirectory ["(Since version 2.40)","Use 'GI.WebKit2.Objects.WebsiteDataManager.websiteDataManagerGetBaseCacheDirectory' instead."] #-}
 -- | Get the [WebsiteDataManager:hstsCacheDirectory]("GI.WebKit2.Objects.WebsiteDataManager#g:attr:hstsCacheDirectory") property.
 -- 
 -- /Since: 2.26/
@@ -2316,7 +2474,7 @@ foreign import ccall "webkit_website_data_manager_get_indexeddb_directory" webki
     Ptr WebsiteDataManager ->               -- manager : TInterface (Name {namespace = "WebKit2", name = "WebsiteDataManager"})
     IO CString
 
-{-# DEPRECATED websiteDataManagerGetIndexeddbDirectory ["(Since version 2.40)",", use 'GI.WebKit2.Objects.WebsiteDataManager.websiteDataManagerGetBaseDataDirectory' instead."] #-}
+{-# DEPRECATED websiteDataManagerGetIndexeddbDirectory ["(Since version 2.40)","Use 'GI.WebKit2.Objects.WebsiteDataManager.websiteDataManagerGetBaseDataDirectory' instead."] #-}
 -- | Get the [WebsiteDataManager:indexeddbDirectory]("GI.WebKit2.Objects.WebsiteDataManager#g:attr:indexeddbDirectory") property.
 -- 
 -- /Since: 2.10/
@@ -2381,7 +2539,7 @@ foreign import ccall "webkit_website_data_manager_get_itp_directory" webkit_webs
     Ptr WebsiteDataManager ->               -- manager : TInterface (Name {namespace = "WebKit2", name = "WebsiteDataManager"})
     IO CString
 
-{-# DEPRECATED websiteDataManagerGetItpDirectory ["(Since version 2.40)",", use 'GI.WebKit2.Objects.WebsiteDataManager.websiteDataManagerGetBaseDataDirectory' instead."] #-}
+{-# DEPRECATED websiteDataManagerGetItpDirectory ["(Since version 2.40)","Use 'GI.WebKit2.Objects.WebsiteDataManager.websiteDataManagerGetBaseDataDirectory' instead."] #-}
 -- | Get the [WebsiteDataManager:itpDirectory]("GI.WebKit2.Objects.WebsiteDataManager#g:attr:itpDirectory") property.
 -- 
 -- /Since: 2.30/
@@ -2685,7 +2843,7 @@ websiteDataManagerGetItpSummaryFinish ::
     -- ^ /@result@/: a t'GI.Gio.Interfaces.AsyncResult.AsyncResult'
     -> m [WebKit2.ITPThirdParty.ITPThirdParty]
     -- ^ __Returns:__ a t'GI.GLib.Structs.List.List' of t'GI.WebKit2.Structs.ITPThirdParty.ITPThirdParty'.
-    --    You must free the t'GI.GLib.Structs.List.List' with @/g_list_free()/@ and unref the t'GI.WebKit2.Structs.ITPThirdParty.ITPThirdParty's with
+    --    You must free the t'GI.GLib.Structs.List.List' with @/g_list_free()/@ and unref the t'GI.WebKit2.Structs.ITPThirdParty.ITPThirdParty' objects with
     --    'GI.WebKit2.Structs.ITPThirdParty.iTPThirdPartyUnref' when you\'re done with them. /(Can throw 'Data.GI.Base.GError.GError')/
 websiteDataManagerGetItpSummaryFinish manager result_ = liftIO $ do
     manager' <- unsafeManagedPtrCastPtr manager
@@ -2748,7 +2906,7 @@ foreign import ccall "webkit_website_data_manager_get_local_storage_directory" w
     Ptr WebsiteDataManager ->               -- manager : TInterface (Name {namespace = "WebKit2", name = "WebsiteDataManager"})
     IO CString
 
-{-# DEPRECATED websiteDataManagerGetLocalStorageDirectory ["(Since version 2.40)",", use 'GI.WebKit2.Objects.WebsiteDataManager.websiteDataManagerGetBaseDataDirectory' instead."] #-}
+{-# DEPRECATED websiteDataManagerGetLocalStorageDirectory ["(Since version 2.40)","Use 'GI.WebKit2.Objects.WebsiteDataManager.websiteDataManagerGetBaseDataDirectory' instead."] #-}
 -- | Get the [WebsiteDataManager:localStorageDirectory]("GI.WebKit2.Objects.WebsiteDataManager#g:attr:localStorageDirectory") property.
 -- 
 -- /Since: 2.10/
@@ -2813,7 +2971,7 @@ foreign import ccall "webkit_website_data_manager_get_offline_application_cache_
     Ptr WebsiteDataManager ->               -- manager : TInterface (Name {namespace = "WebKit2", name = "WebsiteDataManager"})
     IO CString
 
-{-# DEPRECATED websiteDataManagerGetOfflineApplicationCacheDirectory ["(Since version 2.40)",", use 'GI.WebKit2.Objects.WebsiteDataManager.websiteDataManagerGetBaseCacheDirectory' instead."] #-}
+{-# DEPRECATED websiteDataManagerGetOfflineApplicationCacheDirectory ["(Since version 2.40)","Use 'GI.WebKit2.Objects.WebsiteDataManager.websiteDataManagerGetBaseCacheDirectory' instead."] #-}
 -- | Get the [WebsiteDataManager:offlineApplicationCacheDirectory]("GI.WebKit2.Objects.WebsiteDataManager#g:attr:offlineApplicationCacheDirectory") property.
 -- 
 -- /Since: 2.10/
@@ -2942,7 +3100,7 @@ foreign import ccall "webkit_website_data_manager_get_service_worker_registratio
     Ptr WebsiteDataManager ->               -- manager : TInterface (Name {namespace = "WebKit2", name = "WebsiteDataManager"})
     IO CString
 
-{-# DEPRECATED websiteDataManagerGetServiceWorkerRegistrationsDirectory ["(Since version 2.40)",", use 'GI.WebKit2.Objects.WebsiteDataManager.websiteDataManagerGetBaseDataDirectory' instead."] #-}
+{-# DEPRECATED websiteDataManagerGetServiceWorkerRegistrationsDirectory ["(Since version 2.40)","Use 'GI.WebKit2.Objects.WebsiteDataManager.websiteDataManagerGetBaseDataDirectory' instead."] #-}
 -- | Get the [WebsiteDataManager:serviceWorkerRegistrationsDirectory]("GI.WebKit2.Objects.WebsiteDataManager#g:attr:serviceWorkerRegistrationsDirectory") property.
 -- 
 -- /Since: 2.30/
@@ -3071,7 +3229,7 @@ foreign import ccall "webkit_website_data_manager_get_websql_directory" webkit_w
     Ptr WebsiteDataManager ->               -- manager : TInterface (Name {namespace = "WebKit2", name = "WebsiteDataManager"})
     IO CString
 
-{-# DEPRECATED websiteDataManagerGetWebsqlDirectory ["(Since version 2.24.)","WebSQL is no longer supported. Use IndexedDB instead."] #-}
+{-# DEPRECATED websiteDataManagerGetWebsqlDirectory ["(Since version 2.24)","WebSQL is no longer supported. Use IndexedDB instead."] #-}
 -- | Get the [WebsiteDataManager:websqlDirectory]("GI.WebKit2.Objects.WebsiteDataManager#g:attr:websqlDirectory") property.
 -- 
 -- /Since: 2.10/
@@ -3451,6 +3609,90 @@ instance O.OverloadedMethodInfo WebsiteDataManagerRemoveFinishMethodInfo a where
 
 #endif
 
+-- method WebsiteDataManager::set_favicons_enabled
+-- method type : OrdinaryMethod
+-- Args: [ Arg
+--           { argCName = "manager"
+--           , argType =
+--               TInterface
+--                 Name { namespace = "WebKit2" , name = "WebsiteDataManager" }
+--           , argCType = Just "WebKitWebsiteDataManager*"
+--           , direction = DirectionIn
+--           , mayBeNull = False
+--           , argDoc =
+--               Documentation
+--                 { rawDocText = Just "a #WebKitWebsiteDataManager"
+--                 , sinceVersion = Nothing
+--                 }
+--           , argScope = ScopeTypeInvalid
+--           , argClosure = -1
+--           , argDestroy = -1
+--           , argCallerAllocates = False
+--           , argCallbackUserData = False
+--           , transfer = TransferNothing
+--           }
+--       , Arg
+--           { argCName = "enabled"
+--           , argType = TBasicType TBoolean
+--           , argCType = Just "gboolean"
+--           , direction = DirectionIn
+--           , mayBeNull = False
+--           , argDoc =
+--               Documentation
+--                 { rawDocText = Just "value to set" , sinceVersion = Nothing }
+--           , argScope = ScopeTypeInvalid
+--           , argClosure = -1
+--           , argDestroy = -1
+--           , argCallerAllocates = False
+--           , argCallbackUserData = False
+--           , transfer = TransferNothing
+--           }
+--       ]
+-- Lengths: []
+-- returnType: Nothing
+-- throws : False
+-- Skip return : False
+
+foreign import ccall "webkit_website_data_manager_set_favicons_enabled" webkit_website_data_manager_set_favicons_enabled :: 
+    Ptr WebsiteDataManager ->               -- manager : TInterface (Name {namespace = "WebKit2", name = "WebsiteDataManager"})
+    CInt ->                                 -- enabled : TBasicType TBoolean
+    IO ()
+
+-- | Set whether website icons are enabled. Website icons are disabled by default.
+-- When website icons are disabled, the t'GI.WebKit2.Objects.FaviconDatabase.FaviconDatabase' of /@manager@/ is closed and
+-- its reference removed, so 'GI.WebKit2.Objects.WebsiteDataManager.websiteDataManagerGetFaviconDatabase' will
+-- return 'P.Nothing'. If website icons are enabled again, a new t'GI.WebKit2.Objects.FaviconDatabase.FaviconDatabase' will
+-- be created.
+-- 
+-- /Since: 2.40/
+websiteDataManagerSetFaviconsEnabled ::
+    (B.CallStack.HasCallStack, MonadIO m, IsWebsiteDataManager a) =>
+    a
+    -- ^ /@manager@/: a t'GI.WebKit2.Objects.WebsiteDataManager.WebsiteDataManager'
+    -> Bool
+    -- ^ /@enabled@/: value to set
+    -> m ()
+websiteDataManagerSetFaviconsEnabled manager enabled = liftIO $ do
+    manager' <- unsafeManagedPtrCastPtr manager
+    let enabled' = (P.fromIntegral . P.fromEnum) enabled
+    webkit_website_data_manager_set_favicons_enabled manager' enabled'
+    touchManagedPtr manager
+    return ()
+
+#if defined(ENABLE_OVERLOADING)
+data WebsiteDataManagerSetFaviconsEnabledMethodInfo
+instance (signature ~ (Bool -> m ()), MonadIO m, IsWebsiteDataManager a) => O.OverloadedMethod WebsiteDataManagerSetFaviconsEnabledMethodInfo a signature where
+    overloadedMethod = websiteDataManagerSetFaviconsEnabled
+
+instance O.OverloadedMethodInfo WebsiteDataManagerSetFaviconsEnabledMethodInfo a where
+    overloadedMethodInfo = P.Just (O.ResolvedSymbolInfo {
+        O.resolvedSymbolName = "GI.WebKit2.Objects.WebsiteDataManager.websiteDataManagerSetFaviconsEnabled",
+        O.resolvedSymbolURL = "https://hackage.haskell.org/package/gi-webkit2-4.0.32/docs/GI-WebKit2-Objects-WebsiteDataManager.html#v:websiteDataManagerSetFaviconsEnabled"
+        })
+
+
+#endif
+
 -- method WebsiteDataManager::set_itp_enabled
 -- method type : OrdinaryMethod
 -- Args: [ Arg
@@ -3709,7 +3951,7 @@ foreign import ccall "webkit_website_data_manager_set_persistent_credential_stor
 -- | Enable or disable persistent credential storage.
 -- 
 -- When enabled, which is the default for
--- non-ephemeral sessions, the network process will try to read and write HTTP authentiacation
+-- non-ephemeral sessions, the network process will try to read and write HTTP authentication
 -- credentials from persistent storage.
 -- 
 -- /Since: 2.30/

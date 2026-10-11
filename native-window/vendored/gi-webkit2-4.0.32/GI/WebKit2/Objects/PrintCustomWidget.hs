@@ -5,9 +5,9 @@
 -- License    : LGPL-2.1
 -- Maintainer : Iñaki García Etxebarria
 -- 
--- Allows to embed a custom widget in print dialog.
+-- Allows embedding a custom widget in the print dialog.
 -- 
--- A WebKitPrintCustomWidget allows to embed a custom widget in the print
+-- A WebKitPrintCustomWidget allows embedding a custom widget in the print
 -- dialog by connecting to the [PrintOperation::createCustomWidget]("GI.WebKit2.Objects.PrintOperation#g:signal:createCustomWidget")
 -- signal, creating a new WebKitPrintCustomWidget with
 -- 'GI.WebKit2.Objects.PrintCustomWidget.printCustomWidgetNew' and returning it from there. You can later
@@ -352,7 +352,7 @@ instance SignalInfo PrintCustomWidgetApplySignalInfo where
 -- signal PrintCustomWidget::update
 {-# DEPRECATED PrintCustomWidgetUpdateCallback ["(Since version 2.40)"] #-}
 -- | Emitted after change of selected printer in the dialog. The actual page setup
--- and print settings are available and the custom widget can actualize itself
+-- and print settings are available and the custom widget can update itself
 -- according to their values.
 -- 
 -- /Since: 2.16/
@@ -603,7 +603,7 @@ printCustomWidgetNew ::
     -> T.Text
     -- ^ /@title@/: a /@widget@/\'s title
     -> m PrintCustomWidget
-    -- ^ __Returns:__ a new t'GI.WebKit2.Objects.PrintOperation.PrintOperation'.
+    -- ^ __Returns:__ a new t'GI.WebKit2.Objects.PrintCustomWidget.PrintCustomWidget'.
 printCustomWidgetNew widget title = liftIO $ do
     widget' <- unsafeManagedPtrCastPtr widget
     title' <- textToCString title

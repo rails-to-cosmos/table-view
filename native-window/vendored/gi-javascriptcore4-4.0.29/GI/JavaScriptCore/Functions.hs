@@ -400,9 +400,9 @@ foreign import ccall "jsc_options_set_range_string" jsc_options_set_range_string
     IO CInt
 
 -- | Set /@option@/ as a range string. The string must be in the
--- format \<emphasis>[!]&lt;low&gt;[:&lt;high&gt;]\<\/emphasis> where low and high are @/guint/@ values.
+-- format @[!]\<low>[:\<high>]@ where low and high are @/guint/@ values.
 -- Values between low and high (both included) will be considered in
--- the range, unless \<emphasis>!\<\/emphasis> is used to invert the range.
+-- the range, unless @!@ is used to invert the range.
 -- 
 -- /Since: 2.24/
 optionsSetRangeString ::
@@ -875,9 +875,9 @@ foreign import ccall "jsc_options_get_range_string" jsc_options_get_range_string
     IO CInt
 
 -- | Get /@option@/ as a range string. The string must be in the
--- format \<emphasis>[!]&lt;low&gt;[:&lt;high&gt;]\<\/emphasis> where low and high are @/guint/@ values.
+-- format @[!]\<low>[:\<high>]@ where low and high are @/guint/@ values.
 -- Values between low and high (both included) will be considered in
--- the range, unless \<emphasis>!\<\/emphasis> is used to invert the range.
+-- the range, unless @!@ is used to invert the range.
 -- 
 -- /Since: 2.24/
 optionsGetRangeString ::
@@ -912,11 +912,11 @@ foreign import ccall "jsc_options_get_option_group" jsc_options_get_option_group
 
 -- | Create a t'GI.GLib.Structs.OptionGroup.OptionGroup' to handle JSCOptions as command line arguments.
 -- The options will be exposed as command line arguments with the form
--- \<emphasis>--jsc-&lt;option&gt;=&lt;value&gt;\<\/emphasis>.
+-- @--jsc-\<option>=\<value>@.
 -- Each entry in the returned t'GI.GLib.Structs.OptionGroup.OptionGroup' is configured to apply the
 -- corresponding option during command line parsing. Applications only need to
 -- pass the returned group to 'GI.GLib.Structs.OptionContext.optionContextAddGroup', and the rest will
--- be taken care for automatically.
+-- be taken care of automatically.
 -- 
 -- /Since: 2.24/
 optionsGetOptionGroup ::
@@ -1185,7 +1185,7 @@ foreign import ccall "jsc_options_foreach" jsc_options_foreach ::
     IO ()
 
 -- | Iterates all available options calling /@function@/ for each one. Iteration can
--- stop early if /@function@/ returns 'P.False'.
+-- stop early if /@function@/ returns 'P.True'.
 -- 
 -- /Since: 2.24/
 optionsForeach ::

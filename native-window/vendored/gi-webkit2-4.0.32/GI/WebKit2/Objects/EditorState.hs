@@ -265,7 +265,7 @@ instance (info ~ ResolveEditorStateMethod t EditorState, O.OverloadedMethodInfo 
 #endif
 
 -- signal EditorState::changed
--- | Emitted when the @/WebKitEdtorState/@ is changed.
+-- | Emitted when the t'GI.WebKit2.Objects.EditorState.EditorState' is changed.
 -- 
 -- /Since: 2.44/
 type EditorStateChangedCallback =

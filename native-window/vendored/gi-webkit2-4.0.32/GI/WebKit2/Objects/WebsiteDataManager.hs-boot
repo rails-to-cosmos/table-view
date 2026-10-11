@@ -114,6 +114,12 @@ data WebsiteDataManagerGetDiskCacheDirectoryMethodInfo
 data WebsiteDataManagerGetDomCacheDirectoryMethodInfo
 #endif
 #if defined(ENABLE_OVERLOADING)
+data WebsiteDataManagerGetFaviconDatabaseMethodInfo
+#endif
+#if defined(ENABLE_OVERLOADING)
+data WebsiteDataManagerGetFaviconsEnabledMethodInfo
+#endif
+#if defined(ENABLE_OVERLOADING)
 data WebsiteDataManagerGetHstsCacheDirectoryMethodInfo
 #endif
 #if defined(ENABLE_OVERLOADING)
@@ -157,6 +163,9 @@ data WebsiteDataManagerRemoveMethodInfo
 #endif
 #if defined(ENABLE_OVERLOADING)
 data WebsiteDataManagerRemoveFinishMethodInfo
+#endif
+#if defined(ENABLE_OVERLOADING)
+data WebsiteDataManagerSetFaviconsEnabledMethodInfo
 #endif
 #if defined(ENABLE_OVERLOADING)
 data WebsiteDataManagerSetItpEnabledMethodInfo

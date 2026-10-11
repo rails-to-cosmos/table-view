@@ -722,19 +722,20 @@ uRISchemeRequestGetHttpBody ::
     (B.CallStack.HasCallStack, MonadIO m, IsURISchemeRequest a) =>
     a
     -- ^ /@request@/: a t'GI.WebKit2.Objects.URISchemeRequest.URISchemeRequest'
-    -> m Gio.InputStream.InputStream
-    -- ^ __Returns:__ (nullable): the body of the /@request@/.
+    -> m (Maybe Gio.InputStream.InputStream)
+    -- ^ __Returns:__ the body of the /@request@/.
 uRISchemeRequestGetHttpBody request = liftIO $ do
     request' <- unsafeManagedPtrCastPtr request
     result <- webkit_uri_scheme_request_get_http_body request'
-    checkUnexpectedReturnNULL "uRISchemeRequestGetHttpBody" result
-    result' <- (wrapObject Gio.InputStream.InputStream) result
+    maybeResult <- convertIfNonNull result $ \result' -> do
+        result'' <- (wrapObject Gio.InputStream.InputStream) result'
+        return result''
     touchManagedPtr request
-    return result'
+    return maybeResult
 
 #if defined(ENABLE_OVERLOADING)
 data URISchemeRequestGetHttpBodyMethodInfo
-instance (signature ~ (m Gio.InputStream.InputStream), MonadIO m, IsURISchemeRequest a) => O.OverloadedMethod URISchemeRequestGetHttpBodyMethodInfo a signature where
+instance (signature ~ (m (Maybe Gio.InputStream.InputStream)), MonadIO m, IsURISchemeRequest a) => O.OverloadedMethod URISchemeRequestGetHttpBodyMethodInfo a signature where
     overloadedMethod = uRISchemeRequestGetHttpBody
 
 instance O.OverloadedMethodInfo URISchemeRequestGetHttpBodyMethodInfo a where

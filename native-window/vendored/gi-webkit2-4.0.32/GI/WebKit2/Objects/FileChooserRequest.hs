@@ -11,8 +11,8 @@
 -- file type, WebKit will need to show a dialog to choose one or
 -- more files to be uploaded to the server along with the rest of the
 -- form data. For that to happen in a general way, instead of just
--- opening a t'GI.Gtk.Objects.FileChooserDialog.FileChooserDialog' (which might be not desirable in
--- some cases, which could prefer to use their own file chooser
+-- opening a t'GI.Gtk.Objects.FileChooserDialog.FileChooserDialog' (which might not be desirable for
+-- applications that prefer to use their own file chooser
 -- dialog), WebKit will fire the [WebView::runFileChooser]("GI.WebKit2.Objects.WebView#g:signal:runFileChooser")
 -- signal with a t'GI.WebKit2.Objects.FileChooserRequest.FileChooserRequest' object, which will allow
 -- the client application to specify the files to be selected, to
@@ -152,7 +152,7 @@ module GI.WebKit2.Objects.FileChooserRequest
 
 -- ** selectedFiles #attr:selectedFiles#
 -- | A 'P.Nothing'-terminated array of strings containing the list of
--- selected files associated to the current request. See
+-- selected files associated with the current request. See
 -- 'GI.WebKit2.Objects.FileChooserRequest.fileChooserRequestGetSelectedFiles' for more details.
 
 #if defined(ENABLE_OVERLOADING)
@@ -663,7 +663,7 @@ fileChooserRequestGetMimeTypesFilter ::
     -> m (Maybe Gtk.FileFilter.FileFilter)
     -- ^ __Returns:__ a t'GI.Gtk.Objects.FileFilter.FileFilter' if a list of accepted
     -- MIME types is defined or 'P.Nothing' otherwise. The returned object is
-    -- owned by WebKit should not be modified or freed.
+    -- owned by WebKit and should not be modified or freed.
 fileChooserRequestGetMimeTypesFilter request = liftIO $ do
     request' <- unsafeManagedPtrCastPtr request
     result <- webkit_file_chooser_request_get_mime_types_filter request'
@@ -721,7 +721,7 @@ foreign import ccall "webkit_file_chooser_request_get_select_multiple" webkit_fi
 
 -- | Whether the file chooser should allow selecting multiple files.
 -- 
--- Determine whether the file chooser associated to this
+-- Determine whether the file chooser associated with this
 -- t'GI.WebKit2.Objects.FileChooserRequest.FileChooserRequest' should allow selecting multiple files,
 -- which depends on the HTML input element having a \'multiple\'
 -- attribute defined.
@@ -784,12 +784,12 @@ foreign import ccall "webkit_file_chooser_request_get_selected_files" webkit_fil
     Ptr FileChooserRequest ->               -- request : TInterface (Name {namespace = "WebKit2", name = "FileChooserRequest"})
     IO (Ptr CString)
 
--- | Get the list of selected files associated to the request.
+-- | Get the list of selected files associated with the request.
 -- 
--- Get the list of selected files currently associated to the
+-- Get the list of selected files currently associated with the
 -- request. Initially, the return value of this method contains any
 -- files selected in previous file chooser requests for this HTML
--- input element. Once webkit_file_chooser_request_select_files, the
+-- input element. Once 'GI.WebKit2.Objects.FileChooserRequest.fileChooserRequestSelectFiles' has been called, the
 -- value will reflect whatever files are given.
 -- 
 -- This function should normally be called only before presenting the

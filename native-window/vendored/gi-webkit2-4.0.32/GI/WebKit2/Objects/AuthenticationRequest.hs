@@ -1278,7 +1278,7 @@ foreign import ccall "webkit_authentication_request_is_retry" webkit_authenticat
     Ptr AuthenticationRequest ->            -- request : TInterface (Name {namespace = "WebKit2", name = "AuthenticationRequest"})
     IO CInt
 
--- | Determine whether this this is a first attempt or a retry for this authentication challenge.
+-- | Determine whether this is a first attempt or a retry for this authentication challenge.
 -- 
 -- /Since: 2.2/
 authenticationRequestIsRetry ::

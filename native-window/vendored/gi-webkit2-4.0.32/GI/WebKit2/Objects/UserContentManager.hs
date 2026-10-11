@@ -363,8 +363,8 @@ instance (info ~ ResolveUserContentManagerMethod t UserContentManager, O.Overloa
 
 -- signal UserContentManager::script-message-received
 -- | This signal is emitted when JavaScript in a web view calls
--- \<code>window.webkit.messageHandlers.\<name>.@/postMessage()/@\<\/code>, after registering
--- \<code>\<name>\<\/code> using
+-- @window.webkit.messageHandlers.\<name>.postMessage()@, after registering
+-- @\<name>@ using
 -- 'GI.WebKit2.Objects.UserContentManager.userContentManagerRegisterScriptMessageHandler'
 -- 
 -- /Since: 2.8/
@@ -447,8 +447,8 @@ instance SignalInfo UserContentManagerScriptMessageReceivedSignalInfo where
 
 -- signal UserContentManager::script-message-with-reply-received
 -- | This signal is emitted when JavaScript in a web view calls
--- \<code>window.webkit.messageHandlers.\<name>.@/postMessage()/@\<\/code>, after registering
--- \<code>\<name>\<\/code> using
+-- @window.webkit.messageHandlers.\<name>.postMessage()@, after registering
+-- @\<name>@ using
 -- 'GI.WebKit2.Objects.UserContentManager.userContentManagerRegisterScriptMessageHandlerWithReply'
 -- 
 -- The given /@reply@/ can be used to send a return value with
@@ -918,7 +918,7 @@ foreign import ccall "webkit_user_content_manager_register_script_message_handle
 -- 
 -- === /c code/
 -- >WebKitWebView *view = webkit_web_view_new ();
--- >WebKitUserContentManager *manager = webkit_web_view_get_user_content_manager ();
+-- >WebKitUserContentManager *manager = webkit_web_view_get_user_content_manager (view);
 -- >g_signal_connect (manager, "script-message-received::foobar",
 -- >                  G_CALLBACK (handle_script_message), NULL);
 -- >webkit_user_content_manager_register_script_message_handler (manager, "foobar");
@@ -1436,7 +1436,7 @@ foreign import ccall "webkit_user_content_manager_remove_filter" webkit_user_con
 
 -- | Removes a filter from the given t'GI.WebKit2.Objects.UserContentManager.UserContentManager'.
 -- 
--- Since 2.24
+-- /Since: 2.24/
 userContentManagerRemoveFilter ::
     (B.CallStack.HasCallStack, MonadIO m, IsUserContentManager a) =>
     a

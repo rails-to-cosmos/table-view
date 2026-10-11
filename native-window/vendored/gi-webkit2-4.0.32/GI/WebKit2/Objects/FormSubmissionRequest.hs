@@ -250,11 +250,11 @@ foreign import ccall "webkit_form_submission_request_get_text_fields" webkit_for
     Ptr FormSubmissionRequest ->            -- request : TInterface (Name {namespace = "WebKit2", name = "FormSubmissionRequest"})
     IO (Ptr (GHashTable (Ptr ()) (Ptr ())))
 
-{-# DEPRECATED formSubmissionRequestGetTextFields ["(Since version 2.20.)","Use 'GI.WebKit2.Objects.FormSubmissionRequest.formSubmissionRequestListTextFields' instead."] #-}
--- | Get the values of the text fields contained in the form associated to /@request@/.
+{-# DEPRECATED formSubmissionRequestGetTextFields ["(Since version 2.20)","Use 'GI.WebKit2.Objects.FormSubmissionRequest.formSubmissionRequestListTextFields' instead."] #-}
+-- | Get the values of the text fields contained in the form associated with /@request@/.
 -- 
 -- Get a t'GI.GLib.Structs.HashTable.HashTable' with the values of the text fields contained in the form
--- associated to /@request@/. Note that fields will be missing if the form
+-- associated with /@request@/. Note that fields will be missing if the form
 -- contains multiple text input elements with the same name, so this
 -- function does not reliably return all text fields.
 formSubmissionRequestGetTextFields ::
@@ -360,10 +360,10 @@ foreign import ccall "webkit_form_submission_request_list_text_fields" webkit_fo
     Ptr (Ptr (GPtrArray CString)) ->        -- field_values : TPtrArray (TBasicType TUTF8)
     IO CInt
 
--- | Get lists of the text fields contained in the form associated to /@request@/.
+-- | Get lists of the text fields contained in the form associated with /@request@/.
 -- 
 -- Get lists with the names and values of the text fields contained in
--- the form associated to /@request@/. Note that names and values may be
+-- the form associated with /@request@/. Note that names and values may be
 -- 'P.Nothing'.
 -- 
 -- If this function returns 'P.False', then both /@fieldNames@/ and

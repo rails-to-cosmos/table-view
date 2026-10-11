@@ -413,7 +413,7 @@ instance B.Types.BoxedEnum WebExtensionMode
 -- /Since: 2.52/
 data WebExtensionMatchPatternError = 
       WebExtensionMatchPatternErrorUnknown
-    -- ^ An unknown error occured.
+    -- ^ An unknown error occurred.
     | WebExtensionMatchPatternErrorInvalidScheme
     -- ^ The scheme component was invalid.
     | WebExtensionMatchPatternErrorInvalidHost
@@ -469,12 +469,12 @@ instance B.Types.TypedObject WebExtensionMatchPatternError where
 instance B.Types.BoxedEnum WebExtensionMatchPatternError
 
 -- Enum UserStyleLevel
--- | Specifies how to treat an user style sheet.
+-- | Specifies how to treat a user style sheet.
 -- 
 -- /Since: 2.6/
 data UserStyleLevel = 
       UserStyleLevelUser
-    -- ^ The style sheet is an user style sheet,
+    -- ^ The style sheet is a user style sheet,
     --   its contents always override other style sheets. This is the default.
     | UserStyleLevelAuthor
     -- ^ The style sheet will be treated as if
@@ -508,7 +508,7 @@ instance B.Types.TypedObject UserStyleLevel where
 instance B.Types.BoxedEnum UserStyleLevel
 
 -- Enum UserScriptInjectionTime
--- | Specifies at which place of documents an user script will be inserted.
+-- | Specifies at which place of documents a user script will be inserted.
 -- 
 -- /Since: 2.6/
 data UserScriptInjectionTime = 
@@ -595,7 +595,7 @@ instance B.Types.TypedObject UserMessageError where
 instance B.Types.BoxedEnum UserMessageError
 
 -- Enum UserContentInjectedFrames
--- | Specifies in which frames user style sheets are to be inserted in.
+-- | Specifies in which frames user style sheets are to be inserted.
 -- 
 -- /Since: 2.6/
 data UserContentInjectedFrames = 
@@ -899,9 +899,9 @@ data ProcessModel =
     --   of this process model is that the rendering process for a web view
     --   can crash while the rest of the views keep working normally. This
     --   process model is indicated for applications which may use a number
-    --   of web views and the content of in each must not interfere with the
-    --   rest — for example a full-fledged web browser with support for
-    --   multiple tabs.
+    --   of web views and the content in each must not interfere with the
+    --   rest (for example, a full-fledged web browser with support for
+    --   multiple tabs).
     | AnotherProcessModel Int
     -- ^ Catch-all for unknown values
     deriving (Show, Eq)
@@ -1497,7 +1497,7 @@ data JavascriptError =
       JavascriptErrorScriptFailed
     -- ^ An exception was raised in JavaScript execution
     | JavascriptErrorInvalidParameter
-    -- ^ An unsupported parameter has been used to call and async function from API. Since 2.40
+    -- ^ An unsupported parameter has been used to call an async function from API. Since 2.40
     | JavascriptErrorInvalidResult
     -- ^ The result of JavaScript execution could not be returned. Since 2.40
     | AnotherJavascriptError Int
@@ -1606,6 +1606,10 @@ data InputPurpose =
     -- ^ Editable element expects an email
     | InputPurposePassword
     -- ^ Editable element expects a password
+    | InputPurposeSearch
+    -- ^ Edited field contents will be used for searching data.
+    -- 
+    -- /Since: 2.54/
     | AnotherInputPurpose Int
     -- ^ Catch-all for unknown values
     deriving (Show, Eq)
@@ -1618,6 +1622,7 @@ instance P.Enum InputPurpose where
     fromEnum InputPurposeUrl = 4
     fromEnum InputPurposeEmail = 5
     fromEnum InputPurposePassword = 6
+    fromEnum InputPurposeSearch = 7
     fromEnum (AnotherInputPurpose k) = k
 
     toEnum 0 = InputPurposeFreeForm
@@ -1627,6 +1632,7 @@ instance P.Enum InputPurpose where
     toEnum 4 = InputPurposeUrl
     toEnum 5 = InputPurposeEmail
     toEnum 6 = InputPurposePassword
+    toEnum 7 = InputPurposeSearch
     toEnum k = AnotherInputPurpose k
 
 instance P.Ord InputPurpose where
@@ -1649,7 +1655,7 @@ instance B.Types.BoxedEnum InputPurpose
 -- /Since: 2.16/
 data HardwareAccelerationPolicy = 
       HardwareAccelerationPolicyOnDemand
-    -- ^ Hardware acceleration is enabled\/disabled as request by web contents.
+    -- ^ Hardware acceleration is enabled\/disabled as requested by web contents. Deprecated 2.54.
     | HardwareAccelerationPolicyAlways
     -- ^ Hardware acceleration is always enabled, even for websites not requesting it.
     | HardwareAccelerationPolicyNever
@@ -1684,7 +1690,7 @@ instance B.Types.TypedObject HardwareAccelerationPolicy where
 instance B.Types.BoxedEnum HardwareAccelerationPolicy
 
 -- Enum FeatureStatus
--- | Describes the status of a [struct/@webKitFeature@/].
+-- | Describes the status of a [struct/@feature@/].
 -- 
 -- The status for a given feature can be obtained with
 -- 'GI.WebKit2.Structs.Feature.featureGetStatus'.
@@ -1692,16 +1698,16 @@ instance B.Types.BoxedEnum HardwareAccelerationPolicy
 -- /Since: 2.42/
 data FeatureStatus = 
       FeatureStatusEmbedder
-    -- ^ Feature that adjust behaviour for
+    -- ^ Feature that adjusts behavior for
     --   specific application needs. The feature is not part of a Web platform
-    --   feature, not a mature feature intended to be always on.
+    --   feature, nor a mature feature intended to be always on.
     | FeatureStatusUnstable
     -- ^ Feature in development. The feature
     --   may be unfinished, and there are no guarantees about its safety and
     --   stability.
     | FeatureStatusInternal
     -- ^ Feature for debugging the WebKit engine.
-    --   The feature is not generally useful for user or web developers, and
+    --   The feature is not generally useful for users or web developers, and
     --   always disabled by default.
     | FeatureStatusDeveloper
     -- ^ Feature for web developers. The feature
@@ -1987,7 +1993,7 @@ instance B.Types.BoxedEnum CookieAcceptPolicy
 
 -- Enum ContextMenuAction
 -- | Enum values used to denote the stock actions for
--- t'GI.WebKit2.Objects.ContextMenuItem.ContextMenuItem's
+-- t'GI.WebKit2.Objects.ContextMenuItem.ContextMenuItem' objects
 data ContextMenuAction = 
       ContextMenuActionNoAction
     -- ^ No action, used by separator menu items.
@@ -2018,7 +2024,7 @@ data ContextMenuAction =
     | ContextMenuActionReload
     -- ^ Reload the contents of current view.
     | ContextMenuActionCopy
-    -- ^ Copy current selection the clipboard.
+    -- ^ Copy current selection to the clipboard.
     | ContextMenuActionCut
     -- ^ Cut current selection to the clipboard.
     | ContextMenuActionPaste
@@ -2058,9 +2064,9 @@ data ContextMenuAction =
     | ContextMenuActionOpenAudioInNewWindow
     -- ^ Open current audio element in a new window.
     | ContextMenuActionCopyVideoLinkToClipboard
-    -- ^ Copy video link location in to the clipboard.
+    -- ^ Copy video link location to the clipboard.
     | ContextMenuActionCopyAudioLinkToClipboard
-    -- ^ Copy audio link location in to the clipboard.
+    -- ^ Copy audio link location to the clipboard.
     | ContextMenuActionToggleMediaControls
     -- ^ Enable or disable media controls.
     | ContextMenuActionToggleMediaLoop

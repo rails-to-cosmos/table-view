@@ -605,9 +605,9 @@ foreign import ccall "webkit_automation_session_get_application_info" webkit_aut
     Ptr AutomationSession ->                -- session : TInterface (Name {namespace = "WebKit2", name = "AutomationSession"})
     IO (Ptr WebKit2.ApplicationInfo.ApplicationInfo)
 
--- | Get the the previously set t'GI.WebKit2.Objects.AutomationSession.AutomationSession'.
+-- | Get the previously set t'GI.WebKit2.Structs.ApplicationInfo.ApplicationInfo'.
 -- 
--- Get the t'GI.WebKit2.Objects.AutomationSession.AutomationSession' previously set with 'GI.WebKit2.Objects.AutomationSession.automationSessionSetApplicationInfo'.
+-- Get the t'GI.WebKit2.Structs.ApplicationInfo.ApplicationInfo' previously set with 'GI.WebKit2.Objects.AutomationSession.automationSessionSetApplicationInfo'.
 -- 
 -- /Since: 2.18/
 automationSessionGetApplicationInfo ::
@@ -615,7 +615,7 @@ automationSessionGetApplicationInfo ::
     a
     -- ^ /@session@/: a t'GI.WebKit2.Objects.AutomationSession.AutomationSession'
     -> m (Maybe WebKit2.ApplicationInfo.ApplicationInfo)
-    -- ^ __Returns:__ the t'GI.WebKit2.Objects.AutomationSession.AutomationSession' of /@session@/, or 'P.Nothing' if no one has been set.
+    -- ^ __Returns:__ the t'GI.WebKit2.Structs.ApplicationInfo.ApplicationInfo' of /@session@/, or 'P.Nothing' if no one has been set.
 automationSessionGetApplicationInfo session = liftIO $ do
     session' <- unsafeManagedPtrCastPtr session
     result <- webkit_automation_session_get_application_info session'

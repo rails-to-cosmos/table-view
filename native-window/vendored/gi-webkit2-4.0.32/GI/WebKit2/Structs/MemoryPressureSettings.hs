@@ -10,10 +10,10 @@
 -- t'GI.WebKit2.Structs.MemoryPressureSettings.MemoryPressureSettings' is a boxed type that can be used to provide some custom settings
 -- to control how the memory pressure situations are handled by the different processes.
 -- 
--- The memory pressure system implemented inside the different process will try to keep the memory usage
+-- The memory pressure system implemented inside the different processes will try to keep the memory usage
 -- under the defined memory limit. In order to do that, it will check the used memory with a user defined
 -- frequency and decide whether it should try to release memory. The thresholds passed will define how urgent
--- is to release that memory.
+-- it is to release that memory.
 -- 
 -- Take into account that badly defined parameters can greatly reduce the performance of the engine. For
 -- example, setting memory limit too low with a fast poll interval can cause the process to constantly
@@ -309,7 +309,7 @@ memoryPressureSettingsCopy ::
     MemoryPressureSettings
     -- ^ /@settings@/: a t'GI.WebKit2.Structs.MemoryPressureSettings.MemoryPressureSettings'
     -> m MemoryPressureSettings
-    -- ^ __Returns:__ A copy of of the passed t'GI.WebKit2.Structs.MemoryPressureSettings.MemoryPressureSettings'.
+    -- ^ __Returns:__ A copy of the passed t'GI.WebKit2.Structs.MemoryPressureSettings.MemoryPressureSettings'.
 memoryPressureSettingsCopy settings = liftIO $ do
     settings' <- unsafeManagedPtrGetPtr settings
     result <- webkit_memory_pressure_settings_copy settings'
@@ -848,7 +848,7 @@ foreign import ccall "webkit_memory_pressure_settings_set_kill_threshold" webkit
 -- | Sets /@value@/ as the fraction of the defined memory limit where the process will be
 -- killed.
 -- 
--- The threshold must be a value bigger or equal to 0. A value of 0 means that the process
+-- The threshold must be a value bigger than or equal to 0. A value of 0 means that the process
 -- is never killed. If the threshold is not 0, then it must be bigger than the strict threshold
 -- defined in /@settings@/. The threshold can also have values bigger than 1. The default value is 0.
 -- 
@@ -934,7 +934,7 @@ foreign import ccall "webkit_memory_pressure_settings_set_memory_limit" webkit_m
     Word32 ->                               -- memory_limit : TBasicType TUInt
     IO ()
 
--- | Sets /@memoryLimit@/ the memory limit value to /@settings@/.
+-- | Sets /@memoryLimit@/ as the memory limit value of /@settings@/.
 -- 
 -- The default value is the system\'s RAM size with a maximum of 3GB.
 -- 

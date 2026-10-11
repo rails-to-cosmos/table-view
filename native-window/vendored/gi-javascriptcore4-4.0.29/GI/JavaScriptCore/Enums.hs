@@ -154,9 +154,9 @@ data OptionType =
     | OptionTypeUint
     -- ^ A @/guint/@ option type.
     | OptionTypeSize
-    -- ^ A @/gsize/@ options type.
+    -- ^ A @/gsize/@ option type.
     | OptionTypeDouble
-    -- ^ A @/gdouble/@ options type.
+    -- ^ A @/gdouble/@ option type.
     | OptionTypeString
     -- ^ A string option type.
     | OptionTypeRangeString

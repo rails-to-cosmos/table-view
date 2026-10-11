@@ -5,7 +5,7 @@
 -- License    : LGPL-2.1
 -- Maintainer : Iñaki García Etxebarria
 -- 
--- Range of text in an preedit string to be shown underlined.
+-- Range of text in a preedit string to be shown underlined.
 -- 
 -- /Since: 2.28/
 

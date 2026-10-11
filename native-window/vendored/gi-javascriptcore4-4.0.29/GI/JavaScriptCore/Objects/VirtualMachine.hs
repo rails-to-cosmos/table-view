@@ -5,11 +5,11 @@
 -- License    : LGPL-2.1
 -- Maintainer : Iñaki García Etxebarria
 -- 
--- JSCVirtualMachine represents a group of JSCContexts. It allows
+-- JSCVirtualMachine represents a group of JSCContext objects. It allows
 -- concurrent JavaScript execution by creating a different instance of
 -- JSCVirtualMachine in each thread.
 -- 
--- To create a group of JSCContexts pass the same JSCVirtualMachine
+-- To create a group of JSCContext objects pass the same JSCVirtualMachine
 -- instance to every JSCContext constructor.
 
 #if (MIN_VERSION_haskell_gi_overloading(1,0,0) && !defined(__HADDOCK_VERSION__))

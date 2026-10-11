@@ -37,10 +37,10 @@ module GI.WebKit2.Objects.WebView
 -- [activate]("GI.Gtk.Objects.Widget#g:method:activate"), [add]("GI.Gtk.Objects.Container#g:method:add"), [addAccelerator]("GI.Gtk.Objects.Widget#g:method:addAccelerator"), [addChild]("GI.Gtk.Interfaces.Buildable#g:method:addChild"), [addDeviceEvents]("GI.Gtk.Objects.Widget#g:method:addDeviceEvents"), [addEvents]("GI.Gtk.Objects.Widget#g:method:addEvents"), [addMnemonicLabel]("GI.Gtk.Objects.Widget#g:method:addMnemonicLabel"), [addTickCallback]("GI.Gtk.Objects.Widget#g:method:addTickCallback"), [bindProperty]("GI.GObject.Objects.Object#g:method:bindProperty"), [bindPropertyFull]("GI.GObject.Objects.Object#g:method:bindPropertyFull"), [callAsyncJavascriptFunction]("GI.WebKit2.Objects.WebView#g:method:callAsyncJavascriptFunction"), [callAsyncJavascriptFunctionFinish]("GI.WebKit2.Objects.WebView#g:method:callAsyncJavascriptFunctionFinish"), [canActivateAccel]("GI.Gtk.Objects.Widget#g:method:canActivateAccel"), [canExecuteEditingCommand]("GI.WebKit2.Objects.WebView#g:method:canExecuteEditingCommand"), [canExecuteEditingCommandFinish]("GI.WebKit2.Objects.WebView#g:method:canExecuteEditingCommandFinish"), [canGoBack]("GI.WebKit2.Objects.WebView#g:method:canGoBack"), [canGoForward]("GI.WebKit2.Objects.WebView#g:method:canGoForward"), [canShowMimeType]("GI.WebKit2.Objects.WebView#g:method:canShowMimeType"), [checkResize]("GI.Gtk.Objects.Container#g:method:checkResize"), [childFocus]("GI.Gtk.Objects.Widget#g:method:childFocus"), [childGetProperty]("GI.Gtk.Objects.Container#g:method:childGetProperty"), [childNotify]("GI.Gtk.Objects.Container#g:method:childNotify"), [childNotifyByPspec]("GI.Gtk.Objects.Container#g:method:childNotifyByPspec"), [childSetProperty]("GI.Gtk.Objects.Container#g:method:childSetProperty"), [childType]("GI.Gtk.Objects.Container#g:method:childType"), [classPath]("GI.Gtk.Objects.Widget#g:method:classPath"), [computeExpand]("GI.Gtk.Objects.Widget#g:method:computeExpand"), [constructChild]("GI.Gtk.Interfaces.Buildable#g:method:constructChild"), [createPangoContext]("GI.Gtk.Objects.Widget#g:method:createPangoContext"), [createPangoLayout]("GI.Gtk.Objects.Widget#g:method:createPangoLayout"), [customFinished]("GI.Gtk.Interfaces.Buildable#g:method:customFinished"), [customTagEnd]("GI.Gtk.Interfaces.Buildable#g:method:customTagEnd"), [customTagStart]("GI.Gtk.Interfaces.Buildable#g:method:customTagStart"), [destroy]("GI.Gtk.Objects.Widget#g:method:destroy"), [destroyed]("GI.Gtk.Objects.Widget#g:method:destroyed"), [deviceIsShadowed]("GI.Gtk.Objects.Widget#g:method:deviceIsShadowed"), [downloadUri]("GI.WebKit2.Objects.WebView#g:method:downloadUri"), [dragBegin]("GI.Gtk.Objects.Widget#g:method:dragBegin"), [dragBeginWithCoordinates]("GI.Gtk.Objects.Widget#g:method:dragBeginWithCoordinates"), [dragCheckThreshold]("GI.Gtk.Objects.Widget#g:method:dragCheckThreshold"), [dragDestAddImageTargets]("GI.Gtk.Objects.Widget#g:method:dragDestAddImageTargets"), [dragDestAddTextTargets]("GI.Gtk.Objects.Widget#g:method:dragDestAddTextTargets"), [dragDestAddUriTargets]("GI.Gtk.Objects.Widget#g:method:dragDestAddUriTargets"), [dragDestFindTarget]("GI.Gtk.Objects.Widget#g:method:dragDestFindTarget"), [dragDestGetTargetList]("GI.Gtk.Objects.Widget#g:method:dragDestGetTargetList"), [dragDestGetTrackMotion]("GI.Gtk.Objects.Widget#g:method:dragDestGetTrackMotion"), [dragDestSet]("GI.Gtk.Objects.Widget#g:method:dragDestSet"), [dragDestSetProxy]("GI.Gtk.Objects.Widget#g:method:dragDestSetProxy"), [dragDestSetTargetList]("GI.Gtk.Objects.Widget#g:method:dragDestSetTargetList"), [dragDestSetTrackMotion]("GI.Gtk.Objects.Widget#g:method:dragDestSetTrackMotion"), [dragDestUnset]("GI.Gtk.Objects.Widget#g:method:dragDestUnset"), [dragGetData]("GI.Gtk.Objects.Widget#g:method:dragGetData"), [dragHighlight]("GI.Gtk.Objects.Widget#g:method:dragHighlight"), [dragSourceAddImageTargets]("GI.Gtk.Objects.Widget#g:method:dragSourceAddImageTargets"), [dragSourceAddTextTargets]("GI.Gtk.Objects.Widget#g:method:dragSourceAddTextTargets"), [dragSourceAddUriTargets]("GI.Gtk.Objects.Widget#g:method:dragSourceAddUriTargets"), [dragSourceGetTargetList]("GI.Gtk.Objects.Widget#g:method:dragSourceGetTargetList"), [dragSourceSet]("GI.Gtk.Objects.Widget#g:method:dragSourceSet"), [dragSourceSetIconGicon]("GI.Gtk.Objects.Widget#g:method:dragSourceSetIconGicon"), [dragSourceSetIconName]("GI.Gtk.Objects.Widget#g:method:dragSourceSetIconName"), [dragSourceSetIconPixbuf]("GI.Gtk.Objects.Widget#g:method:dragSourceSetIconPixbuf"), [dragSourceSetIconStock]("GI.Gtk.Objects.Widget#g:method:dragSourceSetIconStock"), [dragSourceSetTargetList]("GI.Gtk.Objects.Widget#g:method:dragSourceSetTargetList"), [dragSourceUnset]("GI.Gtk.Objects.Widget#g:method:dragSourceUnset"), [dragUnhighlight]("GI.Gtk.Objects.Widget#g:method:dragUnhighlight"), [draw]("GI.Gtk.Objects.Widget#g:method:draw"), [ensureStyle]("GI.Gtk.Objects.Widget#g:method:ensureStyle"), [errorBell]("GI.Gtk.Objects.Widget#g:method:errorBell"), [evaluateJavascript]("GI.WebKit2.Objects.WebView#g:method:evaluateJavascript"), [evaluateJavascriptFinish]("GI.WebKit2.Objects.WebView#g:method:evaluateJavascriptFinish"), [event]("GI.Gtk.Objects.Widget#g:method:event"), [executeEditingCommand]("GI.WebKit2.Objects.WebView#g:method:executeEditingCommand"), [executeEditingCommandWithArgument]("GI.WebKit2.Objects.WebView#g:method:executeEditingCommandWithArgument"), [forall]("GI.Gtk.Objects.Container#g:method:forall"), [forceFloating]("GI.GObject.Objects.Object#g:method:forceFloating"), [foreach]("GI.Gtk.Objects.Container#g:method:foreach"), [freezeChildNotify]("GI.Gtk.Objects.Widget#g:method:freezeChildNotify"), [freezeNotify]("GI.GObject.Objects.Object#g:method:freezeNotify"), [getv]("GI.GObject.Objects.Object#g:method:getv"), [goBack]("GI.WebKit2.Objects.WebView#g:method:goBack"), [goForward]("GI.WebKit2.Objects.WebView#g:method:goForward"), [goToBackForwardListItem]("GI.WebKit2.Objects.WebView#g:method:goToBackForwardListItem"), [grabAdd]("GI.Gtk.Objects.Widget#g:method:grabAdd"), [grabDefault]("GI.Gtk.Objects.Widget#g:method:grabDefault"), [grabFocus]("GI.Gtk.Objects.Widget#g:method:grabFocus"), [grabRemove]("GI.Gtk.Objects.Widget#g:method:grabRemove"), [hasDefault]("GI.Gtk.Objects.Widget#g:method:hasDefault"), [hasFocus]("GI.Gtk.Objects.Widget#g:method:hasFocus"), [hasGrab]("GI.Gtk.Objects.Widget#g:method:hasGrab"), [hasRcStyle]("GI.Gtk.Objects.Widget#g:method:hasRcStyle"), [hasScreen]("GI.Gtk.Objects.Widget#g:method:hasScreen"), [hasVisibleFocus]("GI.Gtk.Objects.Widget#g:method:hasVisibleFocus"), [hide]("GI.Gtk.Objects.Widget#g:method:hide"), [hideOnDelete]("GI.Gtk.Objects.Widget#g:method:hideOnDelete"), [inDestruction]("GI.Gtk.Objects.Widget#g:method:inDestruction"), [initTemplate]("GI.Gtk.Objects.Widget#g:method:initTemplate"), [inputShapeCombineRegion]("GI.Gtk.Objects.Widget#g:method:inputShapeCombineRegion"), [insertActionGroup]("GI.Gtk.Objects.Widget#g:method:insertActionGroup"), [intersect]("GI.Gtk.Objects.Widget#g:method:intersect"), [isAncestor]("GI.Gtk.Objects.Widget#g:method:isAncestor"), [isComposited]("GI.Gtk.Objects.Widget#g:method:isComposited"), [isControlledByAutomation]("GI.WebKit2.Objects.WebView#g:method:isControlledByAutomation"), [isDrawable]("GI.Gtk.Objects.Widget#g:method:isDrawable"), [isEditable]("GI.WebKit2.Objects.WebView#g:method:isEditable"), [isEphemeral]("GI.WebKit2.Objects.WebView#g:method:isEphemeral"), [isFloating]("GI.GObject.Objects.Object#g:method:isFloating"), [isFocus]("GI.Gtk.Objects.Widget#g:method:isFocus"), [isImmersiveModeEnabled]("GI.WebKit2.Objects.WebView#g:method:isImmersiveModeEnabled"), [isLoading]("GI.WebKit2.Objects.WebView#g:method:isLoading"), [isPlayingAudio]("GI.WebKit2.Objects.WebView#g:method:isPlayingAudio"), [isSensitive]("GI.Gtk.Objects.Widget#g:method:isSensitive"), [isToplevel]("GI.Gtk.Objects.Widget#g:method:isToplevel"), [isVisible]("GI.Gtk.Objects.Widget#g:method:isVisible"), [keynavFailed]("GI.Gtk.Objects.Widget#g:method:keynavFailed"), [leaveImmersiveMode]("GI.WebKit2.Objects.WebView#g:method:leaveImmersiveMode"), [listAccelClosures]("GI.Gtk.Objects.Widget#g:method:listAccelClosures"), [listActionPrefixes]("GI.Gtk.Objects.Widget#g:method:listActionPrefixes"), [listMnemonicLabels]("GI.Gtk.Objects.Widget#g:method:listMnemonicLabels"), [loadAlternateHtml]("GI.WebKit2.Objects.WebView#g:method:loadAlternateHtml"), [loadBytes]("GI.WebKit2.Objects.WebView#g:method:loadBytes"), [loadHtml]("GI.WebKit2.Objects.WebView#g:method:loadHtml"), [loadPlainText]("GI.WebKit2.Objects.WebView#g:method:loadPlainText"), [loadRequest]("GI.WebKit2.Objects.WebView#g:method:loadRequest"), [loadUri]("GI.WebKit2.Objects.WebView#g:method:loadUri"), [map]("GI.Gtk.Objects.Widget#g:method:map"), [mnemonicActivate]("GI.Gtk.Objects.Widget#g:method:mnemonicActivate"), [modifyBase]("GI.Gtk.Objects.Widget#g:method:modifyBase"), [modifyBg]("GI.Gtk.Objects.Widget#g:method:modifyBg"), [modifyCursor]("GI.Gtk.Objects.Widget#g:method:modifyCursor"), [modifyFg]("GI.Gtk.Objects.Widget#g:method:modifyFg"), [modifyFont]("GI.Gtk.Objects.Widget#g:method:modifyFont"), [modifyStyle]("GI.Gtk.Objects.Widget#g:method:modifyStyle"), [modifyText]("GI.Gtk.Objects.Widget#g:method:modifyText"), [notify]("GI.GObject.Objects.Object#g:method:notify"), [notifyByPspec]("GI.GObject.Objects.Object#g:method:notifyByPspec"), [overrideBackgroundColor]("GI.Gtk.Objects.Widget#g:method:overrideBackgroundColor"), [overrideColor]("GI.Gtk.Objects.Widget#g:method:overrideColor"), [overrideCursor]("GI.Gtk.Objects.Widget#g:method:overrideCursor"), [overrideFont]("GI.Gtk.Objects.Widget#g:method:overrideFont"), [overrideSymbolicColor]("GI.Gtk.Objects.Widget#g:method:overrideSymbolicColor"), [parserFinished]("GI.Gtk.Interfaces.Buildable#g:method:parserFinished"), [path]("GI.Gtk.Objects.Widget#g:method:path"), [propagateDraw]("GI.Gtk.Objects.Container#g:method:propagateDraw"), [queueAllocate]("GI.Gtk.Objects.Widget#g:method:queueAllocate"), [queueComputeExpand]("GI.Gtk.Objects.Widget#g:method:queueComputeExpand"), [queueDraw]("GI.Gtk.Objects.Widget#g:method:queueDraw"), [queueDrawArea]("GI.Gtk.Objects.Widget#g:method:queueDrawArea"), [queueDrawRegion]("GI.Gtk.Objects.Widget#g:method:queueDrawRegion"), [queueResize]("GI.Gtk.Objects.Widget#g:method:queueResize"), [queueResizeNoRedraw]("GI.Gtk.Objects.Widget#g:method:queueResizeNoRedraw"), [realize]("GI.Gtk.Objects.Widget#g:method:realize"), [ref]("GI.GObject.Objects.Object#g:method:ref"), [refSink]("GI.GObject.Objects.Object#g:method:refSink"), [regionIntersect]("GI.Gtk.Objects.Widget#g:method:regionIntersect"), [registerWindow]("GI.Gtk.Objects.Widget#g:method:registerWindow"), [reload]("GI.WebKit2.Objects.WebView#g:method:reload"), [reloadBypassCache]("GI.WebKit2.Objects.WebView#g:method:reloadBypassCache"), [remove]("GI.Gtk.Objects.Container#g:method:remove"), [removeAccelerator]("GI.Gtk.Objects.Widget#g:method:removeAccelerator"), [removeMnemonicLabel]("GI.Gtk.Objects.Widget#g:method:removeMnemonicLabel"), [removeTickCallback]("GI.Gtk.Objects.Widget#g:method:removeTickCallback"), [renderIcon]("GI.Gtk.Objects.Widget#g:method:renderIcon"), [renderIconPixbuf]("GI.Gtk.Objects.Widget#g:method:renderIconPixbuf"), [reparent]("GI.Gtk.Objects.Widget#g:method:reparent"), [resetRcStyles]("GI.Gtk.Objects.Widget#g:method:resetRcStyles"), [resetStyle]("GI.Gtk.Objects.Widget#g:method:resetStyle"), [resizeChildren]("GI.Gtk.Objects.Container#g:method:resizeChildren"), [restoreSessionState]("GI.WebKit2.Objects.WebView#g:method:restoreSessionState"), [runAsyncJavascriptFunctionInWorld]("GI.WebKit2.Objects.WebView#g:method:runAsyncJavascriptFunctionInWorld"), [runDispose]("GI.GObject.Objects.Object#g:method:runDispose"), [runJavascript]("GI.WebKit2.Objects.WebView#g:method:runJavascript"), [runJavascriptFinish]("GI.WebKit2.Objects.WebView#g:method:runJavascriptFinish"), [runJavascriptFromGresource]("GI.WebKit2.Objects.WebView#g:method:runJavascriptFromGresource"), [runJavascriptFromGresourceFinish]("GI.WebKit2.Objects.WebView#g:method:runJavascriptFromGresourceFinish"), [runJavascriptInWorld]("GI.WebKit2.Objects.WebView#g:method:runJavascriptInWorld"), [runJavascriptInWorldFinish]("GI.WebKit2.Objects.WebView#g:method:runJavascriptInWorldFinish"), [save]("GI.WebKit2.Objects.WebView#g:method:save"), [saveFinish]("GI.WebKit2.Objects.WebView#g:method:saveFinish"), [saveToFile]("GI.WebKit2.Objects.WebView#g:method:saveToFile"), [saveToFileFinish]("GI.WebKit2.Objects.WebView#g:method:saveToFileFinish"), [sendExpose]("GI.Gtk.Objects.Widget#g:method:sendExpose"), [sendFocusChange]("GI.Gtk.Objects.Widget#g:method:sendFocusChange"), [sendMessageToPage]("GI.WebKit2.Objects.WebView#g:method:sendMessageToPage"), [sendMessageToPageFinish]("GI.WebKit2.Objects.WebView#g:method:sendMessageToPageFinish"), [shapeCombineRegion]("GI.Gtk.Objects.Widget#g:method:shapeCombineRegion"), [show]("GI.Gtk.Objects.Widget#g:method:show"), [showAll]("GI.Gtk.Objects.Widget#g:method:showAll"), [showNow]("GI.Gtk.Objects.Widget#g:method:showNow"), [sizeAllocate]("GI.Gtk.Objects.Widget#g:method:sizeAllocate"), [sizeAllocateWithBaseline]("GI.Gtk.Objects.Widget#g:method:sizeAllocateWithBaseline"), [sizeRequest]("GI.Gtk.Objects.Widget#g:method:sizeRequest"), [stealData]("GI.GObject.Objects.Object#g:method:stealData"), [stealQdata]("GI.GObject.Objects.Object#g:method:stealQdata"), [stopLoading]("GI.WebKit2.Objects.WebView#g:method:stopLoading"), [styleAttach]("GI.Gtk.Objects.Widget#g:method:styleAttach"), [styleGetProperty]("GI.Gtk.Objects.Widget#g:method:styleGetProperty"), [terminateWebProcess]("GI.WebKit2.Objects.WebView#g:method:terminateWebProcess"), [thawChildNotify]("GI.Gtk.Objects.Widget#g:method:thawChildNotify"), [thawNotify]("GI.GObject.Objects.Object#g:method:thawNotify"), [translateCoordinates]("GI.Gtk.Objects.Widget#g:method:translateCoordinates"), [triggerTooltipQuery]("GI.Gtk.Objects.Widget#g:method:triggerTooltipQuery"), [tryClose]("GI.WebKit2.Objects.WebView#g:method:tryClose"), [unmap]("GI.Gtk.Objects.Widget#g:method:unmap"), [unparent]("GI.Gtk.Objects.Widget#g:method:unparent"), [unrealize]("GI.Gtk.Objects.Widget#g:method:unrealize"), [unref]("GI.GObject.Objects.Object#g:method:unref"), [unregisterWindow]("GI.Gtk.Objects.Widget#g:method:unregisterWindow"), [unsetFocusChain]("GI.Gtk.Objects.Container#g:method:unsetFocusChain"), [unsetStateFlags]("GI.Gtk.Objects.Widget#g:method:unsetStateFlags"), [watchClosure]("GI.GObject.Objects.Object#g:method:watchClosure").
 -- 
 -- ==== Getters
--- [getAccessible]("GI.Gtk.Objects.Widget#g:method:getAccessible"), [getActionGroup]("GI.Gtk.Objects.Widget#g:method:getActionGroup"), [getAllocatedBaseline]("GI.Gtk.Objects.Widget#g:method:getAllocatedBaseline"), [getAllocatedHeight]("GI.Gtk.Objects.Widget#g:method:getAllocatedHeight"), [getAllocatedSize]("GI.Gtk.Objects.Widget#g:method:getAllocatedSize"), [getAllocatedWidth]("GI.Gtk.Objects.Widget#g:method:getAllocatedWidth"), [getAllocation]("GI.Gtk.Objects.Widget#g:method:getAllocation"), [getAncestor]("GI.Gtk.Objects.Widget#g:method:getAncestor"), [getAppPaintable]("GI.Gtk.Objects.Widget#g:method:getAppPaintable"), [getAutomationPresentationType]("GI.WebKit2.Objects.WebView#g:method:getAutomationPresentationType"), [getBackForwardList]("GI.WebKit2.Objects.WebView#g:method:getBackForwardList"), [getBackgroundColor]("GI.WebKit2.Objects.WebView#g:method:getBackgroundColor"), [getBorderWidth]("GI.Gtk.Objects.Container#g:method:getBorderWidth"), [getCameraCaptureState]("GI.WebKit2.Objects.WebView#g:method:getCameraCaptureState"), [getCanDefault]("GI.Gtk.Objects.Widget#g:method:getCanDefault"), [getCanFocus]("GI.Gtk.Objects.Widget#g:method:getCanFocus"), [getChildRequisition]("GI.Gtk.Objects.Widget#g:method:getChildRequisition"), [getChildVisible]("GI.Gtk.Objects.Widget#g:method:getChildVisible"), [getChildren]("GI.Gtk.Objects.Container#g:method:getChildren"), [getClip]("GI.Gtk.Objects.Widget#g:method:getClip"), [getClipboard]("GI.Gtk.Objects.Widget#g:method:getClipboard"), [getCompositeName]("GI.Gtk.Objects.Widget#g:method:getCompositeName"), [getContext]("GI.WebKit2.Objects.WebView#g:method:getContext"), [getCustomCharset]("GI.WebKit2.Objects.WebView#g:method:getCustomCharset"), [getData]("GI.GObject.Objects.Object#g:method:getData"), [getDefaultContentSecurityPolicy]("GI.WebKit2.Objects.WebView#g:method:getDefaultContentSecurityPolicy"), [getDeviceEnabled]("GI.Gtk.Objects.Widget#g:method:getDeviceEnabled"), [getDeviceEvents]("GI.Gtk.Objects.Widget#g:method:getDeviceEvents"), [getDirection]("GI.Gtk.Objects.Widget#g:method:getDirection"), [getDisplay]("GI.Gtk.Objects.Widget#g:method:getDisplay"), [getDisplayCaptureState]("GI.WebKit2.Objects.WebView#g:method:getDisplayCaptureState"), [getDoubleBuffered]("GI.Gtk.Objects.Widget#g:method:getDoubleBuffered"), [getEditorState]("GI.WebKit2.Objects.WebView#g:method:getEditorState"), [getEstimatedLoadProgress]("GI.WebKit2.Objects.WebView#g:method:getEstimatedLoadProgress"), [getEvents]("GI.Gtk.Objects.Widget#g:method:getEvents"), [getFavicon]("GI.WebKit2.Objects.WebView#g:method:getFavicon"), [getFindController]("GI.WebKit2.Objects.WebView#g:method:getFindController"), [getFocusChain]("GI.Gtk.Objects.Container#g:method:getFocusChain"), [getFocusChild]("GI.Gtk.Objects.Container#g:method:getFocusChild"), [getFocusHadjustment]("GI.Gtk.Objects.Container#g:method:getFocusHadjustment"), [getFocusOnClick]("GI.Gtk.Objects.Widget#g:method:getFocusOnClick"), [getFocusVadjustment]("GI.Gtk.Objects.Container#g:method:getFocusVadjustment"), [getFontMap]("GI.Gtk.Objects.Widget#g:method:getFontMap"), [getFontOptions]("GI.Gtk.Objects.Widget#g:method:getFontOptions"), [getFrameClock]("GI.Gtk.Objects.Widget#g:method:getFrameClock"), [getHalign]("GI.Gtk.Objects.Widget#g:method:getHalign"), [getHasTooltip]("GI.Gtk.Objects.Widget#g:method:getHasTooltip"), [getHasWindow]("GI.Gtk.Objects.Widget#g:method:getHasWindow"), [getHexpand]("GI.Gtk.Objects.Widget#g:method:getHexpand"), [getHexpandSet]("GI.Gtk.Objects.Widget#g:method:getHexpandSet"), [getInputMethodContext]("GI.WebKit2.Objects.WebView#g:method:getInputMethodContext"), [getInspector]("GI.WebKit2.Objects.WebView#g:method:getInspector"), [getInternalChild]("GI.Gtk.Interfaces.Buildable#g:method:getInternalChild"), [getIsMuted]("GI.WebKit2.Objects.WebView#g:method:getIsMuted"), [getIsWebProcessResponsive]("GI.WebKit2.Objects.WebView#g:method:getIsWebProcessResponsive"), [getMainResource]("GI.WebKit2.Objects.WebView#g:method:getMainResource"), [getMapped]("GI.Gtk.Objects.Widget#g:method:getMapped"), [getMarginBottom]("GI.Gtk.Objects.Widget#g:method:getMarginBottom"), [getMarginEnd]("GI.Gtk.Objects.Widget#g:method:getMarginEnd"), [getMarginLeft]("GI.Gtk.Objects.Widget#g:method:getMarginLeft"), [getMarginRight]("GI.Gtk.Objects.Widget#g:method:getMarginRight"), [getMarginStart]("GI.Gtk.Objects.Widget#g:method:getMarginStart"), [getMarginTop]("GI.Gtk.Objects.Widget#g:method:getMarginTop"), [getMicrophoneCaptureState]("GI.WebKit2.Objects.WebView#g:method:getMicrophoneCaptureState"), [getModifierMask]("GI.Gtk.Objects.Widget#g:method:getModifierMask"), [getModifierStyle]("GI.Gtk.Objects.Widget#g:method:getModifierStyle"), [getName]("GI.Gtk.Objects.Widget#g:method:getName"), [getNoShowAll]("GI.Gtk.Objects.Widget#g:method:getNoShowAll"), [getOpacity]("GI.Gtk.Objects.Widget#g:method:getOpacity"), [getPageId]("GI.WebKit2.Objects.WebView#g:method:getPageId"), [getPangoContext]("GI.Gtk.Objects.Widget#g:method:getPangoContext"), [getParent]("GI.Gtk.Objects.Widget#g:method:getParent"), [getParentWindow]("GI.Gtk.Objects.Widget#g:method:getParentWindow"), [getPath]("GI.Gtk.Objects.Widget#g:method:getPath"), [getPathForChild]("GI.Gtk.Objects.Container#g:method:getPathForChild"), [getPointer]("GI.Gtk.Objects.Widget#g:method:getPointer"), [getPreferredHeight]("GI.Gtk.Objects.Widget#g:method:getPreferredHeight"), [getPreferredHeightAndBaselineForWidth]("GI.Gtk.Objects.Widget#g:method:getPreferredHeightAndBaselineForWidth"), [getPreferredHeightForWidth]("GI.Gtk.Objects.Widget#g:method:getPreferredHeightForWidth"), [getPreferredSize]("GI.Gtk.Objects.Widget#g:method:getPreferredSize"), [getPreferredWidth]("GI.Gtk.Objects.Widget#g:method:getPreferredWidth"), [getPreferredWidthForHeight]("GI.Gtk.Objects.Widget#g:method:getPreferredWidthForHeight"), [getProperty]("GI.GObject.Objects.Object#g:method:getProperty"), [getQdata]("GI.GObject.Objects.Object#g:method:getQdata"), [getRealized]("GI.Gtk.Objects.Widget#g:method:getRealized"), [getReceivesDefault]("GI.Gtk.Objects.Widget#g:method:getReceivesDefault"), [getRequestMode]("GI.Gtk.Objects.Widget#g:method:getRequestMode"), [getRequisition]("GI.Gtk.Objects.Widget#g:method:getRequisition"), [getResizeMode]("GI.Gtk.Objects.Container#g:method:getResizeMode"), [getRootWindow]("GI.Gtk.Objects.Widget#g:method:getRootWindow"), [getScaleFactor]("GI.Gtk.Objects.Widget#g:method:getScaleFactor"), [getScreen]("GI.Gtk.Objects.Widget#g:method:getScreen"), [getSensitive]("GI.Gtk.Objects.Widget#g:method:getSensitive"), [getSessionState]("GI.WebKit2.Objects.WebView#g:method:getSessionState"), [getSettings]("GI.WebKit2.Objects.WebView#g:method:getSettings"), [getSizeRequest]("GI.Gtk.Objects.Widget#g:method:getSizeRequest"), [getSnapshot]("GI.WebKit2.Objects.WebView#g:method:getSnapshot"), [getSnapshotFinish]("GI.WebKit2.Objects.WebView#g:method:getSnapshotFinish"), [getState]("GI.Gtk.Objects.Widget#g:method:getState"), [getStateFlags]("GI.Gtk.Objects.Widget#g:method:getStateFlags"), [getStyle]("GI.Gtk.Objects.Widget#g:method:getStyle"), [getStyleContext]("GI.Gtk.Objects.Widget#g:method:getStyleContext"), [getSupportMultidevice]("GI.Gtk.Objects.Widget#g:method:getSupportMultidevice"), [getTemplateChild]("GI.Gtk.Objects.Widget#g:method:getTemplateChild"), [getThemeColor]("GI.WebKit2.Objects.WebView#g:method:getThemeColor"), [getTitle]("GI.WebKit2.Objects.WebView#g:method:getTitle"), [getTlsInfo]("GI.WebKit2.Objects.WebView#g:method:getTlsInfo"), [getTooltipMarkup]("GI.Gtk.Objects.Widget#g:method:getTooltipMarkup"), [getTooltipText]("GI.Gtk.Objects.Widget#g:method:getTooltipText"), [getTooltipWindow]("GI.Gtk.Objects.Widget#g:method:getTooltipWindow"), [getToplevel]("GI.Gtk.Objects.Widget#g:method:getToplevel"), [getUri]("GI.WebKit2.Objects.WebView#g:method:getUri"), [getUserContentManager]("GI.WebKit2.Objects.WebView#g:method:getUserContentManager"), [getValign]("GI.Gtk.Objects.Widget#g:method:getValign"), [getValignWithBaseline]("GI.Gtk.Objects.Widget#g:method:getValignWithBaseline"), [getVexpand]("GI.Gtk.Objects.Widget#g:method:getVexpand"), [getVexpandSet]("GI.Gtk.Objects.Widget#g:method:getVexpandSet"), [getVisible]("GI.Gtk.Objects.Widget#g:method:getVisible"), [getVisual]("GI.Gtk.Objects.Widget#g:method:getVisual"), [getWebExtensionMode]("GI.WebKit2.Objects.WebView#g:method:getWebExtensionMode"), [getWebsiteDataManager]("GI.WebKit2.Objects.WebView#g:method:getWebsiteDataManager"), [getWebsitePolicies]("GI.WebKit2.Objects.WebView#g:method:getWebsitePolicies"), [getWindow]("GI.Gtk.Objects.Widget#g:method:getWindow"), [getWindowProperties]("GI.WebKit2.Objects.WebView#g:method:getWindowProperties"), [getZoomLevel]("GI.WebKit2.Objects.WebView#g:method:getZoomLevel").
+-- [getAccessible]("GI.Gtk.Objects.Widget#g:method:getAccessible"), [getActionGroup]("GI.Gtk.Objects.Widget#g:method:getActionGroup"), [getAllocatedBaseline]("GI.Gtk.Objects.Widget#g:method:getAllocatedBaseline"), [getAllocatedHeight]("GI.Gtk.Objects.Widget#g:method:getAllocatedHeight"), [getAllocatedSize]("GI.Gtk.Objects.Widget#g:method:getAllocatedSize"), [getAllocatedWidth]("GI.Gtk.Objects.Widget#g:method:getAllocatedWidth"), [getAllocation]("GI.Gtk.Objects.Widget#g:method:getAllocation"), [getAncestor]("GI.Gtk.Objects.Widget#g:method:getAncestor"), [getAppPaintable]("GI.Gtk.Objects.Widget#g:method:getAppPaintable"), [getAutomationPresentationType]("GI.WebKit2.Objects.WebView#g:method:getAutomationPresentationType"), [getBackForwardList]("GI.WebKit2.Objects.WebView#g:method:getBackForwardList"), [getBackgroundColor]("GI.WebKit2.Objects.WebView#g:method:getBackgroundColor"), [getBorderWidth]("GI.Gtk.Objects.Container#g:method:getBorderWidth"), [getCameraCaptureState]("GI.WebKit2.Objects.WebView#g:method:getCameraCaptureState"), [getCanDefault]("GI.Gtk.Objects.Widget#g:method:getCanDefault"), [getCanFocus]("GI.Gtk.Objects.Widget#g:method:getCanFocus"), [getChildRequisition]("GI.Gtk.Objects.Widget#g:method:getChildRequisition"), [getChildVisible]("GI.Gtk.Objects.Widget#g:method:getChildVisible"), [getChildren]("GI.Gtk.Objects.Container#g:method:getChildren"), [getClip]("GI.Gtk.Objects.Widget#g:method:getClip"), [getClipboard]("GI.Gtk.Objects.Widget#g:method:getClipboard"), [getCompositeName]("GI.Gtk.Objects.Widget#g:method:getCompositeName"), [getContext]("GI.WebKit2.Objects.WebView#g:method:getContext"), [getCustomCharset]("GI.WebKit2.Objects.WebView#g:method:getCustomCharset"), [getData]("GI.GObject.Objects.Object#g:method:getData"), [getDefaultContentSecurityPolicy]("GI.WebKit2.Objects.WebView#g:method:getDefaultContentSecurityPolicy"), [getDeviceEnabled]("GI.Gtk.Objects.Widget#g:method:getDeviceEnabled"), [getDeviceEvents]("GI.Gtk.Objects.Widget#g:method:getDeviceEvents"), [getDirection]("GI.Gtk.Objects.Widget#g:method:getDirection"), [getDisplay]("GI.Gtk.Objects.Widget#g:method:getDisplay"), [getDisplayCaptureState]("GI.WebKit2.Objects.WebView#g:method:getDisplayCaptureState"), [getDoubleBuffered]("GI.Gtk.Objects.Widget#g:method:getDoubleBuffered"), [getEditorState]("GI.WebKit2.Objects.WebView#g:method:getEditorState"), [getEstimatedLoadProgress]("GI.WebKit2.Objects.WebView#g:method:getEstimatedLoadProgress"), [getEvents]("GI.Gtk.Objects.Widget#g:method:getEvents"), [getFavicon]("GI.WebKit2.Objects.WebView#g:method:getFavicon"), [getFindController]("GI.WebKit2.Objects.WebView#g:method:getFindController"), [getFocusChain]("GI.Gtk.Objects.Container#g:method:getFocusChain"), [getFocusChild]("GI.Gtk.Objects.Container#g:method:getFocusChild"), [getFocusHadjustment]("GI.Gtk.Objects.Container#g:method:getFocusHadjustment"), [getFocusOnClick]("GI.Gtk.Objects.Widget#g:method:getFocusOnClick"), [getFocusVadjustment]("GI.Gtk.Objects.Container#g:method:getFocusVadjustment"), [getFontMap]("GI.Gtk.Objects.Widget#g:method:getFontMap"), [getFontOptions]("GI.Gtk.Objects.Widget#g:method:getFontOptions"), [getFrameClock]("GI.Gtk.Objects.Widget#g:method:getFrameClock"), [getHalign]("GI.Gtk.Objects.Widget#g:method:getHalign"), [getHasTooltip]("GI.Gtk.Objects.Widget#g:method:getHasTooltip"), [getHasWindow]("GI.Gtk.Objects.Widget#g:method:getHasWindow"), [getHexpand]("GI.Gtk.Objects.Widget#g:method:getHexpand"), [getHexpandSet]("GI.Gtk.Objects.Widget#g:method:getHexpandSet"), [getInputMethodContext]("GI.WebKit2.Objects.WebView#g:method:getInputMethodContext"), [getInspector]("GI.WebKit2.Objects.WebView#g:method:getInspector"), [getInternalChild]("GI.Gtk.Interfaces.Buildable#g:method:getInternalChild"), [getIsMuted]("GI.WebKit2.Objects.WebView#g:method:getIsMuted"), [getIsWebProcessResponsive]("GI.WebKit2.Objects.WebView#g:method:getIsWebProcessResponsive"), [getMagnification]("GI.WebKit2.Objects.WebView#g:method:getMagnification"), [getMainResource]("GI.WebKit2.Objects.WebView#g:method:getMainResource"), [getMapped]("GI.Gtk.Objects.Widget#g:method:getMapped"), [getMarginBottom]("GI.Gtk.Objects.Widget#g:method:getMarginBottom"), [getMarginEnd]("GI.Gtk.Objects.Widget#g:method:getMarginEnd"), [getMarginLeft]("GI.Gtk.Objects.Widget#g:method:getMarginLeft"), [getMarginRight]("GI.Gtk.Objects.Widget#g:method:getMarginRight"), [getMarginStart]("GI.Gtk.Objects.Widget#g:method:getMarginStart"), [getMarginTop]("GI.Gtk.Objects.Widget#g:method:getMarginTop"), [getMicrophoneCaptureState]("GI.WebKit2.Objects.WebView#g:method:getMicrophoneCaptureState"), [getModifierMask]("GI.Gtk.Objects.Widget#g:method:getModifierMask"), [getModifierStyle]("GI.Gtk.Objects.Widget#g:method:getModifierStyle"), [getName]("GI.Gtk.Objects.Widget#g:method:getName"), [getNoShowAll]("GI.Gtk.Objects.Widget#g:method:getNoShowAll"), [getOpacity]("GI.Gtk.Objects.Widget#g:method:getOpacity"), [getPageId]("GI.WebKit2.Objects.WebView#g:method:getPageId"), [getPangoContext]("GI.Gtk.Objects.Widget#g:method:getPangoContext"), [getParent]("GI.Gtk.Objects.Widget#g:method:getParent"), [getParentWindow]("GI.Gtk.Objects.Widget#g:method:getParentWindow"), [getPath]("GI.Gtk.Objects.Widget#g:method:getPath"), [getPathForChild]("GI.Gtk.Objects.Container#g:method:getPathForChild"), [getPointer]("GI.Gtk.Objects.Widget#g:method:getPointer"), [getPreferredHeight]("GI.Gtk.Objects.Widget#g:method:getPreferredHeight"), [getPreferredHeightAndBaselineForWidth]("GI.Gtk.Objects.Widget#g:method:getPreferredHeightAndBaselineForWidth"), [getPreferredHeightForWidth]("GI.Gtk.Objects.Widget#g:method:getPreferredHeightForWidth"), [getPreferredSize]("GI.Gtk.Objects.Widget#g:method:getPreferredSize"), [getPreferredWidth]("GI.Gtk.Objects.Widget#g:method:getPreferredWidth"), [getPreferredWidthForHeight]("GI.Gtk.Objects.Widget#g:method:getPreferredWidthForHeight"), [getProperty]("GI.GObject.Objects.Object#g:method:getProperty"), [getQdata]("GI.GObject.Objects.Object#g:method:getQdata"), [getRealized]("GI.Gtk.Objects.Widget#g:method:getRealized"), [getReceivesDefault]("GI.Gtk.Objects.Widget#g:method:getReceivesDefault"), [getRequestMode]("GI.Gtk.Objects.Widget#g:method:getRequestMode"), [getRequisition]("GI.Gtk.Objects.Widget#g:method:getRequisition"), [getResizeMode]("GI.Gtk.Objects.Container#g:method:getResizeMode"), [getRootWindow]("GI.Gtk.Objects.Widget#g:method:getRootWindow"), [getScaleFactor]("GI.Gtk.Objects.Widget#g:method:getScaleFactor"), [getScreen]("GI.Gtk.Objects.Widget#g:method:getScreen"), [getSensitive]("GI.Gtk.Objects.Widget#g:method:getSensitive"), [getSessionState]("GI.WebKit2.Objects.WebView#g:method:getSessionState"), [getSettings]("GI.WebKit2.Objects.WebView#g:method:getSettings"), [getSizeRequest]("GI.Gtk.Objects.Widget#g:method:getSizeRequest"), [getSnapshot]("GI.WebKit2.Objects.WebView#g:method:getSnapshot"), [getSnapshotFinish]("GI.WebKit2.Objects.WebView#g:method:getSnapshotFinish"), [getState]("GI.Gtk.Objects.Widget#g:method:getState"), [getStateFlags]("GI.Gtk.Objects.Widget#g:method:getStateFlags"), [getStyle]("GI.Gtk.Objects.Widget#g:method:getStyle"), [getStyleContext]("GI.Gtk.Objects.Widget#g:method:getStyleContext"), [getSupportMultidevice]("GI.Gtk.Objects.Widget#g:method:getSupportMultidevice"), [getTemplateChild]("GI.Gtk.Objects.Widget#g:method:getTemplateChild"), [getThemeColor]("GI.WebKit2.Objects.WebView#g:method:getThemeColor"), [getTitle]("GI.WebKit2.Objects.WebView#g:method:getTitle"), [getTlsInfo]("GI.WebKit2.Objects.WebView#g:method:getTlsInfo"), [getTooltipMarkup]("GI.Gtk.Objects.Widget#g:method:getTooltipMarkup"), [getTooltipText]("GI.Gtk.Objects.Widget#g:method:getTooltipText"), [getTooltipWindow]("GI.Gtk.Objects.Widget#g:method:getTooltipWindow"), [getToplevel]("GI.Gtk.Objects.Widget#g:method:getToplevel"), [getUri]("GI.WebKit2.Objects.WebView#g:method:getUri"), [getUserContentManager]("GI.WebKit2.Objects.WebView#g:method:getUserContentManager"), [getValign]("GI.Gtk.Objects.Widget#g:method:getValign"), [getValignWithBaseline]("GI.Gtk.Objects.Widget#g:method:getValignWithBaseline"), [getVexpand]("GI.Gtk.Objects.Widget#g:method:getVexpand"), [getVexpandSet]("GI.Gtk.Objects.Widget#g:method:getVexpandSet"), [getVisible]("GI.Gtk.Objects.Widget#g:method:getVisible"), [getVisual]("GI.Gtk.Objects.Widget#g:method:getVisual"), [getWebExtensionMode]("GI.WebKit2.Objects.WebView#g:method:getWebExtensionMode"), [getWebsiteDataManager]("GI.WebKit2.Objects.WebView#g:method:getWebsiteDataManager"), [getWebsitePolicies]("GI.WebKit2.Objects.WebView#g:method:getWebsitePolicies"), [getWindow]("GI.Gtk.Objects.Widget#g:method:getWindow"), [getWindowProperties]("GI.WebKit2.Objects.WebView#g:method:getWindowProperties"), [getZoomLevel]("GI.WebKit2.Objects.WebView#g:method:getZoomLevel").
 -- 
 -- ==== Setters
--- [setAccelPath]("GI.Gtk.Objects.Widget#g:method:setAccelPath"), [setAllocation]("GI.Gtk.Objects.Widget#g:method:setAllocation"), [setAppPaintable]("GI.Gtk.Objects.Widget#g:method:setAppPaintable"), [setBackgroundColor]("GI.WebKit2.Objects.WebView#g:method:setBackgroundColor"), [setBorderWidth]("GI.Gtk.Objects.Container#g:method:setBorderWidth"), [setBuildableProperty]("GI.Gtk.Interfaces.Buildable#g:method:setBuildableProperty"), [setCameraCaptureState]("GI.WebKit2.Objects.WebView#g:method:setCameraCaptureState"), [setCanDefault]("GI.Gtk.Objects.Widget#g:method:setCanDefault"), [setCanFocus]("GI.Gtk.Objects.Widget#g:method:setCanFocus"), [setChildVisible]("GI.Gtk.Objects.Widget#g:method:setChildVisible"), [setClip]("GI.Gtk.Objects.Widget#g:method:setClip"), [setCompositeName]("GI.Gtk.Objects.Widget#g:method:setCompositeName"), [setCorsAllowlist]("GI.WebKit2.Objects.WebView#g:method:setCorsAllowlist"), [setCustomCharset]("GI.WebKit2.Objects.WebView#g:method:setCustomCharset"), [setData]("GI.GObject.Objects.Object#g:method:setData"), [setDataFull]("GI.GObject.Objects.Object#g:method:setDataFull"), [setDeviceEnabled]("GI.Gtk.Objects.Widget#g:method:setDeviceEnabled"), [setDeviceEvents]("GI.Gtk.Objects.Widget#g:method:setDeviceEvents"), [setDirection]("GI.Gtk.Objects.Widget#g:method:setDirection"), [setDisplayCaptureState]("GI.WebKit2.Objects.WebView#g:method:setDisplayCaptureState"), [setDoubleBuffered]("GI.Gtk.Objects.Widget#g:method:setDoubleBuffered"), [setEditable]("GI.WebKit2.Objects.WebView#g:method:setEditable"), [setEvents]("GI.Gtk.Objects.Widget#g:method:setEvents"), [setFocusChain]("GI.Gtk.Objects.Container#g:method:setFocusChain"), [setFocusChild]("GI.Gtk.Objects.Container#g:method:setFocusChild"), [setFocusHadjustment]("GI.Gtk.Objects.Container#g:method:setFocusHadjustment"), [setFocusOnClick]("GI.Gtk.Objects.Widget#g:method:setFocusOnClick"), [setFocusVadjustment]("GI.Gtk.Objects.Container#g:method:setFocusVadjustment"), [setFontMap]("GI.Gtk.Objects.Widget#g:method:setFontMap"), [setFontOptions]("GI.Gtk.Objects.Widget#g:method:setFontOptions"), [setHalign]("GI.Gtk.Objects.Widget#g:method:setHalign"), [setHasTooltip]("GI.Gtk.Objects.Widget#g:method:setHasTooltip"), [setHasWindow]("GI.Gtk.Objects.Widget#g:method:setHasWindow"), [setHexpand]("GI.Gtk.Objects.Widget#g:method:setHexpand"), [setHexpandSet]("GI.Gtk.Objects.Widget#g:method:setHexpandSet"), [setInputMethodContext]("GI.WebKit2.Objects.WebView#g:method:setInputMethodContext"), [setIsMuted]("GI.WebKit2.Objects.WebView#g:method:setIsMuted"), [setMapped]("GI.Gtk.Objects.Widget#g:method:setMapped"), [setMarginBottom]("GI.Gtk.Objects.Widget#g:method:setMarginBottom"), [setMarginEnd]("GI.Gtk.Objects.Widget#g:method:setMarginEnd"), [setMarginLeft]("GI.Gtk.Objects.Widget#g:method:setMarginLeft"), [setMarginRight]("GI.Gtk.Objects.Widget#g:method:setMarginRight"), [setMarginStart]("GI.Gtk.Objects.Widget#g:method:setMarginStart"), [setMarginTop]("GI.Gtk.Objects.Widget#g:method:setMarginTop"), [setMicrophoneCaptureState]("GI.WebKit2.Objects.WebView#g:method:setMicrophoneCaptureState"), [setName]("GI.Gtk.Objects.Widget#g:method:setName"), [setNoShowAll]("GI.Gtk.Objects.Widget#g:method:setNoShowAll"), [setOpacity]("GI.Gtk.Objects.Widget#g:method:setOpacity"), [setParent]("GI.Gtk.Objects.Widget#g:method:setParent"), [setParentWindow]("GI.Gtk.Objects.Widget#g:method:setParentWindow"), [setProperty]("GI.GObject.Objects.Object#g:method:setProperty"), [setRealized]("GI.Gtk.Objects.Widget#g:method:setRealized"), [setReallocateRedraws]("GI.Gtk.Objects.Container#g:method:setReallocateRedraws"), [setReceivesDefault]("GI.Gtk.Objects.Widget#g:method:setReceivesDefault"), [setRedrawOnAllocate]("GI.Gtk.Objects.Widget#g:method:setRedrawOnAllocate"), [setResizeMode]("GI.Gtk.Objects.Container#g:method:setResizeMode"), [setSensitive]("GI.Gtk.Objects.Widget#g:method:setSensitive"), [setSettings]("GI.WebKit2.Objects.WebView#g:method:setSettings"), [setSizeRequest]("GI.Gtk.Objects.Widget#g:method:setSizeRequest"), [setState]("GI.Gtk.Objects.Widget#g:method:setState"), [setStateFlags]("GI.Gtk.Objects.Widget#g:method:setStateFlags"), [setStyle]("GI.Gtk.Objects.Widget#g:method:setStyle"), [setSupportMultidevice]("GI.Gtk.Objects.Widget#g:method:setSupportMultidevice"), [setTooltipMarkup]("GI.Gtk.Objects.Widget#g:method:setTooltipMarkup"), [setTooltipText]("GI.Gtk.Objects.Widget#g:method:setTooltipText"), [setTooltipWindow]("GI.Gtk.Objects.Widget#g:method:setTooltipWindow"), [setValign]("GI.Gtk.Objects.Widget#g:method:setValign"), [setVexpand]("GI.Gtk.Objects.Widget#g:method:setVexpand"), [setVexpandSet]("GI.Gtk.Objects.Widget#g:method:setVexpandSet"), [setVisible]("GI.Gtk.Objects.Widget#g:method:setVisible"), [setVisual]("GI.Gtk.Objects.Widget#g:method:setVisual"), [setWindow]("GI.Gtk.Objects.Widget#g:method:setWindow"), [setZoomLevel]("GI.WebKit2.Objects.WebView#g:method:setZoomLevel").
+-- [setAccelPath]("GI.Gtk.Objects.Widget#g:method:setAccelPath"), [setAllocation]("GI.Gtk.Objects.Widget#g:method:setAllocation"), [setAppPaintable]("GI.Gtk.Objects.Widget#g:method:setAppPaintable"), [setBackgroundColor]("GI.WebKit2.Objects.WebView#g:method:setBackgroundColor"), [setBorderWidth]("GI.Gtk.Objects.Container#g:method:setBorderWidth"), [setBuildableProperty]("GI.Gtk.Interfaces.Buildable#g:method:setBuildableProperty"), [setCameraCaptureState]("GI.WebKit2.Objects.WebView#g:method:setCameraCaptureState"), [setCanDefault]("GI.Gtk.Objects.Widget#g:method:setCanDefault"), [setCanFocus]("GI.Gtk.Objects.Widget#g:method:setCanFocus"), [setChildVisible]("GI.Gtk.Objects.Widget#g:method:setChildVisible"), [setClip]("GI.Gtk.Objects.Widget#g:method:setClip"), [setCompositeName]("GI.Gtk.Objects.Widget#g:method:setCompositeName"), [setCorsAllowlist]("GI.WebKit2.Objects.WebView#g:method:setCorsAllowlist"), [setCustomCharset]("GI.WebKit2.Objects.WebView#g:method:setCustomCharset"), [setData]("GI.GObject.Objects.Object#g:method:setData"), [setDataFull]("GI.GObject.Objects.Object#g:method:setDataFull"), [setDeviceEnabled]("GI.Gtk.Objects.Widget#g:method:setDeviceEnabled"), [setDeviceEvents]("GI.Gtk.Objects.Widget#g:method:setDeviceEvents"), [setDirection]("GI.Gtk.Objects.Widget#g:method:setDirection"), [setDisplayCaptureState]("GI.WebKit2.Objects.WebView#g:method:setDisplayCaptureState"), [setDoubleBuffered]("GI.Gtk.Objects.Widget#g:method:setDoubleBuffered"), [setEditable]("GI.WebKit2.Objects.WebView#g:method:setEditable"), [setEvents]("GI.Gtk.Objects.Widget#g:method:setEvents"), [setFocusChain]("GI.Gtk.Objects.Container#g:method:setFocusChain"), [setFocusChild]("GI.Gtk.Objects.Container#g:method:setFocusChild"), [setFocusHadjustment]("GI.Gtk.Objects.Container#g:method:setFocusHadjustment"), [setFocusOnClick]("GI.Gtk.Objects.Widget#g:method:setFocusOnClick"), [setFocusVadjustment]("GI.Gtk.Objects.Container#g:method:setFocusVadjustment"), [setFontMap]("GI.Gtk.Objects.Widget#g:method:setFontMap"), [setFontOptions]("GI.Gtk.Objects.Widget#g:method:setFontOptions"), [setHalign]("GI.Gtk.Objects.Widget#g:method:setHalign"), [setHasTooltip]("GI.Gtk.Objects.Widget#g:method:setHasTooltip"), [setHasWindow]("GI.Gtk.Objects.Widget#g:method:setHasWindow"), [setHexpand]("GI.Gtk.Objects.Widget#g:method:setHexpand"), [setHexpandSet]("GI.Gtk.Objects.Widget#g:method:setHexpandSet"), [setInputMethodContext]("GI.WebKit2.Objects.WebView#g:method:setInputMethodContext"), [setIsMuted]("GI.WebKit2.Objects.WebView#g:method:setIsMuted"), [setMagnification]("GI.WebKit2.Objects.WebView#g:method:setMagnification"), [setMapped]("GI.Gtk.Objects.Widget#g:method:setMapped"), [setMarginBottom]("GI.Gtk.Objects.Widget#g:method:setMarginBottom"), [setMarginEnd]("GI.Gtk.Objects.Widget#g:method:setMarginEnd"), [setMarginLeft]("GI.Gtk.Objects.Widget#g:method:setMarginLeft"), [setMarginRight]("GI.Gtk.Objects.Widget#g:method:setMarginRight"), [setMarginStart]("GI.Gtk.Objects.Widget#g:method:setMarginStart"), [setMarginTop]("GI.Gtk.Objects.Widget#g:method:setMarginTop"), [setMicrophoneCaptureState]("GI.WebKit2.Objects.WebView#g:method:setMicrophoneCaptureState"), [setName]("GI.Gtk.Objects.Widget#g:method:setName"), [setNoShowAll]("GI.Gtk.Objects.Widget#g:method:setNoShowAll"), [setOpacity]("GI.Gtk.Objects.Widget#g:method:setOpacity"), [setParent]("GI.Gtk.Objects.Widget#g:method:setParent"), [setParentWindow]("GI.Gtk.Objects.Widget#g:method:setParentWindow"), [setProperty]("GI.GObject.Objects.Object#g:method:setProperty"), [setRealized]("GI.Gtk.Objects.Widget#g:method:setRealized"), [setReallocateRedraws]("GI.Gtk.Objects.Container#g:method:setReallocateRedraws"), [setReceivesDefault]("GI.Gtk.Objects.Widget#g:method:setReceivesDefault"), [setRedrawOnAllocate]("GI.Gtk.Objects.Widget#g:method:setRedrawOnAllocate"), [setResizeMode]("GI.Gtk.Objects.Container#g:method:setResizeMode"), [setSensitive]("GI.Gtk.Objects.Widget#g:method:setSensitive"), [setSettings]("GI.WebKit2.Objects.WebView#g:method:setSettings"), [setSizeRequest]("GI.Gtk.Objects.Widget#g:method:setSizeRequest"), [setState]("GI.Gtk.Objects.Widget#g:method:setState"), [setStateFlags]("GI.Gtk.Objects.Widget#g:method:setStateFlags"), [setStyle]("GI.Gtk.Objects.Widget#g:method:setStyle"), [setSupportMultidevice]("GI.Gtk.Objects.Widget#g:method:setSupportMultidevice"), [setTooltipMarkup]("GI.Gtk.Objects.Widget#g:method:setTooltipMarkup"), [setTooltipText]("GI.Gtk.Objects.Widget#g:method:setTooltipText"), [setTooltipWindow]("GI.Gtk.Objects.Widget#g:method:setTooltipWindow"), [setValign]("GI.Gtk.Objects.Widget#g:method:setValign"), [setVexpand]("GI.Gtk.Objects.Widget#g:method:setVexpand"), [setVexpandSet]("GI.Gtk.Objects.Widget#g:method:setVexpandSet"), [setVisible]("GI.Gtk.Objects.Widget#g:method:setVisible"), [setVisual]("GI.Gtk.Objects.Widget#g:method:setVisual"), [setWindow]("GI.Gtk.Objects.Widget#g:method:setWindow"), [setZoomLevel]("GI.WebKit2.Objects.WebView#g:method:setZoomLevel").
 
 #if defined(ENABLE_OVERLOADING)
     ResolveWebViewMethod                    ,
@@ -268,6 +268,14 @@ module GI.WebKit2.Objects.WebView
     WebViewGetIsWebProcessResponsiveMethodInfo,
 #endif
     webViewGetIsWebProcessResponsive        ,
+
+
+-- ** getMagnification #method:getMagnification#
+
+#if defined(ENABLE_OVERLOADING)
+    WebViewGetMagnificationMethodInfo       ,
+#endif
+    webViewGetMagnification                 ,
 
 
 -- ** getMainResource #method:getMainResource#
@@ -751,6 +759,14 @@ module GI.WebKit2.Objects.WebView
     webViewSetIsMuted                       ,
 
 
+-- ** setMagnification #method:setMagnification#
+
+#if defined(ENABLE_OVERLOADING)
+    WebViewSetMagnificationMethodInfo       ,
+#endif
+    webViewSetMagnification                 ,
+
+
 -- ** setMicrophoneCaptureState #method:setMicrophoneCaptureState#
 
 #if defined(ENABLE_OVERLOADING)
@@ -832,7 +848,7 @@ module GI.WebKit2.Objects.WebView
 -- 'GI.WebKit2.Enums.MediaCaptureStateNone' or 'GI.WebKit2.Enums.MediaCaptureStateMuted'.
 -- 
 -- If the capture state of the device is set to 'GI.WebKit2.Enums.MediaCaptureStateNone' the web-page
--- can still re-request the permission to the user. Permission desision caching is left to the
+-- can still re-request the permission to the user. Permission decision caching is left to the
 -- application.
 -- 
 -- /Since: 2.34/
@@ -874,7 +890,7 @@ module GI.WebKit2.Objects.WebView
 
 -- ** displayCaptureState #attr:displayCaptureState#
 -- | Capture state of the display device. Whenever the user grants a media-request sent by the web
--- page, requesting screencasting capabilities (\`navigator.mediaDevices.@/getDisplayMedia()/@ this
+-- page, requesting screencasting capabilities (@navigator.mediaDevices.getDisplayMedia()@) this
 -- property will be set to 'GI.WebKit2.Enums.MediaCaptureStateActive'.
 -- 
 -- The application can monitor this property and provide a visual indicator allowing to
@@ -882,7 +898,7 @@ module GI.WebKit2.Objects.WebView
 -- 'GI.WebKit2.Enums.MediaCaptureStateNone' or 'GI.WebKit2.Enums.MediaCaptureStateMuted'.
 -- 
 -- If the capture state of the device is set to 'GI.WebKit2.Enums.MediaCaptureStateNone' the web-page
--- can still re-request the permission to the user. Permission desision caching is left to the
+-- can still re-request the permission to the user. Permission decision caching is left to the
 -- application.
 -- 
 -- /Since: 2.34/
@@ -934,7 +950,7 @@ module GI.WebKit2.Objects.WebView
 
 
 -- ** favicon #attr:favicon#
--- | The favicon currently associated to the t'GI.WebKit2.Objects.WebView.WebView'.
+-- | The favicon currently associated with the t'GI.WebKit2.Objects.WebView.WebView'.
 -- See 'GI.WebKit2.Objects.WebView.webViewGetFavicon' for more details.
 
 #if defined(ENABLE_OVERLOADING)
@@ -977,7 +993,7 @@ module GI.WebKit2.Objects.WebView
 -- t'GI.WebKit2.Objects.WebContext.WebContext'\'s t'GI.WebKit2.Objects.WebsiteDataManager.WebsiteDataManager'. To use different settings
 -- you can get the t'GI.WebKit2.Objects.WebsiteDataManager.WebsiteDataManager' with 'GI.WebKit2.Objects.WebView.webViewGetWebsiteDataManager'
 -- and set the new ones.
--- Note that all t'GI.WebKit2.Objects.WebView.WebView's created with an ephemeral t'GI.WebKit2.Objects.WebContext.WebContext'
+-- Note that all t'GI.WebKit2.Objects.WebView.WebView' objects created with an ephemeral t'GI.WebKit2.Objects.WebContext.WebContext'
 -- will be ephemeral automatically.
 -- See also 'GI.WebKit2.Objects.WebContext.webContextNewEphemeral'.
 -- 
@@ -1047,7 +1063,7 @@ module GI.WebKit2.Objects.WebView
 
 
 -- ** isWebProcessResponsive #attr:isWebProcessResponsive#
--- | Whether the web process currently associated to the t'GI.WebKit2.Objects.WebView.WebView' is responsive.
+-- | Whether the web process currently associated with the t'GI.WebKit2.Objects.WebView.WebView' is responsive.
 -- 
 -- /Since: 2.34/
 
@@ -1057,6 +1073,27 @@ module GI.WebKit2.Objects.WebView
     getWebViewIsWebProcessResponsive        ,
 #if defined(ENABLE_OVERLOADING)
     webViewIsWebProcessResponsive           ,
+#endif
+
+
+-- ** magnification #attr:magnification#
+-- | The magnification factor of the t'GI.WebKit2.Objects.WebView.WebView' content.
+-- 
+-- The magnification factor represents the visual scaling of the page (similar
+-- to pinch-to-zoom). This is independent of the layout zoom level. Setting
+-- the magnification factor scales the rendered page visually without affecting
+-- page layout or text wrapping.
+-- 
+-- /Since: 2.54/
+
+#if defined(ENABLE_OVERLOADING)
+    WebViewMagnificationPropertyInfo        ,
+#endif
+    constructWebViewMagnification           ,
+    getWebViewMagnification                 ,
+    setWebViewMagnification                 ,
+#if defined(ENABLE_OVERLOADING)
+    webViewMagnification                    ,
 #endif
 
 
@@ -1070,7 +1107,7 @@ module GI.WebKit2.Objects.WebView
 -- 'GI.WebKit2.Enums.MediaCaptureStateNone' or 'GI.WebKit2.Enums.MediaCaptureStateMuted'.
 -- 
 -- If the capture state of the device is set to 'GI.WebKit2.Enums.MediaCaptureStateNone' the web-page
--- can still re-request the permission to the user. Permission desision caching is left to the
+-- can still re-request the permission to the user. Permission decision caching is left to the
 -- application.
 -- 
 -- /Since: 2.34/
@@ -2031,6 +2068,7 @@ type family ResolveWebViewMethod (t :: Symbol) (o :: DK.Type) :: DK.Type where
     ResolveWebViewMethod "getInternalChild" o = Gtk.Buildable.BuildableGetInternalChildMethodInfo
     ResolveWebViewMethod "getIsMuted" o = WebViewGetIsMutedMethodInfo
     ResolveWebViewMethod "getIsWebProcessResponsive" o = WebViewGetIsWebProcessResponsiveMethodInfo
+    ResolveWebViewMethod "getMagnification" o = WebViewGetMagnificationMethodInfo
     ResolveWebViewMethod "getMainResource" o = WebViewGetMainResourceMethodInfo
     ResolveWebViewMethod "getMapped" o = Gtk.Widget.WidgetGetMappedMethodInfo
     ResolveWebViewMethod "getMarginBottom" o = Gtk.Widget.WidgetGetMarginBottomMethodInfo
@@ -2138,6 +2176,7 @@ type family ResolveWebViewMethod (t :: Symbol) (o :: DK.Type) :: DK.Type where
     ResolveWebViewMethod "setHexpandSet" o = Gtk.Widget.WidgetSetHexpandSetMethodInfo
     ResolveWebViewMethod "setInputMethodContext" o = WebViewSetInputMethodContextMethodInfo
     ResolveWebViewMethod "setIsMuted" o = WebViewSetIsMutedMethodInfo
+    ResolveWebViewMethod "setMagnification" o = WebViewSetMagnificationMethodInfo
     ResolveWebViewMethod "setMapped" o = Gtk.Widget.WidgetSetMappedMethodInfo
     ResolveWebViewMethod "setMarginBottom" o = Gtk.Widget.WidgetSetMarginBottomMethodInfo
     ResolveWebViewMethod "setMarginEnd" o = Gtk.Widget.WidgetSetMarginEndMethodInfo
@@ -2292,7 +2331,7 @@ instance SignalInfo WebViewAuthenticateSignalInfo where
 
 -- signal WebView::close
 -- | Emitted when closing a t'GI.WebKit2.Objects.WebView.WebView' is requested. This occurs when a
--- call is made from JavaScript\'s \<function>window.close\<\/function> function or
+-- call is made from JavaScript\'s @window.close@ function or
 -- after trying to close the /@webView@/ with 'GI.WebKit2.Objects.WebView.webViewTryClose'.
 -- It is the owner\'s responsibility to handle this signal to hide or
 -- destroy the t'GI.WebKit2.Objects.WebView.WebView', if necessary.
@@ -2369,36 +2408,28 @@ instance SignalInfo WebViewCloseSignalInfo where
 -- | Emitted when a context menu is about to be displayed to give the application
 -- a chance to customize the proposed menu, prevent the menu from being displayed,
 -- or build its own context menu.
--- \<itemizedlist>
--- \<listitem>\<para>
---  To customize the proposed menu you can use 'GI.WebKit2.Objects.ContextMenu.contextMenuPrepend',
---  'GI.WebKit2.Objects.ContextMenu.contextMenuAppend' or 'GI.WebKit2.Objects.ContextMenu.contextMenuInsert' to add new
---  t'GI.WebKit2.Objects.ContextMenuItem.ContextMenuItem's to /@contextMenu@/, 'GI.WebKit2.Objects.ContextMenu.contextMenuMoveItem'
---  to reorder existing items, or 'GI.WebKit2.Objects.ContextMenu.contextMenuRemove' to remove an
---  existing item. The signal handler should return 'P.False', and the menu represented
---  by /@contextMenu@/ will be shown.
--- \<\/para>\<\/listitem>
--- \<listitem>\<para>
---  To prevent the menu from being displayed you can just connect to this signal
---  and return 'P.True' so that the proposed menu will not be shown.
--- \<\/para>\<\/listitem>
--- \<listitem>\<para>
---  To build your own menu, you can remove all items from the proposed menu with
---  'GI.WebKit2.Objects.ContextMenu.contextMenuRemoveAll', add your own items and return 'P.False' so
---  that the menu will be shown. You can also ignore the proposed t'GI.WebKit2.Objects.ContextMenu.ContextMenu',
---  build your own t'GI.Gtk.Objects.Menu.Menu' and return 'P.True' to prevent the proposed menu from being shown.
--- \<\/para>\<\/listitem>
--- \<listitem>\<para>
---  If you just want the default menu to be shown always, simply don\'t connect to this
---  signal because showing the proposed context menu is the default behaviour.
--- \<\/para>\<\/listitem>
--- \<\/itemizedlist>
+-- 
+-- * To customize the proposed menu you can use 'GI.WebKit2.Objects.ContextMenu.contextMenuPrepend',
+--   'GI.WebKit2.Objects.ContextMenu.contextMenuAppend' or 'GI.WebKit2.Objects.ContextMenu.contextMenuInsert' to add new
+--   t'GI.WebKit2.Objects.ContextMenuItem.ContextMenuItem' objects to /@contextMenu@/, 'GI.WebKit2.Objects.ContextMenu.contextMenuMoveItem'
+--   to reorder existing items, or 'GI.WebKit2.Objects.ContextMenu.contextMenuRemove' to remove an
+--   existing item. The signal handler should return 'P.False', and the menu represented
+--   by /@contextMenu@/ will be shown.
+-- * To prevent the menu from being displayed you can just connect to this signal
+--   and return 'P.True' so that the proposed menu will not be shown.
+-- * To build your own menu, you can remove all items from the proposed menu with
+--   'GI.WebKit2.Objects.ContextMenu.contextMenuRemoveAll', add your own items and return 'P.False' so
+--   that the menu will be shown. You can also ignore the proposed t'GI.WebKit2.Objects.ContextMenu.ContextMenu',
+--   build your own t'GI.Gtk.Objects.Menu.Menu' and return 'P.True' to prevent the proposed menu from being shown.
+-- * If you just want the default menu to be shown always, simply don\'t connect to this
+--   signal because showing the proposed context menu is the default behavior.
+-- 
 -- 
 -- The /@event@/ parameter is now deprecated. Use 'GI.WebKit2.Objects.ContextMenu.contextMenuGetEvent' to get the
 -- t'GI.Gdk.Unions.Event.Event' that triggered the context menu.
 -- 
 -- If the signal handler returns 'P.False' the context menu represented by /@contextMenu@/
--- will be shown, if it return 'P.True' the context menu will not be shown.
+-- will be shown, if it returns 'P.True' the context menu will not be shown.
 -- 
 -- The proposed t'GI.WebKit2.Objects.ContextMenu.ContextMenu' passed in /@contextMenu@/ argument is only valid
 -- during the signal emission.
@@ -2655,8 +2686,8 @@ instance SignalInfo WebViewCreateSignalInfo where
 -- signal WebView::decide-policy
 -- | This signal is emitted when WebKit is requesting the client to decide a policy
 -- decision, such as whether to navigate to a page, open a new window or whether or
--- not to download a resource. The t'GI.WebKit2.Objects.NavigationPolicyDecision.NavigationPolicyDecision' passed in the
--- /@decision@/ argument is a generic type, but should be casted to a more
+-- not to download a resource. The t'GI.WebKit2.Objects.PolicyDecision.PolicyDecision' passed in the
+-- /@decision@/ argument is a generic type, but should be cast to a more
 -- specific type when making the decision. For example:
 -- 
 -- 
@@ -2694,7 +2725,7 @@ instance SignalInfo WebViewCreateSignalInfo where
 -- If the last reference is removed on a t'GI.WebKit2.Objects.PolicyDecision.PolicyDecision' and no decision has been
 -- made explicitly, 'GI.WebKit2.Objects.PolicyDecision.policyDecisionUse' will be the default policy decision. The
 -- default signal handler will simply call 'GI.WebKit2.Objects.PolicyDecision.policyDecisionUse'. Only the first
--- policy decision chosen for a given t'GI.WebKit2.Objects.PolicyDecision.PolicyDecision' will have any affect.
+-- policy decision chosen for a given t'GI.WebKit2.Objects.PolicyDecision.PolicyDecision' will have any effect.
 type WebViewDecidePolicyCallback =
     WebKit2.PolicyDecision.PolicyDecision
     -- ^ /@decision@/: the t'GI.WebKit2.Objects.PolicyDecision.PolicyDecision'
@@ -2778,10 +2809,10 @@ instance SignalInfo WebViewDecidePolicySignalInfo where
 
 -- signal WebView::enter-fullscreen
 -- | Emitted when JavaScript code calls
--- \<function>element.webkitRequestFullScreen\<\/function>. If the
+-- @element.webkitRequestFullScreen@. If the
 -- signal is not handled the t'GI.WebKit2.Objects.WebView.WebView' will proceed to full screen
 -- its top level window. This signal can be used by client code to
--- request permission to the user prior doing the full screen
+-- request permission to the user prior to doing the full screen
 -- transition and eventually prepare the top-level window
 -- (e.g. hide some widgets that would otherwise be part of the
 -- full screen window).
@@ -3417,7 +3448,7 @@ instance SignalInfo WebViewMouseTargetChangedSignalInfo where
 -- operations.
 -- 
 -- A possible way to use this signal could be through a dialog
--- allowing the user decide what to do with the request:
+-- allowing the user to decide what to do with the request:
 -- 
 -- 
 -- === /c code/
@@ -3629,7 +3660,7 @@ instance SignalInfo WebViewPrintSignalInfo where
 -- 
 -- You can handle the query asynchronously by calling 'GI.WebKit2.Structs.PermissionStateQuery.permissionStateQueryRef' on
 -- /@query@/ and returning 'P.True'. If the last reference of /@query@/ is removed and the query has not
--- been handled, the query result will be set to @/WEBKIT_QUERY_PERMISSION_PROMPT/@.
+-- been handled, the query result will be set to 'GI.WebKit2.Enums.PermissionStatePrompt'.
 -- 
 -- /Since: 2.40/
 type WebViewQueryPermissionStateCallback =
@@ -3869,7 +3900,7 @@ instance SignalInfo WebViewResourceLoadStartedSignalInfo where
 -- signal WebView::run-as-modal
 -- | Emitted after [WebView::readyToShow]("GI.WebKit2.Objects.WebView#g:signal:readyToShow") on the newly
 -- created t'GI.WebKit2.Objects.WebView.WebView' when JavaScript code calls
--- \<function>window.showModalDialog\<\/function>. The purpose of
+-- @window.showModalDialog@. The purpose of
 -- this signal is to allow the client application to prepare the
 -- new view to behave as modal. Once the signal is emitted a new
 -- main loop will be run to block user interaction in the parent
@@ -4126,30 +4157,22 @@ instance SignalInfo WebViewRunFileChooserSignalInfo where
 #endif
 
 -- signal WebView::script-dialog
--- | Emitted when JavaScript code calls \<function>window.alert\<\/function>,
--- \<function>window.confirm\<\/function> or \<function>window.prompt\<\/function>,
--- or when \<function>onbeforeunload\<\/function> event is fired.
+-- | Emitted when JavaScript code calls @window.alert@,
+-- @window.confirm@ or @window.prompt@,
+-- or when @onbeforeunload@ event is fired.
 -- The /@dialog@/ parameter should be used to build the dialog.
 -- If the signal is not handled a different dialog will be built and shown depending
 -- on the dialog type:
--- \<itemizedlist>
--- \<listitem>\<para>
---  'GI.WebKit2.Enums.ScriptDialogTypeAlert': message dialog with a single Close button.
--- \<\/para>\<\/listitem>
--- \<listitem>\<para>
---  'GI.WebKit2.Enums.ScriptDialogTypeConfirm': message dialog with OK and Cancel buttons.
--- \<\/para>\<\/listitem>
--- \<listitem>\<para>
---  'GI.WebKit2.Enums.ScriptDialogTypePrompt': message dialog with OK and Cancel buttons and
---  a text entry with the default text.
--- \<\/para>\<\/listitem>
--- \<listitem>\<para>
---  'GI.WebKit2.Enums.ScriptDialogTypeBeforeUnloadConfirm': message dialog with Stay and Leave buttons.
--- \<\/para>\<\/listitem>
--- \<\/itemizedlist>
+-- 
+-- * 'GI.WebKit2.Enums.ScriptDialogTypeAlert': message dialog with a single Close button.
+-- * 'GI.WebKit2.Enums.ScriptDialogTypeConfirm': message dialog with OK and Cancel buttons.
+-- * 'GI.WebKit2.Enums.ScriptDialogTypePrompt': message dialog with OK and Cancel buttons and
+--   a text entry with the default text.
+-- * 'GI.WebKit2.Enums.ScriptDialogTypeBeforeUnloadConfirm': message dialog with Stay and Leave buttons.
+-- 
 -- 
 -- It is possible to handle the script dialog request asynchronously, by simply
--- caling 'GI.WebKit2.Structs.ScriptDialog.scriptDialogRef' on the /@dialog@/ argument and calling
+-- calling 'GI.WebKit2.Structs.ScriptDialog.scriptDialogRef' on the /@dialog@/ argument and calling
 -- 'GI.WebKit2.Structs.ScriptDialog.scriptDialogClose' when done.
 -- If the last reference is removed on a t'GI.WebKit2.Structs.ScriptDialog.ScriptDialog' and the dialog has not been
 -- closed, 'GI.WebKit2.Structs.ScriptDialog.scriptDialogClose' will be called.
@@ -4670,7 +4693,7 @@ instance SignalInfo WebViewWebProcessCrashedSignalInfo where
 -- /Since: 2.20/
 type WebViewWebProcessTerminatedCallback =
     WebKit2.Enums.WebProcessTerminationReason
-    -- ^ /@reason@/: the a t'GI.WebKit2.Enums.WebProcessTerminationReason'
+    -- ^ /@reason@/: a t'GI.WebKit2.Enums.WebProcessTerminationReason'
     -> IO ()
 
 type C_WebViewWebProcessTerminatedCallback =
@@ -5347,6 +5370,59 @@ instance AttrInfo WebViewIsWebProcessResponsivePropertyInfo where
         })
 #endif
 
+-- VVV Prop "magnification"
+   -- Type: TBasicType TDouble
+   -- Flags: [PropertyReadable,PropertyWritable]
+   -- Nullable: (Just False,Just False)
+
+-- | Get the value of the “@magnification@” property.
+-- When <https://github.com/haskell-gi/haskell-gi/wiki/Overloading overloading> is enabled, this is equivalent to
+-- 
+-- @
+-- 'Data.GI.Base.Attributes.get' webView #magnification
+-- @
+getWebViewMagnification :: (MonadIO m, IsWebView o) => o -> m Double
+getWebViewMagnification obj = MIO.liftIO $ B.Properties.getObjectPropertyDouble obj "magnification"
+
+-- | Set the value of the “@magnification@” property.
+-- When <https://github.com/haskell-gi/haskell-gi/wiki/Overloading overloading> is enabled, this is equivalent to
+-- 
+-- @
+-- 'Data.GI.Base.Attributes.set' webView [ #magnification 'Data.GI.Base.Attributes.:=' value ]
+-- @
+setWebViewMagnification :: (MonadIO m, IsWebView o) => o -> Double -> m ()
+setWebViewMagnification obj val = MIO.liftIO $ do
+    B.Properties.setObjectPropertyDouble obj "magnification" val
+
+-- | Construct a t'GValueConstruct' with valid value for the “@magnification@” property. This is rarely needed directly, but it is used by `Data.GI.Base.Constructible.new`.
+constructWebViewMagnification :: (IsWebView o, MIO.MonadIO m) => Double -> m (GValueConstruct o)
+constructWebViewMagnification val = MIO.liftIO $ do
+    MIO.liftIO $ B.Properties.constructObjectPropertyDouble "magnification" val
+
+#if defined(ENABLE_OVERLOADING)
+data WebViewMagnificationPropertyInfo
+instance AttrInfo WebViewMagnificationPropertyInfo where
+    type AttrAllowedOps WebViewMagnificationPropertyInfo = '[ 'AttrSet, 'AttrConstruct, 'AttrGet, 'AttrPut]
+    type AttrBaseTypeConstraint WebViewMagnificationPropertyInfo = IsWebView
+    type AttrSetTypeConstraint WebViewMagnificationPropertyInfo = (~) Double
+    type AttrTransferTypeConstraint WebViewMagnificationPropertyInfo = (~) Double
+    type AttrTransferType WebViewMagnificationPropertyInfo = Double
+    type AttrGetType WebViewMagnificationPropertyInfo = Double
+    type AttrLabel WebViewMagnificationPropertyInfo = "magnification"
+    type AttrOrigin WebViewMagnificationPropertyInfo = WebView
+    attrGet = getWebViewMagnification
+    attrSet = setWebViewMagnification
+    attrPut = setWebViewMagnification
+    attrTransfer _ v = do
+        return v
+    attrConstruct = constructWebViewMagnification
+    attrClear = undefined
+    dbgAttrInfo = P.Just (O.ResolvedSymbolInfo {
+        O.resolvedSymbolName = "GI.WebKit2.Objects.WebView.magnification"
+        , O.resolvedSymbolURL = "https://hackage.haskell.org/package/gi-webkit2-4.0.32/docs/GI-WebKit2-Objects-WebView.html#g:attr:magnification"
+        })
+#endif
+
 -- VVV Prop "microphone-capture-state"
    -- Type: TInterface (Name {namespace = "WebKit2", name = "MediaCaptureState"})
    -- Flags: [PropertyReadable,PropertyWritable]
@@ -5854,7 +5930,7 @@ instance AttrInfo WebViewZoomLevelPropertyInfo where
 #if defined(ENABLE_OVERLOADING)
 instance O.HasAttributeList WebView
 type instance O.AttributeList WebView = WebViewAttributeList
-type WebViewAttributeList = ('[ '("appPaintable", Gtk.Widget.WidgetAppPaintablePropertyInfo), '("automationPresentationType", WebViewAutomationPresentationTypePropertyInfo), '("borderWidth", Gtk.Container.ContainerBorderWidthPropertyInfo), '("cameraCaptureState", WebViewCameraCaptureStatePropertyInfo), '("canDefault", Gtk.Widget.WidgetCanDefaultPropertyInfo), '("canFocus", Gtk.Widget.WidgetCanFocusPropertyInfo), '("child", Gtk.Container.ContainerChildPropertyInfo), '("compositeChild", Gtk.Widget.WidgetCompositeChildPropertyInfo), '("defaultContentSecurityPolicy", WebViewDefaultContentSecurityPolicyPropertyInfo), '("displayCaptureState", WebViewDisplayCaptureStatePropertyInfo), '("doubleBuffered", Gtk.Widget.WidgetDoubleBufferedPropertyInfo), '("editable", WebViewEditablePropertyInfo), '("estimatedLoadProgress", WebViewEstimatedLoadProgressPropertyInfo), '("events", Gtk.Widget.WidgetEventsPropertyInfo), '("expand", Gtk.Widget.WidgetExpandPropertyInfo), '("favicon", WebViewFaviconPropertyInfo), '("focusOnClick", Gtk.Widget.WidgetFocusOnClickPropertyInfo), '("halign", Gtk.Widget.WidgetHalignPropertyInfo), '("hasDefault", Gtk.Widget.WidgetHasDefaultPropertyInfo), '("hasFocus", Gtk.Widget.WidgetHasFocusPropertyInfo), '("hasTooltip", Gtk.Widget.WidgetHasTooltipPropertyInfo), '("heightRequest", Gtk.Widget.WidgetHeightRequestPropertyInfo), '("hexpand", Gtk.Widget.WidgetHexpandPropertyInfo), '("hexpandSet", Gtk.Widget.WidgetHexpandSetPropertyInfo), '("isControlledByAutomation", WebViewIsControlledByAutomationPropertyInfo), '("isEphemeral", WebViewIsEphemeralPropertyInfo), '("isFocus", Gtk.Widget.WidgetIsFocusPropertyInfo), '("isImmersiveModeEnabled", WebViewIsImmersiveModeEnabledPropertyInfo), '("isLoading", WebViewIsLoadingPropertyInfo), '("isMuted", WebViewIsMutedPropertyInfo), '("isPlayingAudio", WebViewIsPlayingAudioPropertyInfo), '("isWebProcessResponsive", WebViewIsWebProcessResponsivePropertyInfo), '("margin", Gtk.Widget.WidgetMarginPropertyInfo), '("marginBottom", Gtk.Widget.WidgetMarginBottomPropertyInfo), '("marginEnd", Gtk.Widget.WidgetMarginEndPropertyInfo), '("marginLeft", Gtk.Widget.WidgetMarginLeftPropertyInfo), '("marginRight", Gtk.Widget.WidgetMarginRightPropertyInfo), '("marginStart", Gtk.Widget.WidgetMarginStartPropertyInfo), '("marginTop", Gtk.Widget.WidgetMarginTopPropertyInfo), '("microphoneCaptureState", WebViewMicrophoneCaptureStatePropertyInfo), '("name", Gtk.Widget.WidgetNamePropertyInfo), '("noShowAll", Gtk.Widget.WidgetNoShowAllPropertyInfo), '("opacity", Gtk.Widget.WidgetOpacityPropertyInfo), '("pageId", WebViewPageIdPropertyInfo), '("parent", Gtk.Widget.WidgetParentPropertyInfo), '("receivesDefault", Gtk.Widget.WidgetReceivesDefaultPropertyInfo), '("relatedView", WebViewRelatedViewPropertyInfo), '("resizeMode", Gtk.Container.ContainerResizeModePropertyInfo), '("scaleFactor", Gtk.Widget.WidgetScaleFactorPropertyInfo), '("sensitive", Gtk.Widget.WidgetSensitivePropertyInfo), '("settings", WebViewSettingsPropertyInfo), '("style", Gtk.Widget.WidgetStylePropertyInfo), '("themeColor", WebViewThemeColorPropertyInfo), '("title", WebViewTitlePropertyInfo), '("tooltipMarkup", Gtk.Widget.WidgetTooltipMarkupPropertyInfo), '("tooltipText", Gtk.Widget.WidgetTooltipTextPropertyInfo), '("uri", WebViewUriPropertyInfo), '("userContentManager", WebViewUserContentManagerPropertyInfo), '("valign", Gtk.Widget.WidgetValignPropertyInfo), '("vexpand", Gtk.Widget.WidgetVexpandPropertyInfo), '("vexpandSet", Gtk.Widget.WidgetVexpandSetPropertyInfo), '("visible", Gtk.Widget.WidgetVisiblePropertyInfo), '("webContext", WebViewWebContextPropertyInfo), '("webExtensionMode", WebViewWebExtensionModePropertyInfo), '("websitePolicies", WebViewWebsitePoliciesPropertyInfo), '("widthRequest", Gtk.Widget.WidgetWidthRequestPropertyInfo), '("window", Gtk.Widget.WidgetWindowPropertyInfo), '("zoomLevel", WebViewZoomLevelPropertyInfo)] :: [(Symbol, DK.Type)])
+type WebViewAttributeList = ('[ '("appPaintable", Gtk.Widget.WidgetAppPaintablePropertyInfo), '("automationPresentationType", WebViewAutomationPresentationTypePropertyInfo), '("borderWidth", Gtk.Container.ContainerBorderWidthPropertyInfo), '("cameraCaptureState", WebViewCameraCaptureStatePropertyInfo), '("canDefault", Gtk.Widget.WidgetCanDefaultPropertyInfo), '("canFocus", Gtk.Widget.WidgetCanFocusPropertyInfo), '("child", Gtk.Container.ContainerChildPropertyInfo), '("compositeChild", Gtk.Widget.WidgetCompositeChildPropertyInfo), '("defaultContentSecurityPolicy", WebViewDefaultContentSecurityPolicyPropertyInfo), '("displayCaptureState", WebViewDisplayCaptureStatePropertyInfo), '("doubleBuffered", Gtk.Widget.WidgetDoubleBufferedPropertyInfo), '("editable", WebViewEditablePropertyInfo), '("estimatedLoadProgress", WebViewEstimatedLoadProgressPropertyInfo), '("events", Gtk.Widget.WidgetEventsPropertyInfo), '("expand", Gtk.Widget.WidgetExpandPropertyInfo), '("favicon", WebViewFaviconPropertyInfo), '("focusOnClick", Gtk.Widget.WidgetFocusOnClickPropertyInfo), '("halign", Gtk.Widget.WidgetHalignPropertyInfo), '("hasDefault", Gtk.Widget.WidgetHasDefaultPropertyInfo), '("hasFocus", Gtk.Widget.WidgetHasFocusPropertyInfo), '("hasTooltip", Gtk.Widget.WidgetHasTooltipPropertyInfo), '("heightRequest", Gtk.Widget.WidgetHeightRequestPropertyInfo), '("hexpand", Gtk.Widget.WidgetHexpandPropertyInfo), '("hexpandSet", Gtk.Widget.WidgetHexpandSetPropertyInfo), '("isControlledByAutomation", WebViewIsControlledByAutomationPropertyInfo), '("isEphemeral", WebViewIsEphemeralPropertyInfo), '("isFocus", Gtk.Widget.WidgetIsFocusPropertyInfo), '("isImmersiveModeEnabled", WebViewIsImmersiveModeEnabledPropertyInfo), '("isLoading", WebViewIsLoadingPropertyInfo), '("isMuted", WebViewIsMutedPropertyInfo), '("isPlayingAudio", WebViewIsPlayingAudioPropertyInfo), '("isWebProcessResponsive", WebViewIsWebProcessResponsivePropertyInfo), '("magnification", WebViewMagnificationPropertyInfo), '("margin", Gtk.Widget.WidgetMarginPropertyInfo), '("marginBottom", Gtk.Widget.WidgetMarginBottomPropertyInfo), '("marginEnd", Gtk.Widget.WidgetMarginEndPropertyInfo), '("marginLeft", Gtk.Widget.WidgetMarginLeftPropertyInfo), '("marginRight", Gtk.Widget.WidgetMarginRightPropertyInfo), '("marginStart", Gtk.Widget.WidgetMarginStartPropertyInfo), '("marginTop", Gtk.Widget.WidgetMarginTopPropertyInfo), '("microphoneCaptureState", WebViewMicrophoneCaptureStatePropertyInfo), '("name", Gtk.Widget.WidgetNamePropertyInfo), '("noShowAll", Gtk.Widget.WidgetNoShowAllPropertyInfo), '("opacity", Gtk.Widget.WidgetOpacityPropertyInfo), '("pageId", WebViewPageIdPropertyInfo), '("parent", Gtk.Widget.WidgetParentPropertyInfo), '("receivesDefault", Gtk.Widget.WidgetReceivesDefaultPropertyInfo), '("relatedView", WebViewRelatedViewPropertyInfo), '("resizeMode", Gtk.Container.ContainerResizeModePropertyInfo), '("scaleFactor", Gtk.Widget.WidgetScaleFactorPropertyInfo), '("sensitive", Gtk.Widget.WidgetSensitivePropertyInfo), '("settings", WebViewSettingsPropertyInfo), '("style", Gtk.Widget.WidgetStylePropertyInfo), '("themeColor", WebViewThemeColorPropertyInfo), '("title", WebViewTitlePropertyInfo), '("tooltipMarkup", Gtk.Widget.WidgetTooltipMarkupPropertyInfo), '("tooltipText", Gtk.Widget.WidgetTooltipTextPropertyInfo), '("uri", WebViewUriPropertyInfo), '("userContentManager", WebViewUserContentManagerPropertyInfo), '("valign", Gtk.Widget.WidgetValignPropertyInfo), '("vexpand", Gtk.Widget.WidgetVexpandPropertyInfo), '("vexpandSet", Gtk.Widget.WidgetVexpandSetPropertyInfo), '("visible", Gtk.Widget.WidgetVisiblePropertyInfo), '("webContext", WebViewWebContextPropertyInfo), '("webExtensionMode", WebViewWebExtensionModePropertyInfo), '("websitePolicies", WebViewWebsitePoliciesPropertyInfo), '("widthRequest", Gtk.Widget.WidgetWidthRequestPropertyInfo), '("window", Gtk.Widget.WidgetWindowPropertyInfo), '("zoomLevel", WebViewZoomLevelPropertyInfo)] :: [(Symbol, DK.Type)])
 #endif
 
 #if defined(ENABLE_OVERLOADING)
@@ -5884,6 +5960,9 @@ webViewIsMuted = AttrLabelProxy
 
 webViewIsWebProcessResponsive :: AttrLabelProxy "isWebProcessResponsive"
 webViewIsWebProcessResponsive = AttrLabelProxy
+
+webViewMagnification :: AttrLabelProxy "magnification"
+webViewMagnification = AttrLabelProxy
 
 webViewMicrophoneCaptureState :: AttrLabelProxy "microphoneCaptureState"
 webViewMicrophoneCaptureState = AttrLabelProxy
@@ -5944,9 +6023,9 @@ foreign import ccall "webkit_web_view_new" webkit_web_view_new ::
 -- 
 -- Creates a new t'GI.WebKit2.Objects.WebView.WebView' with the default t'GI.WebKit2.Objects.WebContext.WebContext' and
 -- no t'GI.WebKit2.Objects.UserContentManager.UserContentManager' associated with it.
--- See also 'GI.WebKit2.Objects.WebView.webViewNewWithContext',
--- 'GI.WebKit2.Objects.WebView.webViewNewWithUserContentManager', and
--- 'GI.WebKit2.Objects.WebView.webViewNewWithSettings'.
+-- Set the [WebView:webContext]("GI.WebKit2.Objects.WebView#g:attr:webContext"), [WebView:userContentManager]("GI.WebKit2.Objects.WebView#g:attr:userContentManager")
+-- or [WebView:settings]("GI.WebKit2.Objects.WebView#g:attr:settings") properties at construction to use a different
+-- configuration.
 webViewNew ::
     (B.CallStack.HasCallStack, MonadIO m) =>
     m WebView
@@ -6370,7 +6449,7 @@ foreign import ccall "webkit_web_view_call_async_javascript_function" webkit_web
 -- | Asynchronously call /@body@/ with /@arguments@/ in the script world with name /@worldName@/ of the main frame current context in /@webView@/.
 -- The /@arguments@/ values must be one of the following types, or contain only the following GVariant types: number, string and dictionary.
 -- The result of the operation can be a Promise that will be properly passed to the callback.
--- If /@worldName@/ is 'P.Nothing', the default world is used. Any value that is not 'P.Nothing' is a distin ct world.
+-- If /@worldName@/ is 'P.Nothing', the default world is used. Any value that is not 'P.Nothing' is a distinct world.
 -- The /@sourceUri@/ will be shown in exceptions and doesn\'t affect the behavior of the script.
 -- When not provided, the document URL is used.
 -- 
@@ -6402,13 +6481,12 @@ foreign import ccall "webkit_web_view_call_async_javascript_function" webkit_web
 -- >    }
 -- >
 -- >    if (jsc_value_is_number (value)) {
--- >        gint32        int_value = jsc_value_to_string (value);
+-- >        gint32        int_value = jsc_value_to_int32 (value);
 -- >        JSCException *exception = jsc_context_get_exception (jsc_value_get_context (value));
 -- >        if (exception)
 -- >            g_warning ("Error running javascript: %s", jsc_exception_get_message (exception));
 -- >        else
 -- >            g_print ("Script result: %d\n", int_value);
--- >        g_free (str_value);
 -- >    } else {
 -- >        g_warning ("Error running javascript: unexpected return value");
 -- >    }
@@ -6423,7 +6501,7 @@ foreign import ccall "webkit_web_view_call_async_javascript_function" webkit_web
 -- >    g_variant_dict_insert (&dict, "count", "u", 42);
 -- >    GVariant *args = g_variant_dict_end (&dict);
 -- >    const gchar *body = "return new Promise((resolve) => { resolve(count); });";
--- >    webkit_web_view_call_async_javascript_function (web_view, body, -1, arguments, NULL, NULL, NULL, web_view_javascript_finished, NULL);
+-- >    webkit_web_view_call_async_javascript_function (web_view, body, -1, args, NULL, NULL, NULL, web_view_javascript_finished, NULL);
 -- >}
 -- 
 -- 
@@ -7920,7 +7998,7 @@ webViewGetCameraCaptureState ::
     a
     -- ^ /@webView@/: a t'GI.WebKit2.Objects.WebView.WebView'
     -> m WebKit2.Enums.MediaCaptureState
-    -- ^ __Returns:__ The t'GI.WebKit2.Enums.MediaCaptureState' of the camera device. If t'GI.WebKit2.Objects.Settings.Settings':@/enable-mediastream/@
+    -- ^ __Returns:__ The t'GI.WebKit2.Enums.MediaCaptureState' of the camera device. If [Settings:enableMediaStream]("GI.WebKit2.Objects.Settings#g:attr:enableMediaStream")
     -- is 'P.False', this method will return 'GI.WebKit2.Enums.MediaCaptureStateNone'.
 webViewGetCameraCaptureState webView = liftIO $ do
     webView' <- unsafeManagedPtrCastPtr webView
@@ -8162,7 +8240,7 @@ webViewGetDisplayCaptureState ::
     a
     -- ^ /@webView@/: a t'GI.WebKit2.Objects.WebView.WebView'
     -> m WebKit2.Enums.MediaCaptureState
-    -- ^ __Returns:__ The t'GI.WebKit2.Enums.MediaCaptureState' of the display device. If t'GI.WebKit2.Objects.Settings.Settings':@/enable-mediastream/@
+    -- ^ __Returns:__ The t'GI.WebKit2.Enums.MediaCaptureState' of the display device. If [Settings:enableMediaStream]("GI.WebKit2.Objects.Settings#g:attr:enableMediaStream")
     -- is 'P.False', this method will return 'GI.WebKit2.Enums.MediaCaptureStateNone'.
 webViewGetDisplayCaptureState webView = liftIO $ do
     webView' <- unsafeManagedPtrCastPtr webView
@@ -8284,7 +8362,7 @@ webViewGetEstimatedLoadProgress ::
     a
     -- ^ /@webView@/: a t'GI.WebKit2.Objects.WebView.WebView'
     -> m Double
-    -- ^ __Returns:__ an estimate of the of the percent complete for a document
+    -- ^ __Returns:__ an estimate of the percent complete for a document
     --     load as a range from 0.0 to 1.0.
 webViewGetEstimatedLoadProgress webView = liftIO $ do
     webView' <- unsafeManagedPtrCastPtr webView
@@ -8336,9 +8414,9 @@ foreign import ccall "webkit_web_view_get_favicon" webkit_web_view_get_favicon :
     Ptr WebView ->                          -- web_view : TInterface (Name {namespace = "WebKit2", name = "WebView"})
     IO (Ptr Cairo.Surface.Surface)
 
--- | Returns favicon currently associated to /@webView@/.
+-- | Returns favicon currently associated with /@webView@/.
 -- 
--- Returns favicon currently associated to /@webView@/, if any. You can
+-- Returns favicon currently associated with /@webView@/, if any. You can
 -- connect to notify[favicon](#g:signal:favicon) signal of /@webView@/ to be notified when
 -- the favicon is available.
 webViewGetFavicon ::
@@ -8411,7 +8489,7 @@ webViewGetFindController ::
     a
     -- ^ /@webView@/: the t'GI.WebKit2.Objects.WebView.WebView'
     -> m WebKit2.FindController.FindController
-    -- ^ __Returns:__ the t'GI.WebKit2.Objects.FindController.FindController' associated to
+    -- ^ __Returns:__ the t'GI.WebKit2.Objects.FindController.FindController' associated with
     -- this particular t'GI.WebKit2.Objects.WebView.WebView'.
 webViewGetFindController webView = liftIO $ do
     webView' <- unsafeManagedPtrCastPtr webView
@@ -8530,7 +8608,7 @@ foreign import ccall "webkit_web_view_get_inspector" webkit_web_view_get_inspect
     Ptr WebView ->                          -- web_view : TInterface (Name {namespace = "WebKit2", name = "WebView"})
     IO (Ptr WebKit2.WebInspector.WebInspector)
 
--- | Get the t'GI.WebKit2.Objects.WebInspector.WebInspector' associated to /@webView@/
+-- | Get the t'GI.WebKit2.Objects.WebInspector.WebInspector' associated with /@webView@/
 webViewGetInspector ::
     (B.CallStack.HasCallStack, MonadIO m, IsWebView a) =>
     a
@@ -8596,7 +8674,7 @@ webViewGetIsMuted ::
     a
     -- ^ /@webView@/: a t'GI.WebKit2.Objects.WebView.WebView'
     -> m Bool
-    -- ^ __Returns:__ 'P.True' if /@webView@/ audio is muted or 'P.False' is audio is not muted.
+    -- ^ __Returns:__ 'P.True' if /@webView@/ audio is muted or 'P.False' if audio is not muted.
 webViewGetIsMuted webView = liftIO $ do
     webView' <- unsafeManagedPtrCastPtr webView
     result <- webkit_web_view_get_is_muted webView'
@@ -8672,6 +8750,69 @@ instance O.OverloadedMethodInfo WebViewGetIsWebProcessResponsiveMethodInfo a whe
     overloadedMethodInfo = P.Just (O.ResolvedSymbolInfo {
         O.resolvedSymbolName = "GI.WebKit2.Objects.WebView.webViewGetIsWebProcessResponsive",
         O.resolvedSymbolURL = "https://hackage.haskell.org/package/gi-webkit2-4.0.32/docs/GI-WebKit2-Objects-WebView.html#v:webViewGetIsWebProcessResponsive"
+        })
+
+
+#endif
+
+-- method WebView::get_magnification
+-- method type : OrdinaryMethod
+-- Args: [ Arg
+--           { argCName = "web_view"
+--           , argType =
+--               TInterface Name { namespace = "WebKit2" , name = "WebView" }
+--           , argCType = Just "WebKitWebView*"
+--           , direction = DirectionIn
+--           , mayBeNull = False
+--           , argDoc =
+--               Documentation
+--                 { rawDocText = Just "a #WebKitWebView" , sinceVersion = Nothing }
+--           , argScope = ScopeTypeInvalid
+--           , argClosure = -1
+--           , argDestroy = -1
+--           , argCallerAllocates = False
+--           , argCallbackUserData = False
+--           , transfer = TransferNothing
+--           }
+--       ]
+-- Lengths: []
+-- returnType: Just (TBasicType TDouble)
+-- throws : False
+-- Skip return : False
+
+foreign import ccall "webkit_web_view_get_magnification" webkit_web_view_get_magnification :: 
+    Ptr WebView ->                          -- web_view : TInterface (Name {namespace = "WebKit2", name = "WebView"})
+    IO CDouble
+
+-- | Get the magnification factor of /@webView@/.
+-- 
+-- The magnification factor represents the visual scaling of the page (similar
+-- to pinch-to-zoom). This is independent of the layout zoom level (which is
+-- obtained with 'GI.WebKit2.Objects.WebView.webViewGetZoomLevel').
+-- 
+-- /Since: 2.54/
+webViewGetMagnification ::
+    (B.CallStack.HasCallStack, MonadIO m, IsWebView a) =>
+    a
+    -- ^ /@webView@/: a t'GI.WebKit2.Objects.WebView.WebView'
+    -> m Double
+    -- ^ __Returns:__ the current magnification factor of /@webView@/
+webViewGetMagnification webView = liftIO $ do
+    webView' <- unsafeManagedPtrCastPtr webView
+    result <- webkit_web_view_get_magnification webView'
+    let result' = realToFrac result
+    touchManagedPtr webView
+    return result'
+
+#if defined(ENABLE_OVERLOADING)
+data WebViewGetMagnificationMethodInfo
+instance (signature ~ (m Double), MonadIO m, IsWebView a) => O.OverloadedMethod WebViewGetMagnificationMethodInfo a signature where
+    overloadedMethod = webViewGetMagnification
+
+instance O.OverloadedMethodInfo WebViewGetMagnificationMethodInfo a where
+    overloadedMethodInfo = P.Just (O.ResolvedSymbolInfo {
+        O.resolvedSymbolName = "GI.WebKit2.Objects.WebView.webViewGetMagnification",
+        O.resolvedSymbolURL = "https://hackage.haskell.org/package/gi-webkit2-4.0.32/docs/GI-WebKit2-Objects-WebView.html#v:webViewGetMagnification"
         })
 
 
@@ -8777,7 +8918,7 @@ webViewGetMicrophoneCaptureState ::
     a
     -- ^ /@webView@/: a t'GI.WebKit2.Objects.WebView.WebView'
     -> m WebKit2.Enums.MediaCaptureState
-    -- ^ __Returns:__ The t'GI.WebKit2.Enums.MediaCaptureState' of the microphone device. If t'GI.WebKit2.Objects.Settings.Settings':@/enable-mediastream/@
+    -- ^ __Returns:__ The t'GI.WebKit2.Enums.MediaCaptureState' of the microphone device. If [Settings:enableMediaStream]("GI.WebKit2.Objects.Settings#g:attr:enableMediaStream")
     -- is 'P.False', this method will return 'GI.WebKit2.Enums.MediaCaptureStateNone'.
 webViewGetMicrophoneCaptureState webView = liftIO $ do
     webView' <- unsafeManagedPtrCastPtr webView
@@ -8960,9 +9101,9 @@ foreign import ccall "webkit_web_view_get_settings" webkit_web_view_get_settings
 -- the desired preferences, and then replace the existing /@webView@/
 -- settings with 'GI.WebKit2.Objects.WebView.webViewSetSettings' or get the existing
 -- /@webView@/ settings and update it directly. t'GI.WebKit2.Objects.Settings.Settings' objects
--- can be shared by multiple t'GI.WebKit2.Objects.WebView.WebView's, so modifying
+-- can be shared by multiple t'GI.WebKit2.Objects.WebView.WebView' objects, so modifying
 -- the settings of a t'GI.WebKit2.Objects.WebView.WebView' would affect other
--- t'GI.WebKit2.Objects.WebView.WebView's using the same t'GI.WebKit2.Objects.Settings.Settings'.
+-- t'GI.WebKit2.Objects.WebView.WebView' objects using the same t'GI.WebKit2.Objects.Settings.Settings'.
 webViewGetSettings ::
     (B.CallStack.HasCallStack, MonadIO m, IsWebView a) =>
     a
@@ -9560,50 +9701,37 @@ foreign import ccall "webkit_web_view_get_uri" webkit_web_view_get_uri ::
 -- The active URI might change during
 -- a load operation:
 -- 
--- \<orderedlist>
--- \<listitem>\<para>
---   When nothing has been loaded yet on /@webView@/ the active URI is 'P.Nothing'.
--- \<\/para>\<\/listitem>
--- \<listitem>\<para>
---   When a new load operation starts the active URI is the requested URI:
---   \<itemizedlist>
---   \<listitem>\<para>
---     If the load operation was started by 'GI.WebKit2.Objects.WebView.webViewLoadUri',
---     the requested URI is the given one.
---   \<\/para>\<\/listitem>
---   \<listitem>\<para>
---     If the load operation was started by 'GI.WebKit2.Objects.WebView.webViewLoadHtml',
---     the requested URI is \"about:blank\".
---   \<\/para>\<\/listitem>
---   \<listitem>\<para>
---     If the load operation was started by 'GI.WebKit2.Objects.WebView.webViewLoadAlternateHtml',
---     the requested URI is content URI provided.
---   \<\/para>\<\/listitem>
---   \<listitem>\<para>
---     If the load operation was started by 'GI.WebKit2.Objects.WebView.webViewGoBack' or
---     'GI.WebKit2.Objects.WebView.webViewGoForward', the requested URI is the original URI
---     of the previous\/next item in the t'GI.WebKit2.Objects.BackForwardList.BackForwardList' of /@webView@/.
---   \<\/para>\<\/listitem>
---   \<listitem>\<para>
---     If the load operation was started by
---     'GI.WebKit2.Objects.WebView.webViewGoToBackForwardListItem', the requested URI
---     is the opriginal URI of the given t'GI.WebKit2.Objects.BackForwardListItem.BackForwardListItem'.
---   \<\/para>\<\/listitem>
---   \<\/itemizedlist>
--- \<\/para>\<\/listitem>
--- \<listitem>\<para>
---   If there is a server redirection during the load operation,
---   the active URI is the redirected URI. When the signal
---   [WebView::loadChanged]("GI.WebKit2.Objects.WebView#g:signal:loadChanged") is emitted with 'GI.WebKit2.Enums.LoadEventRedirected'
---   event, the active URI is already updated to the redirected URI.
--- \<\/para>\<\/listitem>
--- \<listitem>\<para>
---   When the signal [WebView::loadChanged]("GI.WebKit2.Objects.WebView#g:signal:loadChanged") is emitted
---   with 'GI.WebKit2.Enums.LoadEventCommitted' event, the active URI is the final
---   one and it will not change unless a new load operation is started
---   or a navigation action within the same page is performed.
--- \<\/para>\<\/listitem>
--- \<\/orderedlist>
+-- 1. When nothing has been loaded yet on /@webView@/ the active URI is 'P.Nothing'.
+-- 
+-- 2. When a new load operation starts the active URI is the requested URI:
+-- 
+-- 
+-- 
+-- * If the load operation was started by 'GI.WebKit2.Objects.WebView.webViewLoadUri',
+--   the requested URI is the given one.
+-- * If the load operation was started by 'GI.WebKit2.Objects.WebView.webViewLoadHtml',
+--   the requested URI is \"about:blank\".
+-- * If the load operation was started by 'GI.WebKit2.Objects.WebView.webViewLoadAlternateHtml',
+--   the requested URI is content URI provided.
+-- * If the load operation was started by 'GI.WebKit2.Objects.WebView.webViewGoBack' or
+--   'GI.WebKit2.Objects.WebView.webViewGoForward', the requested URI is the original URI
+--   of the previous\/next item in the t'GI.WebKit2.Objects.BackForwardList.BackForwardList' of /@webView@/.
+-- * If the load operation was started by
+--   'GI.WebKit2.Objects.WebView.webViewGoToBackForwardListItem', the requested URI
+--   is the original URI of the given t'GI.WebKit2.Objects.BackForwardListItem.BackForwardListItem'.
+-- 
+-- 
+-- 3. If there is a server redirection during the load operation,
+--    the active URI is the redirected URI. When the signal
+--    [WebView::loadChanged]("GI.WebKit2.Objects.WebView#g:signal:loadChanged") is emitted with 'GI.WebKit2.Enums.LoadEventRedirected'
+--    event, the active URI is already updated to the redirected URI.
+-- 
+-- 4. When the signal [WebView::loadChanged]("GI.WebKit2.Objects.WebView#g:signal:loadChanged") is emitted
+--    with 'GI.WebKit2.Enums.LoadEventCommitted' event, the active URI is the final
+--    one and it will not change unless a new load operation is started
+--    or a navigation action within the same page is performed.
+-- 
+-- 
 -- 
 -- You can monitor the active URI by connecting to the notify[uri](#g:signal:uri)
 -- signal of /@webView@/.
@@ -9668,7 +9796,7 @@ foreign import ccall "webkit_web_view_get_user_content_manager" webkit_web_view_
     Ptr WebView ->                          -- web_view : TInterface (Name {namespace = "WebKit2", name = "WebView"})
     IO (Ptr WebKit2.UserContentManager.UserContentManager)
 
--- | Gets the user content manager associated to /@webView@/.
+-- | Gets the user content manager associated with /@webView@/.
 -- 
 -- /Since: 2.6/
 webViewGetUserContentManager ::
@@ -9791,7 +9919,7 @@ foreign import ccall "webkit_web_view_get_website_data_manager" webkit_web_view_
     Ptr WebView ->                          -- web_view : TInterface (Name {namespace = "WebKit2", name = "WebView"})
     IO (Ptr WebKit2.WebsiteDataManager.WebsiteDataManager)
 
--- | Get the t'GI.WebKit2.Objects.WebsiteDataManager.WebsiteDataManager' associated to /@webView@/.
+-- | Get the t'GI.WebKit2.Objects.WebsiteDataManager.WebsiteDataManager' associated with /@webView@/.
 -- 
 -- If /@webView@/ is not ephemeral,
 -- the returned t'GI.WebKit2.Objects.WebsiteDataManager.WebsiteDataManager' will be the same as the t'GI.WebKit2.Objects.WebsiteDataManager.WebsiteDataManager'
@@ -9987,7 +10115,7 @@ foreign import ccall "webkit_web_view_get_zoom_level" webkit_web_view_get_zoom_l
     Ptr WebView ->                          -- web_view : TInterface (Name {namespace = "WebKit2", name = "WebView"})
     IO CDouble
 
--- | Set the zoom level of /@webView@/.
+-- | Get the zoom level of /@webView@/.
 -- 
 -- Get the zoom level of /@webView@/, i.e. the factor by which the
 -- view contents are scaled with respect to their original size.
@@ -10249,7 +10377,7 @@ foreign import ccall "webkit_web_view_is_controlled_by_automation" webkit_web_vi
 -- | Get whether a t'GI.WebKit2.Objects.WebView.WebView' was created with [WebView:isControlledByAutomation]("GI.WebKit2.Objects.WebView#g:attr:isControlledByAutomation")
 -- property enabled.
 -- 
--- Only t'GI.WebKit2.Objects.WebView.WebView's controlled by automation can be used in an
+-- Only t'GI.WebKit2.Objects.WebView.WebView' objects controlled by automation can be used in an
 -- automation session.
 -- 
 -- /Since: 2.18/
@@ -10377,7 +10505,7 @@ foreign import ccall "webkit_web_view_is_ephemeral" webkit_web_view_is_ephemeral
 -- To create an ephemeral t'GI.WebKit2.Objects.WebView.WebView' you need to
 -- use @/g_object_new()/@ and pass is-ephemeral property with 'P.True' value. See
 -- [WebView:isEphemeral]("GI.WebKit2.Objects.WebView#g:attr:isEphemeral") for more details.
--- If /@webView@/ was created with a ephemeral [WebView:relatedView]("GI.WebKit2.Objects.WebView#g:attr:relatedView") or an
+-- If /@webView@/ was created with an ephemeral [WebView:relatedView]("GI.WebKit2.Objects.WebView#g:attr:relatedView") or an
 -- ephemeral [WebView:webContext]("GI.WebKit2.Objects.WebView#g:attr:webContext") it will also be ephemeral.
 -- 
 -- /Since: 2.16/
@@ -10505,7 +10633,7 @@ foreign import ccall "webkit_web_view_is_loading" webkit_web_view_is_loading ::
 -- 
 -- You can monitor when a t'GI.WebKit2.Objects.WebView.WebView' is loading a page by connecting to
 -- notify[isLoading](#g:signal:isLoading) signal of /@webView@/. This is useful when you are
--- interesting in knowing when the view is loading something but not in the
+-- interested in knowing when the view is loading something but not in the
 -- details about the status of the load operation, for example to start a spinner
 -- when the view is loading a page and stop it when it finishes.
 webViewIsLoading ::
@@ -11265,7 +11393,7 @@ instance O.OverloadedMethodInfo WebViewLoadRequestMethodInfo a where
 --           , mayBeNull = False
 --           , argDoc =
 --               Documentation
---                 { rawDocText = Just "an URI string" , sinceVersion = Nothing }
+--                 { rawDocText = Just "a URI string" , sinceVersion = Nothing }
 --           , argScope = ScopeTypeInvalid
 --           , argClosure = -1
 --           , argDestroy = -1
@@ -11293,7 +11421,7 @@ webViewLoadUri ::
     a
     -- ^ /@webView@/: a t'GI.WebKit2.Objects.WebView.WebView'
     -> T.Text
-    -- ^ /@uri@/: an URI string
+    -- ^ /@uri@/: a URI string
     -> m ()
 webViewLoadUri webView uri = liftIO $ do
     webView' <- unsafeManagedPtrCastPtr webView
@@ -11685,7 +11813,7 @@ foreign import ccall "webkit_web_view_run_async_javascript_function_in_world" we
 -- >    JSCValue               *value;
 -- >    GError                 *error = NULL;
 -- >
--- >    js_result = webkit_web_view_run_javascript_finish (WEBKIT_WEB_VIEW (object), result, &error);
+-- >    js_result = webkit_web_view_run_javascript_in_world_finish (WEBKIT_WEB_VIEW (object), result, &error);
 -- >    if (!js_result) {
 -- >        g_warning ("Error running javascript: %s", error->message);
 -- >        g_error_free (error);
@@ -11694,13 +11822,12 @@ foreign import ccall "webkit_web_view_run_async_javascript_function_in_world" we
 -- >
 -- >    value = webkit_javascript_result_get_js_value (js_result);
 -- >    if (jsc_value_is_number (value)) {
--- >        gint32        int_value = jsc_value_to_string (value);
+-- >        gint32        int_value = jsc_value_to_int32 (value);
 -- >        JSCException *exception = jsc_context_get_exception (jsc_value_get_context (value));
 -- >        if (exception)
 -- >            g_warning ("Error running javascript: %s", jsc_exception_get_message (exception));
 -- >        else
 -- >            g_print ("Script result: %d\n", int_value);
--- >        g_free (str_value);
 -- >    } else {
 -- >        g_warning ("Error running javascript: unexpected return value");
 -- >    }
@@ -11715,7 +11842,7 @@ foreign import ccall "webkit_web_view_run_async_javascript_function_in_world" we
 -- >    g_variant_dict_insert (&dict, "count", "u", 42);
 -- >    GVariant *args = g_variant_dict_end (&dict);
 -- >    const gchar *body = "return new Promise((resolve) => { resolve(count); });";
--- >    webkit_web_view_run_async_javascript_function_in_world (web_view, body, arguments, NULL, NULL, web_view_javascript_finished, NULL);
+-- >    webkit_web_view_run_async_javascript_function_in_world (web_view, body, args, NULL, NULL, web_view_javascript_finished, NULL);
 -- >}
 -- 
 -- 
@@ -12298,7 +12425,7 @@ webViewRunJavascriptFromGresourceFinish ::
     -> b
     -- ^ /@result@/: a t'GI.Gio.Interfaces.AsyncResult.AsyncResult'
     -> m WebKit2.JavascriptResult.JavascriptResult
-    -- ^ __Returns:__ a t'GI.WebKit2.Structs.JavascriptResult.JavascriptResult' with the result of the last executed statement in /@script@/
+    -- ^ __Returns:__ a t'GI.WebKit2.Structs.JavascriptResult.JavascriptResult' with the result of the last executed statement in the script
     --    or 'P.Nothing' in case of error /(Can throw 'Data.GI.Base.GError.GError')/
 webViewRunJavascriptFromGresourceFinish webView result_ = liftIO $ do
     webView' <- unsafeManagedPtrCastPtr webView
@@ -12564,7 +12691,7 @@ foreign import ccall "webkit_web_view_run_javascript_in_world_finish" webkit_web
     Ptr (Ptr GError) ->                     -- error
     IO (Ptr WebKit2.JavascriptResult.JavascriptResult)
 
-{-# DEPRECATED webViewRunJavascriptInWorldFinish ["(Since version 2.40)","Use 'GI.WebKit2.Objects.WebView.webViewCallAsyncJavascriptFunctionFinish' instead."] #-}
+{-# DEPRECATED webViewRunJavascriptInWorldFinish ["(Since version 2.40)","Use 'GI.WebKit2.Objects.WebView.webViewEvaluateJavascriptFinish' instead."] #-}
 -- | Finish an asynchronous operation started with 'GI.WebKit2.Objects.WebView.webViewRunJavascriptInWorld'.
 -- 
 -- /Since: 2.22/
@@ -12718,7 +12845,7 @@ foreign import ccall "webkit_web_view_save" webkit_web_view_save ::
 
 -- | Asynchronously save the current web page.
 -- 
--- Asynchronously save the current web page associated to the
+-- Asynchronously save the current web page associated with the
 -- t'GI.WebKit2.Objects.WebView.WebView' into a self-contained format using the mode
 -- specified in /@saveMode@/.
 -- 
@@ -12990,7 +13117,7 @@ foreign import ccall "webkit_web_view_save_to_file" webkit_web_view_save_to_file
 
 -- | Asynchronously save the current web page.
 -- 
--- Asynchronously save the current web page associated to the
+-- Asynchronously save the current web page associated with the
 -- t'GI.WebKit2.Objects.WebView.WebView' into a self-contained format using the mode
 -- specified in /@saveMode@/ and writing it to /@file@/.
 -- 
@@ -13198,7 +13325,7 @@ instance O.OverloadedMethodInfo WebViewSaveToFileFinishMethodInfo a where
 --               Documentation
 --                 { rawDocText =
 --                     Just
---                       "(nullable): A #GAsyncReadyCallback to call when the request is satisfied or %NULL"
+--                       "A #GAsyncReadyCallback to call when the request is satisfied or %NULL"
 --                 , sinceVersion = Nothing
 --                 }
 --           , argScope = ScopeTypeAsync
@@ -13257,7 +13384,7 @@ webViewSendMessageToPage ::
     -> Maybe (c)
     -- ^ /@cancellable@/: a t'GI.Gio.Objects.Cancellable.Cancellable' or 'P.Nothing' to ignore
     -> Maybe (Gio.Callbacks.AsyncReadyCallback)
-    -- ^ /@callback@/: (nullable): A t'GI.Gio.Callbacks.AsyncReadyCallback' to call when the request is satisfied or 'P.Nothing'
+    -- ^ /@callback@/: A t'GI.Gio.Callbacks.AsyncReadyCallback' to call when the request is satisfied or 'P.Nothing'
     -> m ()
 webViewSendMessageToPage webView message cancellable callback = liftIO $ do
     webView' <- unsafeManagedPtrCastPtr webView
@@ -13435,8 +13562,8 @@ foreign import ccall "webkit_web_view_set_background_color" webkit_web_view_set_
 -- the actual contents are rendered. Note that if the web page loaded in /@webView@/
 -- specifies a background color, it will take precedence over the /@rgba@/ color.
 -- By default the /@webView@/ background color is opaque white.
--- Note that the parent window must have a RGBA visual and
--- [Widget:appPaintable]("GI.Gtk.Objects.Widget#g:attr:appPaintable") property set to 'P.True' for backgrounds colors to work.
+-- Note that the parent window must have an RGBA visual and
+-- [Widget:appPaintable]("GI.Gtk.Objects.Widget#g:attr:appPaintable") property set to 'P.True' for background colors to work.
 -- 
 -- 
 -- === /c code/
@@ -13540,7 +13667,7 @@ foreign import ccall "webkit_web_view_set_camera_capture_state" webkit_web_view_
 
 -- | Set the camera capture state of a t'GI.WebKit2.Objects.WebView.WebView'.
 -- 
--- If t'GI.WebKit2.Objects.Settings.Settings':@/enable-mediastream/@ is 'P.False', this method will have no visible effect. Once the
+-- If [Settings:enableMediaStream]("GI.WebKit2.Objects.Settings#g:attr:enableMediaStream") is 'P.False', this method will have no visible effect. Once the
 -- state of the device has been set to 'GI.WebKit2.Enums.MediaCaptureStateNone' it cannot be changed
 -- anymore. The page can however request capture again using the mediaDevices API.
 -- 
@@ -13812,7 +13939,7 @@ foreign import ccall "webkit_web_view_set_display_capture_state" webkit_web_view
 
 -- | Set the display capture state of a t'GI.WebKit2.Objects.WebView.WebView'.
 -- 
--- If t'GI.WebKit2.Objects.Settings.Settings':@/enable-mediastream/@ is 'P.False', this method will have no visible effect. Once the
+-- If [Settings:enableMediaStream]("GI.WebKit2.Objects.Settings#g:attr:enableMediaStream") is 'P.False', this method will have no visible effect. Once the
 -- state of the device has been set to 'GI.WebKit2.Enums.MediaCaptureStateNone' it cannot be changed
 -- anymore. The page can however request capture again using the mediaDevices API.
 -- 
@@ -13900,7 +14027,7 @@ foreign import ccall "webkit_web_view_set_editable" webkit_web_view_set_editable
 -- CONTENTEDITABLE attribute has been set on the element or one of its parent
 -- elements. By default a t'GI.WebKit2.Objects.WebView.WebView' is not editable.
 -- 
--- Normally, a HTML document is not editable unless the elements within the
+-- Normally, an HTML document is not editable unless the elements within the
 -- document are editable. This function provides a way to make the contents
 -- of a t'GI.WebKit2.Objects.WebView.WebView' editable without altering the document or DOM structure.
 -- 
@@ -14100,6 +14227,91 @@ instance O.OverloadedMethodInfo WebViewSetIsMutedMethodInfo a where
 
 #endif
 
+-- method WebView::set_magnification
+-- method type : OrdinaryMethod
+-- Args: [ Arg
+--           { argCName = "web_view"
+--           , argType =
+--               TInterface Name { namespace = "WebKit2" , name = "WebView" }
+--           , argCType = Just "WebKitWebView*"
+--           , direction = DirectionIn
+--           , mayBeNull = False
+--           , argDoc =
+--               Documentation
+--                 { rawDocText = Just "a #WebKitWebView" , sinceVersion = Nothing }
+--           , argScope = ScopeTypeInvalid
+--           , argClosure = -1
+--           , argDestroy = -1
+--           , argCallerAllocates = False
+--           , argCallbackUserData = False
+--           , transfer = TransferNothing
+--           }
+--       , Arg
+--           { argCName = "magnification"
+--           , argType = TBasicType TDouble
+--           , argCType = Just "gdouble"
+--           , direction = DirectionIn
+--           , mayBeNull = False
+--           , argDoc =
+--               Documentation
+--                 { rawDocText = Just "the magnification factor"
+--                 , sinceVersion = Nothing
+--                 }
+--           , argScope = ScopeTypeInvalid
+--           , argClosure = -1
+--           , argDestroy = -1
+--           , argCallerAllocates = False
+--           , argCallbackUserData = False
+--           , transfer = TransferNothing
+--           }
+--       ]
+-- Lengths: []
+-- returnType: Nothing
+-- throws : False
+-- Skip return : False
+
+foreign import ccall "webkit_web_view_set_magnification" webkit_web_view_set_magnification :: 
+    Ptr WebView ->                          -- web_view : TInterface (Name {namespace = "WebKit2", name = "WebView"})
+    CDouble ->                              -- magnification : TBasicType TDouble
+    IO ()
+
+-- | Set the magnification factor of /@webView@/.
+-- 
+-- The magnification factor represents the visual scaling of the page (similar
+-- to pinch-to-zoom). This is independent of the layout zoom level (which is
+-- set with 'GI.WebKit2.Objects.WebView.webViewSetZoomLevel'). Setting the magnification factor
+-- scales the rendered page visually around the center of the view without
+-- affecting page layout or text wrapping.
+-- 
+-- /Since: 2.54/
+webViewSetMagnification ::
+    (B.CallStack.HasCallStack, MonadIO m, IsWebView a) =>
+    a
+    -- ^ /@webView@/: a t'GI.WebKit2.Objects.WebView.WebView'
+    -> Double
+    -- ^ /@magnification@/: the magnification factor
+    -> m ()
+webViewSetMagnification webView magnification = liftIO $ do
+    webView' <- unsafeManagedPtrCastPtr webView
+    let magnification' = realToFrac magnification
+    webkit_web_view_set_magnification webView' magnification'
+    touchManagedPtr webView
+    return ()
+
+#if defined(ENABLE_OVERLOADING)
+data WebViewSetMagnificationMethodInfo
+instance (signature ~ (Double -> m ()), MonadIO m, IsWebView a) => O.OverloadedMethod WebViewSetMagnificationMethodInfo a signature where
+    overloadedMethod = webViewSetMagnification
+
+instance O.OverloadedMethodInfo WebViewSetMagnificationMethodInfo a where
+    overloadedMethodInfo = P.Just (O.ResolvedSymbolInfo {
+        O.resolvedSymbolName = "GI.WebKit2.Objects.WebView.webViewSetMagnification",
+        O.resolvedSymbolURL = "https://hackage.haskell.org/package/gi-webkit2-4.0.32/docs/GI-WebKit2-Objects-WebView.html#v:webViewSetMagnification"
+        })
+
+
+#endif
+
 -- method WebView::set_microphone_capture_state
 -- method type : OrdinaryMethod
 -- Args: [ Arg
@@ -14152,7 +14364,7 @@ foreign import ccall "webkit_web_view_set_microphone_capture_state" webkit_web_v
 
 -- | Set the microphone capture state of a t'GI.WebKit2.Objects.WebView.WebView'.
 -- 
--- If t'GI.WebKit2.Objects.Settings.Settings':@/enable-mediastream/@ is 'P.False', this method will have no visible effect. Once the
+-- If [Settings:enableMediaStream]("GI.WebKit2.Objects.Settings#g:attr:enableMediaStream") is 'P.False', this method will have no visible effect. Once the
 -- state of the device has been set to 'GI.WebKit2.Enums.MediaCaptureStateNone' it cannot be changed
 -- anymore. The page can however request capture again using the mediaDevices API.
 -- 
@@ -14238,7 +14450,7 @@ foreign import ccall "webkit_web_view_set_settings" webkit_web_view_set_settings
 -- existing t'GI.WebKit2.Objects.Settings.Settings' of /@webView@/ will be replaced by
 -- /@settings@/. New settings are applied immediately on /@webView@/.
 -- The same t'GI.WebKit2.Objects.Settings.Settings' object can be shared
--- by multiple t'GI.WebKit2.Objects.WebView.WebView's.
+-- by multiple t'GI.WebKit2.Objects.WebView.WebView' objects.
 webViewSetSettings ::
     (B.CallStack.HasCallStack, MonadIO m, IsWebView a, WebKit2.Settings.IsSettings b) =>
     a
@@ -14435,7 +14647,7 @@ foreign import ccall "webkit_web_view_terminate_web_process" webkit_web_view_ter
     Ptr WebView ->                          -- web_view : TInterface (Name {namespace = "WebKit2", name = "WebView"})
     IO ()
 
--- | Terminates the web process associated to /@webView@/.
+-- | Terminates the web process associated with /@webView@/.
 -- 
 -- When the web process gets terminated
 -- using this method, the [WebView::webProcessTerminated]("GI.WebKit2.Objects.WebView#g:signal:webProcessTerminated") signal is emitted with

@@ -50,6 +50,7 @@
  *             omnibox?: boolean,
  *             palette?: boolean,
  *             marks?: boolean,
+ *             markGutter?: boolean,
  *             flags?: boolean,
  *             actionHints?: boolean,
  *             flagHelp?: string,
@@ -1521,6 +1522,12 @@
 .tv-table tbody tr.tv-flagged td:first-child{
   box-shadow:inset 3px 0 0 var(--tv-flag);
 }
+.tv-mark-edge .tv-table tbody tr.tv-marked td:first-child{
+  box-shadow:inset 3px 0 0 var(--tv-accent);
+}
+.tv-mark-edge .tv-table tbody tr.tv-marked.tv-flagged td:first-child{
+  box-shadow:inset 3px 0 0 var(--tv-accent),inset 6px 0 0 var(--tv-flag);
+}
 /* A PRODUCER'S OWN ROW SAYS SO IN THREE CHANNELS, hue being none of them on its
    own: the ACCENT EDGE down its left, the DASHED RULE fencing it off the rows it
    stands among, and GHOST INK -- muted and italic -- over the cells it was
@@ -1571,16 +1578,16 @@
   color:var(--tv-muted);
   user-select:none;
 }
-.tv-marking .tv-table td.tv-box{
+.tv-mark-gutter .tv-table td.tv-box{
   cursor:pointer;
 }
-.tv-marking .tv-table td.tv-box::before{
+.tv-mark-gutter .tv-table td.tv-box::before{
   content:"[ ]";
 }
-.tv-marking .tv-table tbody tr.tv-marked td.tv-box{
+.tv-mark-gutter .tv-table tbody tr.tv-marked td.tv-box{
   color:var(--tv-fg);
 }
-.tv-marking .tv-table tbody tr.tv-marked td.tv-box::before{
+.tv-mark-gutter .tv-table tbody tr.tv-marked td.tv-box::before{
   content:"[X]";
 }
 /* The selection is the row, and it crossfades in place — no overlay to keep in
@@ -1616,6 +1623,15 @@
 .tv-table tbody td.tv-cell-sel{
   box-shadow:inset 0 0 0 1px var(--tv-point);
   background:transparent;
+}
+.tv-mark-edge .tv-table tbody tr.tv-marked td:first-child.tv-cell-sel{
+  box-shadow:inset 0 0 0 1px var(--tv-point),inset 3px 0 0 var(--tv-accent);
+}
+.tv-mark-edge .tv-table tbody tr.tv-flagged td:first-child.tv-cell-sel{
+  box-shadow:inset 0 0 0 1px var(--tv-point),inset 3px 0 0 var(--tv-flag);
+}
+.tv-mark-edge .tv-table tbody tr.tv-marked.tv-flagged td:first-child.tv-cell-sel{
+  box-shadow:inset 0 0 0 1px var(--tv-point),inset 3px 0 0 var(--tv-accent),inset 6px 0 0 var(--tv-flag);
 }
 /* WHAT A LINK LOOKS LIKE, spelled once for the two places one is drawn: the
    anchor a cell's own Org markup produces, and the whole title cell of a row a
@@ -1776,6 +1792,7 @@
     const summoned = dock !== "none" && !inline;
     const omnibox = o.omnibox === true || composer || inline;
     const marks = o.marks === true;
+    const markGutter = marks && o.markGutter === true;
     const flags = o.flags === undefined ? marks : o.flags === true;
     const actionHints = o.actionHints !== false;   // absent means the legend shows
     const flagHelp = typeof o.flagHelp === "string" && o.flagHelp.trim()
@@ -1800,7 +1817,7 @@
      */
     const onRefused = typeof o.onRefused === "function" ? o.onRefused : null;
     let pinned = !!o.pinned;
-    const chrome = marks ? 1 : 0;
+    const chrome = markGutter ? 1 : 0;
     const pageSize = Math.max(0, Math.trunc(Number(o.pageSize) || 0));
     let page = 0;
     let continuous = false;
@@ -1954,6 +1971,8 @@
 
     const root = document.createElement("div");
     root.className = classAttr([["tv-root", true], ["tv-marking", marks],
+                                ["tv-mark-gutter", markGutter],
+                                ["tv-mark-edge", marks && !markGutter],
                                 ["tv-calm", calm], ["tv-omni", omnibox && !palette],
                                 ["tv-pal", palette], ["tv-inline", inline],
                                 ["tv-dock", dock === "strip"],
@@ -3148,7 +3167,11 @@
       return at < 0 ? null : at;
     }
 
-    const onBox = (target) => marks && !!target.closest("td.tv-box");
+    const onBox = (target) => markGutter && !!target.closest("td.tv-box");
+    const onMarkEdge = (event, tr) => {
+      const x = event.clientX - tr.getBoundingClientRect().left;
+      return marks && !markGutter && x >= 0 && x <= 6;
+    };
 
 
     scroll.addEventListener("click", (e) => {
@@ -3165,7 +3188,7 @@
       if (th) { sortPromote(String(th.dataset.key)); return; }
       const tr = /** @type {HTMLElement|null} */ (t.closest("tr[data-id]"));
       if (!tr) return;
-      if (onBox(t)) {
+      if (onBox(t) || onMarkEdge(e, tr)) {
         if (tr.dataset.id !== undefined) markSet.toggle(tr.dataset.id);
         return;
       }

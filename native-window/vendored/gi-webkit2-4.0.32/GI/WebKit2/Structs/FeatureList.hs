@@ -13,7 +13,7 @@
 -- 
 -- === /c code/
 -- >g_autoptr(WebKitFeatureList) list = webkit_settings_get_experimental_features();
--- >for (gsize i = 0; i < webkit_feature_list_get_length(list): i++) {
+-- >for (gsize i = 0; i < webkit_feature_list_get_length(list); i++) {
 -- >    WebKitFeature *feature = webkit_feature_list_get(list, i);
 -- >    // Do something with "feature".
 -- >}
@@ -42,7 +42,7 @@ module GI.WebKit2.Structs.FeatureList
 -- 
 --  === __Click to display all available methods, including inherited ones__
 -- ==== Methods
--- [get]("GI.WebKit2.Structs.FeatureList#g:method:get"), [ref]("GI.WebKit2.Structs.FeatureList#g:method:ref"), [unref]("GI.WebKit2.Structs.FeatureList#g:method:unref").
+-- [find]("GI.WebKit2.Structs.FeatureList#g:method:find"), [get]("GI.WebKit2.Structs.FeatureList#g:method:get"), [ref]("GI.WebKit2.Structs.FeatureList#g:method:ref"), [unref]("GI.WebKit2.Structs.FeatureList#g:method:unref").
 -- 
 -- ==== Getters
 -- [getLength]("GI.WebKit2.Structs.FeatureList#g:method:getLength").
@@ -53,6 +53,14 @@ module GI.WebKit2.Structs.FeatureList
 #if defined(ENABLE_OVERLOADING)
     ResolveFeatureListMethod                ,
 #endif
+
+-- ** find #method:find#
+
+#if defined(ENABLE_OVERLOADING)
+    FeatureListFindMethodInfo               ,
+#endif
+    featureListFind                         ,
+
 
 -- ** get #method:get#
 
@@ -170,6 +178,93 @@ type instance O.AttributeList FeatureList = FeatureListAttributeList
 type FeatureListAttributeList = ('[ ] :: [(Symbol, DK.Type)])
 #endif
 
+-- method FeatureList::find
+-- method type : OrdinaryMethod
+-- Args: [ Arg
+--           { argCName = "feature_list"
+--           , argType =
+--               TInterface Name { namespace = "WebKit2" , name = "FeatureList" }
+--           , argCType = Just "WebKitFeatureList*"
+--           , direction = DirectionIn
+--           , mayBeNull = False
+--           , argDoc =
+--               Documentation
+--                 { rawDocText = Just "a #WebKitFeatureList"
+--                 , sinceVersion = Nothing
+--                 }
+--           , argScope = ScopeTypeInvalid
+--           , argClosure = -1
+--           , argDestroy = -1
+--           , argCallerAllocates = False
+--           , argCallbackUserData = False
+--           , transfer = TransferNothing
+--           }
+--       , Arg
+--           { argCName = "identifier"
+--           , argType = TBasicType TUTF8
+--           , argCType = Just "const gchar*"
+--           , direction = DirectionIn
+--           , mayBeNull = False
+--           , argDoc =
+--               Documentation
+--                 { rawDocText = Just "a #WebKitFeature identifier"
+--                 , sinceVersion = Nothing
+--                 }
+--           , argScope = ScopeTypeInvalid
+--           , argClosure = -1
+--           , argDestroy = -1
+--           , argCallerAllocates = False
+--           , argCallbackUserData = False
+--           , transfer = TransferNothing
+--           }
+--       ]
+-- Lengths: []
+-- returnType: Just (TInterface Name { namespace = "WebKit2" , name = "Feature" })
+-- throws : False
+-- Skip return : False
+
+foreign import ccall "webkit_feature_list_find" webkit_feature_list_find :: 
+    Ptr FeatureList ->                      -- feature_list : TInterface (Name {namespace = "WebKit2", name = "FeatureList"})
+    CString ->                              -- identifier : TBasicType TUTF8
+    IO (Ptr WebKit2.Feature.Feature)
+
+-- | Finds a feature given its identifier.
+-- 
+-- /Since: 2.54/
+featureListFind ::
+    (B.CallStack.HasCallStack, MonadIO m) =>
+    FeatureList
+    -- ^ /@featureList@/: a t'GI.WebKit2.Structs.FeatureList.FeatureList'
+    -> T.Text
+    -- ^ /@identifier@/: a t'GI.WebKit2.Structs.Feature.Feature' identifier
+    -> m (Maybe WebKit2.Feature.Feature)
+    -- ^ __Returns:__ The feature with the given
+    --     /@identifier@/, or 'P.Nothing' if it cannot be found.
+featureListFind featureList identifier = liftIO $ do
+    featureList' <- unsafeManagedPtrGetPtr featureList
+    identifier' <- textToCString identifier
+    result <- webkit_feature_list_find featureList' identifier'
+    maybeResult <- convertIfNonNull result $ \result' -> do
+        result'' <- (newBoxed WebKit2.Feature.Feature) result'
+        return result''
+    touchManagedPtr featureList
+    freeMem identifier'
+    return maybeResult
+
+#if defined(ENABLE_OVERLOADING)
+data FeatureListFindMethodInfo
+instance (signature ~ (T.Text -> m (Maybe WebKit2.Feature.Feature)), MonadIO m) => O.OverloadedMethod FeatureListFindMethodInfo FeatureList signature where
+    overloadedMethod = featureListFind
+
+instance O.OverloadedMethodInfo FeatureListFindMethodInfo FeatureList where
+    overloadedMethodInfo = P.Just (O.ResolvedSymbolInfo {
+        O.resolvedSymbolName = "GI.WebKit2.Structs.FeatureList.featureListFind",
+        O.resolvedSymbolURL = "https://hackage.haskell.org/package/gi-webkit2-4.0.32/docs/GI-WebKit2-Structs-FeatureList.html#v:featureListFind"
+        })
+
+
+#endif
+
 -- method FeatureList::get
 -- method type : OrdinaryMethod
 -- Args: [ Arg
@@ -285,14 +380,14 @@ foreign import ccall "webkit_feature_list_get_length" webkit_feature_list_get_le
     IO FCT.CSize
 
 -- | Gets the number of elements in the feature list.
+-- 
+-- /Since: 2.42/
 featureListGetLength ::
     (B.CallStack.HasCallStack, MonadIO m) =>
     FeatureList
     -- ^ /@featureList@/: a t'GI.WebKit2.Structs.FeatureList.FeatureList'
     -> m FCT.CSize
     -- ^ __Returns:__ number of elements.
-    -- 
-    -- Since 2.42
 featureListGetLength featureList = liftIO $ do
     featureList' <- unsafeManagedPtrGetPtr featureList
     result <- webkit_feature_list_get_length featureList'
@@ -411,7 +506,7 @@ foreign import ccall "webkit_feature_list_unref" webkit_feature_list_unref ::
 
 -- | Atomically releases a reference on the given /@featureList@/.
 -- 
--- If the reference was the last, the resources associated to the
+-- If the reference was the last, the resources associated with the
 -- /@featureList@/ are freed. This function is MT-safe and may be called
 -- from any thread.
 -- 
@@ -443,6 +538,7 @@ instance O.OverloadedMethodInfo FeatureListUnrefMethodInfo FeatureList where
 
 #if defined(ENABLE_OVERLOADING)
 type family ResolveFeatureListMethod (t :: Symbol) (o :: DK.Type) :: DK.Type where
+    ResolveFeatureListMethod "find" o = FeatureListFindMethodInfo
     ResolveFeatureListMethod "get" o = FeatureListGetMethodInfo
     ResolveFeatureListMethod "ref" o = FeatureListRefMethodInfo
     ResolveFeatureListMethod "unref" o = FeatureListUnrefMethodInfo

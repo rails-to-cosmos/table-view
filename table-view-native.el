@@ -2,8 +2,8 @@
 
 ;; Author: Dmitry Akatov <dmitry.akatov@protonmail.com>
 ;; URL: https://github.com/rails-to-cosmos/table-view
-;; Version: 0.8.0
-;; Package-Requires: ((emacs "28.1") (table-view "0.7.0"))
+;; Version: 0.10.1
+;; Package-Requires: ((emacs "28.1") (table-view "0.10.1"))
 ;; SPDX-License-Identifier: MIT
 
 ;;; Commentary:

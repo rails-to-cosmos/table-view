@@ -42,6 +42,9 @@ instance B.Types.TypedObject FeatureList where
 instance B.Types.GBoxed FeatureList
 instance B.GValue.IsGValue (Maybe FeatureList) where
 #if defined(ENABLE_OVERLOADING)
+data FeatureListFindMethodInfo
+#endif
+#if defined(ENABLE_OVERLOADING)
 data FeatureListGetMethodInfo
 #endif
 #if defined(ENABLE_OVERLOADING)

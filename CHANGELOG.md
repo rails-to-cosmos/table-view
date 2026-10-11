@@ -6,6 +6,12 @@ the rails-to-cosmos ELPA archive publishes date-stamped snapshots.
 ## Unreleased
 
 ### Added
+- **Gutterless row marks in the browser renderer.** `marks: true` now draws a
+  quiet accent edge without adding a checkbox column; marked and flagged rows
+  retain both edges together, and the first six pixels remain a pointer target.
+  Consumers that need the legacy checkbox column opt into `markGutter: true`.
+- **WebKitGTK 2.54.1 native-window bindings.** The committed JavaScriptCore and
+  WebKit bindings now match the current 4.1 typelibs used by the Linux host.
 - **Whole values or none in the multi-valued column, and `tv-multi` to reach
   them.** A run wider than the 40-character cap now drops the values that do not
   fit *entire* and writes `…` in their place — `alice · document · task ·

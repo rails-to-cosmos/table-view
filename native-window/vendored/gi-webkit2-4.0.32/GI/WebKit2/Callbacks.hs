@@ -222,7 +222,7 @@ import {-# SOURCE #-} qualified GI.WebKit2.Objects.URISchemeRequest as WebKit2.U
       Documentation
         { rawDocText =
             Just
-              "Type definition for a function that will be called back when an URI request is\nmade for a user registered URI scheme."
+              "Type definition for a function that will be called back when a URI request is\nmade for a user registered URI scheme."
         , sinceVersion = Nothing
         }
   , callableResolvable = Nothing
@@ -299,7 +299,7 @@ dynamic_URISchemeRequestCallback __funPtr request userData = liftIO $ do
 foreign import ccall "wrapper"
     mk_URISchemeRequestCallback :: C_URISchemeRequestCallback -> IO (FunPtr C_URISchemeRequestCallback)
 
--- | Type definition for a function that will be called back when an URI request is
+-- | Type definition for a function that will be called back when a URI request is
 -- made for a user registered URI scheme.
 type URISchemeRequestCallback =
     WebKit2.URISchemeRequest.URISchemeRequest
@@ -310,7 +310,7 @@ type URISchemeRequestCallback =
 noURISchemeRequestCallback :: Maybe URISchemeRequestCallback
 noURISchemeRequestCallback = Nothing
 
--- | Type definition for a function that will be called back when an URI request is
+-- | Type definition for a function that will be called back when a URI request is
 -- made for a user registered URI scheme.
 type URISchemeRequestCallback_WithClosures =
     WebKit2.URISchemeRequest.URISchemeRequest

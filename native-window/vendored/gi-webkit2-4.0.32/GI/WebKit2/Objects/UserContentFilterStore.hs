@@ -488,7 +488,8 @@ userContentFilterStoreNew storagePath = liftIO $ do
 --           , argDoc =
 --               Documentation
 --                 { rawDocText =
---                     Just "a #GAsyncReadyCallback to call when the removal is completed"
+--                     Just
+--                       "a #GAsyncReadyCallback to call when the identifiers have been fetched"
 --                 , sinceVersion = Nothing
 --                 }
 --           , argScope = ScopeTypeAsync
@@ -543,7 +544,7 @@ userContentFilterStoreFetchIdentifiers ::
     -> Maybe (b)
     -- ^ /@cancellable@/: a t'GI.Gio.Objects.Cancellable.Cancellable' or 'P.Nothing' to ignore
     -> Maybe (Gio.Callbacks.AsyncReadyCallback)
-    -- ^ /@callback@/: a t'GI.Gio.Callbacks.AsyncReadyCallback' to call when the removal is completed
+    -- ^ /@callback@/: a t'GI.Gio.Callbacks.AsyncReadyCallback' to call when the identifiers have been fetched
     -> m ()
 userContentFilterStoreFetchIdentifiers store cancellable callback = liftIO $ do
     store' <- unsafeManagedPtrCastPtr store
@@ -1377,10 +1378,10 @@ foreign import ccall "webkit_user_content_filter_store_save" webkit_user_content
     Ptr () ->                               -- user_data : TBasicType TPtr
     IO ()
 
--- | Asynchronously save a content filter from a set source rule.
+-- | Asynchronously save a content filter from a source rule set.
 -- 
 -- Asynchronously save a content filter from a source rule set in the
--- <https://webkit.org/blog/3476/content-blockers-first-look/ WebKit content extesions JSON format>.
+-- <https://webkit.org/blog/3476/content-blockers-first-look/ WebKit content extensions JSON format>.
 -- 
 -- The /@identifier@/ can be used afterwards to refer to the filter when using
 -- 'GI.WebKit2.Objects.UserContentFilterStore.userContentFilterStoreRemove' and 'GI.WebKit2.Objects.UserContentFilterStore.userContentFilterStoreLoad'.
@@ -1780,7 +1781,7 @@ foreign import ccall "webkit_user_content_filter_store_save_from_file_finish" we
     Ptr (Ptr GError) ->                     -- error
     IO (Ptr WebKit2.UserContentFilter.UserContentFilter)
 
--- | Finishes and asynchronous filter save previously started with
+-- | Finishes an asynchronous filter save previously started with
 -- 'GI.WebKit2.Objects.UserContentFilterStore.userContentFilterStoreSaveFromFile'.
 -- 
 -- /Since: 2.24/

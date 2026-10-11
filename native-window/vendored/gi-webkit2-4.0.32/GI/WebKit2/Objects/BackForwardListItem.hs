@@ -8,7 +8,7 @@
 -- One item of the t'GI.WebKit2.Objects.BackForwardList.BackForwardList'.
 -- 
 -- A history item is part of the t'GI.WebKit2.Objects.BackForwardList.BackForwardList' and consists
--- out of a title and a URI.
+-- of a title and a URI.
 
 #if (MIN_VERSION_haskell_gi_overloading(1,0,0) && !defined(__HADDOCK_VERSION__))
 #define ENABLE_OVERLOADING

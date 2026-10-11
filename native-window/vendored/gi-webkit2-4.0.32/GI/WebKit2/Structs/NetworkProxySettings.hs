@@ -213,28 +213,20 @@ foreign import ccall "webkit_network_proxy_settings_new" webkit_network_proxy_se
 -- 
 -- /@ignoreHosts@/ is a list of hostnames and IP addresses that the resolver should allow direct connections to.
 -- Entries can be in one of 4 formats:
--- \<itemizedlist>
--- \<listitem>\<para>
--- A hostname, such as \"example.com\", \".example.com\", or \"*.example.com\", any of which match \"example.com\" or
--- any subdomain of it.
--- \<\/para>\<\/listitem>
--- \<listitem>\<para>
--- An IPv4 or IPv6 address, such as \"192.168.1.1\", which matches only that address.
--- \<\/para>\<\/listitem>
--- \<listitem>\<para>
--- A hostname or IP address followed by a port, such as \"example.com:80\", which matches whatever the hostname or IP
--- address would match, but only for URLs with the (explicitly) indicated port. In the case of an IPv6 address, the address
--- part must appear in brackets: \"[[1](#g:signal:1)]:443\"
--- \<\/para>\<\/listitem>
--- \<listitem>\<para>
--- An IP address range, given by a base address and prefix length, such as \"fe80::\/10\", which matches any address in that range.
--- \<\/para>\<\/listitem>
--- \<\/itemizedlist>
+-- 
+-- * A hostname, such as \"example.com\", \".example.com\", or \"*.example.com\", any of which match \"example.com\" or
+--   any subdomain of it.
+-- * An IPv4 or IPv6 address, such as \"192.168.1.1\", which matches only that address.
+-- * A hostname or IP address followed by a port, such as \"example.com:80\", which matches whatever the hostname or IP
+--   address would match, but only for URLs with the (explicitly) indicated port. In the case of an IPv6 address, the address
+--   part must appear in brackets: \"[[1](#g:signal:1)]:443\"
+-- * An IP address range, given by a base address and prefix length, such as \"fe80::\/10\", which matches any address in that range.
+-- 
 -- 
 -- Note that when dealing with Unicode hostnames, the matching is done against the ASCII form of the name.
 -- Also note that hostname exclusions apply only to connections made to hosts identified by name, and IP address exclusions apply only
 -- to connections made to hosts identified by address. That is, if example.com has an address of 192.168.1.1, and /@ignoreHosts@/
--- contains only \"192.168.1.1\", then a connection to \"example.com\" will use the proxy, and a connection to 192.168.1.1\" will not.
+-- contains only \"192.168.1.1\", then a connection to \"example.com\" will use the proxy, and a connection to \"192.168.1.1\" will not.
 -- 
 -- /Since: 2.16/
 networkProxySettingsNew ::
@@ -315,7 +307,7 @@ networkProxySettingsNew defaultProxyUri ignoreHosts = liftIO $ do
 --           , mayBeNull = False
 --           , argDoc =
 --               Documentation
---                 { rawDocText = Just "the proxy URI to use for @uri_scheme"
+--                 { rawDocText = Just "the proxy URI to use for @scheme"
 --                 , sinceVersion = Nothing
 --                 }
 --           , argScope = ScopeTypeInvalid
@@ -339,7 +331,7 @@ foreign import ccall "webkit_network_proxy_settings_add_proxy_for_scheme" webkit
 
 -- | Adds a URI-scheme-specific proxy.
 -- 
--- URIs whose scheme matches /@uriScheme@/ will be proxied via /@proxyUri@/.
+-- URIs whose scheme matches /@scheme@/ will be proxied via /@proxyUri@/.
 -- As with the default proxy URI, if /@proxyUri@/ starts with \"socks:\/\/\", it will be treated as referring to
 -- all three of the socks5, socks4a, and socks4 proxy types.
 -- 
@@ -351,7 +343,7 @@ networkProxySettingsAddProxyForScheme ::
     -> T.Text
     -- ^ /@scheme@/: the URI scheme to add a proxy for
     -> T.Text
-    -- ^ /@proxyUri@/: the proxy URI to use for /@uriScheme@/
+    -- ^ /@proxyUri@/: the proxy URI to use for /@scheme@/
     -> m ()
 networkProxySettingsAddProxyForScheme proxySettings scheme proxyUri = liftIO $ do
     proxySettings' <- unsafeManagedPtrGetPtr proxySettings

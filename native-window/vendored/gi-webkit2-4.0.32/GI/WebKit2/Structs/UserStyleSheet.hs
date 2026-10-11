@@ -262,7 +262,7 @@ foreign import ccall "webkit_user_style_sheet_new" webkit_user_style_sheet_new :
 -- Style sheets can be applied to some URIs
 -- only by passing non-null values for /@allowList@/ or /@blockList@/. Passing a
 -- 'P.Nothing' allow_list implies that all URIs are on the allow_list. The style
--- sheet is applied if an URI matches the allow_list and not the block_list.
+-- sheet is applied if a URI matches the allow_list and not the block_list.
 -- URI patterns must be of the form @[protocol]:\/\/[host]\/[path]@, where the
 -- *host* and *path* components can contain the wildcard character (@*@) to
 -- represent zero or more other characters.

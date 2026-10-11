@@ -161,7 +161,7 @@ module GI.WebKit2.Objects.FindController
 
 
 -- ** webView #attr:webView#
--- | The t'GI.WebKit2.Objects.WebView.WebView' this controller is associated to.
+-- | The t'GI.WebKit2.Objects.WebView.WebView' this controller is associated with.
 
 #if defined(ENABLE_OVERLOADING)
     FindControllerWebViewPropertyInfo       ,
@@ -1204,7 +1204,7 @@ foreign import ccall "webkit_find_controller_get_web_view" webkit_find_controlle
     Ptr FindController ->                   -- find_controller : TInterface (Name {namespace = "WebKit2", name = "FindController"})
     IO (Ptr WebKit2.WebView.WebView)
 
--- | Gets the t'GI.WebKit2.Objects.WebView.WebView' this find controller is associated to.
+-- | Gets the t'GI.WebKit2.Objects.WebView.WebView' this find controller is associated with.
 -- 
 -- Do
 -- not dereference the returned instance as it belongs to the

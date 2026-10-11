@@ -48,5 +48,11 @@ instance B.GValue.IsGValue (Maybe WebsitePolicies) where
 data WebsitePoliciesAutoplayPropertyInfo
 #endif
 #if defined(ENABLE_OVERLOADING)
+data WebsitePoliciesCustomUserAgentPropertyInfo
+#endif
+#if defined(ENABLE_OVERLOADING)
 data WebsitePoliciesGetAutoplayPolicyMethodInfo
+#endif
+#if defined(ENABLE_OVERLOADING)
+data WebsitePoliciesGetCustomUserAgentMethodInfo
 #endif

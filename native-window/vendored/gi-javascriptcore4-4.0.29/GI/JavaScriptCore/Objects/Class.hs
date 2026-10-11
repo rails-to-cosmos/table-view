@@ -5,11 +5,11 @@
 -- License    : LGPL-2.1
 -- Maintainer : Iñaki García Etxebarria
 -- 
--- A JSSClass represents a custom JavaScript class registered by the user in a t'GI.JavaScriptCore.Objects.Context.Context'.
--- It allows to create new JavaScripts objects whose instances are created by the user using
+-- A JSCClass represents a custom JavaScript class registered by the user in a t'GI.JavaScriptCore.Objects.Context.Context'.
+-- It allows creating new JavaScript objects whose instances are created by the user using
 -- this API.
--- It\'s possible to add constructors, properties and methods for a JSSClass by providing
--- t'GI.GObject.Callbacks.Callback's to implement them.
+-- It\'s possible to add constructors, properties and methods for a JSCClass by providing
+-- t'GI.GObject.Callbacks.Callback' functions to implement them.
 
 #if (MIN_VERSION_haskell_gi_overloading(1,0,0) && !defined(__HADDOCK_VERSION__))
 #define ENABLE_OVERLOADING
@@ -567,9 +567,9 @@ foreign import ccall "jsc_class_add_constructor_variadic" jsc_class_add_construc
     CGType ->                               -- return_type : TBasicType TGType
     IO (Ptr JavaScriptCore.Value.Value)
 
--- | Add a constructor to /@jscClass@/. If /@name@/ is 'P.Nothing', the class name will be used. When \<function>new\<\/function>
+-- | Add a constructor to /@jscClass@/. If /@name@/ is 'P.Nothing', the class name will be used. When @new@
 -- is used with the constructor or @/jsc_value_constructor_call()/@ is called, /@callback@/ is invoked receiving
--- a t'GI.GLib.Structs.PtrArray.PtrArray' of t'GI.JavaScriptCore.Objects.Value.Value's as arguments and /@userData@/ as the last parameter. When the constructor object
+-- a t'GI.GLib.Structs.PtrArray.PtrArray' of t'GI.JavaScriptCore.Objects.Value.Value' objects as arguments and /@userData@/ as the last parameter. When the constructor object
 -- is cleared in the t'GI.JavaScriptCore.Objects.Class.Class' context, /@destroyNotify@/ is called with /@userData@/ as parameter.
 -- 
 -- This function creates the constructor, which needs to be added to an object as a property to be able to use it. Use
@@ -761,7 +761,7 @@ instance O.OverloadedMethodInfo ClassAddConstructorVariadicMethodInfo a where
 --           , argDoc =
 --               Documentation
 --                 { rawDocText =
---                     Just "a list of #GType<!-- -->s, one for each parameter, or %NULL"
+--                     Just "a list of #GType values, one for each parameter, or %NULL"
 --                 , sinceVersion = Nothing
 --                 }
 --           , argScope = ScopeTypeInvalid
@@ -807,7 +807,7 @@ foreign import ccall "jsc_class_add_constructorv" jsc_class_add_constructorv ::
     Ptr CGType ->                           -- parameter_types : TCArray False (-1) 6 (TBasicType TGType)
     IO (Ptr JavaScriptCore.Value.Value)
 
--- | Add a constructor to /@jscClass@/. If /@name@/ is 'P.Nothing', the class name will be used. When \<function>new\<\/function>
+-- | Add a constructor to /@jscClass@/. If /@name@/ is 'P.Nothing', the class name will be used. When @new@
 -- is used with the constructor or @/jsc_value_constructor_call()/@ is called, /@callback@/ is invoked receiving the
 -- parameters and /@userData@/ as the last parameter. When the constructor object is cleared in the t'GI.JavaScriptCore.Objects.Class.Class' context,
 -- /@destroyNotify@/ is called with /@userData@/ as parameter.
@@ -828,7 +828,7 @@ classAddConstructor ::
     -> GType
     -- ^ /@returnType@/: the t'GType' of the constructor return value
     -> Maybe ([GType])
-    -- ^ /@parameterTypes@/: a list of t'GType's, one for each parameter, or 'P.Nothing'
+    -- ^ /@parameterTypes@/: a list of t'GType' values, one for each parameter, or 'P.Nothing'
     -> m JavaScriptCore.Value.Value
     -- ^ __Returns:__ a t'GI.JavaScriptCore.Objects.Value.Value' representing the class constructor.
 classAddConstructor jscClass name callback returnType parameterTypes = liftIO $ do
@@ -1001,7 +1001,7 @@ foreign import ccall "jsc_class_add_method_variadic" jsc_class_add_method_variad
     IO ()
 
 -- | Add method with /@name@/ to /@jscClass@/. When the method is called by JavaScript or @/jsc_value_object_invoke_method()/@,
--- /@callback@/ is called receiving the class instance as first parameter, followed by a t'GI.GLib.Structs.PtrArray.PtrArray' of t'GI.JavaScriptCore.Objects.Value.Value's
+-- /@callback@/ is called receiving the class instance as first parameter, followed by a t'GI.GLib.Structs.PtrArray.PtrArray' of t'GI.JavaScriptCore.Objects.Value.Value' objects
 -- with the method arguments and then /@userData@/ as last parameter. When the method is cleared in the t'GI.JavaScriptCore.Objects.Class.Class' context,
 -- /@destroyNotify@/ is called with /@userData@/ as parameter.
 -- 
@@ -1188,7 +1188,7 @@ instance O.OverloadedMethodInfo ClassAddMethodVariadicMethodInfo a where
 --           , argDoc =
 --               Documentation
 --                 { rawDocText =
---                     Just "a list of #GType<!-- -->s, one for each parameter, or %NULL"
+--                     Just "a list of #GType values, one for each parameter, or %NULL"
 --                 , sinceVersion = Nothing
 --                 }
 --           , argScope = ScopeTypeInvalid
@@ -1255,7 +1255,7 @@ classAddMethod ::
     -> GType
     -- ^ /@returnType@/: the t'GType' of the method return value, or @/G_TYPE_NONE/@ if the method is void.
     -> Maybe ([GType])
-    -- ^ /@parameterTypes@/: a list of t'GType's, one for each parameter, or 'P.Nothing'
+    -- ^ /@parameterTypes@/: a list of t'GType' values, one for each parameter, or 'P.Nothing'
     -> m ()
 classAddMethod jscClass name callback returnType parameterTypes = liftIO $ do
     let nParameters = case parameterTypes of
@@ -1439,8 +1439,8 @@ foreign import ccall "jsc_class_add_property" jsc_class_add_property ::
     IO ()
 
 -- | Add a property with /@name@/ to /@jscClass@/. When the property value is read, /@getter@/ is called
--- receiving the the class instance as first parameter and /@userData@/ as last parameter. When the property
--- value needs to be set, /@setter@/ is called receiving the the class instance as first parameter, followed
+-- receiving the class instance as first parameter and /@userData@/ as last parameter. When the property
+-- value needs to be set, /@setter@/ is called receiving the class instance as first parameter, followed
 -- by the value to be set and then /@userData@/ as the last parameter. When the property is cleared in the
 -- t'GI.JavaScriptCore.Objects.Class.Class' context, /@destroyNotify@/ is called with /@userData@/ as parameter.
 -- 
@@ -1509,7 +1509,7 @@ instance O.OverloadedMethodInfo ClassAddPropertyMethodInfo a where
 --           , mayBeNull = False
 --           , argDoc =
 --               Documentation
---                 { rawDocText = Just "a @JSCClass" , sinceVersion = Nothing }
+--                 { rawDocText = Just "a #JSCClass" , sinceVersion = Nothing }
 --           , argScope = ScopeTypeInvalid
 --           , argClosure = -1
 --           , argDestroy = -1
@@ -1531,7 +1531,7 @@ foreign import ccall "jsc_class_get_name" jsc_class_get_name ::
 classGetName ::
     (B.CallStack.HasCallStack, MonadIO m, IsClass a) =>
     a
-    -- ^ /@jscClass@/: a /@jSCClass@/
+    -- ^ /@jscClass@/: a t'GI.JavaScriptCore.Objects.Class.Class'
     -> m T.Text
     -- ^ __Returns:__ the name of /@jscClass@/
 classGetName jscClass = liftIO $ do
@@ -1567,7 +1567,7 @@ instance O.OverloadedMethodInfo ClassGetNameMethodInfo a where
 --           , mayBeNull = False
 --           , argDoc =
 --               Documentation
---                 { rawDocText = Just "a @JSCClass" , sinceVersion = Nothing }
+--                 { rawDocText = Just "a #JSCClass" , sinceVersion = Nothing }
 --           , argScope = ScopeTypeInvalid
 --           , argClosure = -1
 --           , argDestroy = -1
@@ -1590,7 +1590,7 @@ foreign import ccall "jsc_class_get_parent" jsc_class_get_parent ::
 classGetParent ::
     (B.CallStack.HasCallStack, MonadIO m, IsClass a) =>
     a
-    -- ^ /@jscClass@/: a /@jSCClass@/
+    -- ^ /@jscClass@/: a t'GI.JavaScriptCore.Objects.Class.Class'
     -> m Class
     -- ^ __Returns:__ the parent class of /@jscClass@/
 classGetParent jscClass = liftIO $ do

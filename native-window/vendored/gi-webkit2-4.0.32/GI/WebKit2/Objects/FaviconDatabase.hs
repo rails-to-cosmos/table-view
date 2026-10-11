@@ -7,12 +7,12 @@
 -- 
 -- Provides access to the icons associated with web sites.
 -- 
--- WebKit will automatically look for available icons in \<link>
+-- WebKit will automatically look for available icons in @\<link>@
 -- elements on opened pages as well as an existing favicon.ico and
 -- load the images found into a memory cache if possible. That cache
 -- is frozen to an on-disk database for persistence.
 -- 
--- If [Settings:enablePrivateBrowsing]("GI.WebKit2.Objects.Settings#g:attr:enablePrivateBrowsing") is 'P.True', new icons
+-- If [property/@websiteDataManager@/:is-ephemeral] is 'P.True', new icons
 -- won\'t be added to the on-disk database and no existing icons will
 -- be deleted from it. Nevertheless, WebKit will still store them in
 -- the in-memory cache during the current execution.
@@ -511,8 +511,9 @@ foreign import ccall "webkit_favicon_database_get_favicon" webkit_favicon_databa
 -- | Asynchronously obtains a favicon image.
 -- 
 -- Asynchronously obtains an image of the favicon for the
--- given page URI. It returns the cached icon if it\'s in the database
--- asynchronously waiting for the icon to be read from the database.
+-- given page URI. If the icon is already in the memory cache, its image data
+-- is not read from the database again. The result is always delivered
+-- asynchronously.
 -- 
 -- This is an asynchronous method. When the operation is finished, callback will
 -- be invoked. You can then call 'GI.WebKit2.Objects.FaviconDatabase.faviconDatabaseGetFaviconFinish'

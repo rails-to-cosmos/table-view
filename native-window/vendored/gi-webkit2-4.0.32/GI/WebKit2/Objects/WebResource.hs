@@ -550,7 +550,7 @@ instance SignalInfo WebResourceFinishedSignalInfo where
 -- every time new data has been received. It\'s
 -- useful to know the progress of the resource load operation.
 -- 
--- This is signal is deprecated since version 2.40 and it\'s never emitted.
+-- This signal is deprecated since version 2.40 and it\'s never emitted.
 type WebResourceReceivedDataCallback =
     Word64
     -- ^ /@dataLength@/: the length of data received in bytes
@@ -1038,7 +1038,7 @@ webResourceGetDataFinish ::
     -- ^ /@result@/: a t'GI.Gio.Interfaces.AsyncResult.AsyncResult'
     -> m ByteString
     -- ^ __Returns:__ a
-    --    string with the data of /@resource@/, or 'P.Nothing' in case of error. if /@length@/
+    --    string with the data of /@resource@/, or 'P.Nothing' in case of error. If /@length@/
     --    is not 'P.Nothing', the size of the data will be assigned to it. /(Can throw 'Data.GI.Base.GError.GError')/
 webResourceGetDataFinish resource result_ = liftIO $ do
     resource' <- unsafeManagedPtrCastPtr resource
@@ -1175,25 +1175,20 @@ foreign import ccall "webkit_web_resource_get_uri" webkit_web_resource_get_uri :
 -- The active URI might change during
 -- a load operation:
 -- 
--- \<orderedlist>
--- \<listitem>\<para>
---   When the resource load starts, the active URI is the requested URI
--- \<\/para>\<\/listitem>
--- \<listitem>\<para>
---   When the initial request is sent to the server, [WebResource::sentRequest]("GI.WebKit2.Objects.WebResource#g:signal:sentRequest")
---   signal is emitted without a redirected response, the active URI is the URI of
---   the request sent to the server.
--- \<\/para>\<\/listitem>
--- \<listitem>\<para>
---   In case of a server redirection, [WebResource::sentRequest]("GI.WebKit2.Objects.WebResource#g:signal:sentRequest") signal
---   is emitted again with a redirected response, the active URI is the URI the request
---   was redirected to.
--- \<\/para>\<\/listitem>
--- \<listitem>\<para>
---   When the response is received from the server, the active URI is the final
---   one and it will not change again.
--- \<\/para>\<\/listitem>
--- \<\/orderedlist>
+-- 1. When the resource load starts, the active URI is the requested URI
+-- 
+-- 2. When the initial request is sent to the server, [WebResource::sentRequest]("GI.WebKit2.Objects.WebResource#g:signal:sentRequest")
+--    signal is emitted without a redirected response, the active URI is the URI of
+--    the request sent to the server.
+-- 
+-- 3. In case of a server redirection, [WebResource::sentRequest]("GI.WebKit2.Objects.WebResource#g:signal:sentRequest") signal
+--    is emitted again with a redirected response, the active URI is the URI the request
+--    was redirected to.
+-- 
+-- 4. When the response is received from the server, the active URI is the final
+--    one and it will not change again.
+-- 
+-- 
 -- 
 -- You can monitor the active URI by connecting to the notify[uri](#g:signal:uri)
 -- signal of /@resource@/.

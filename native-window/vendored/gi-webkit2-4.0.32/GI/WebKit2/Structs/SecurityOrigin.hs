@@ -325,7 +325,7 @@ foreign import ccall "webkit_security_origin_new_for_uri" webkit_security_origin
     CString ->                              -- uri : TBasicType TUTF8
     IO (Ptr SecurityOrigin)
 
--- | Create a new security origin from the provided.
+-- | Create a new security origin from the provided URI.
 -- 
 -- Create a new security origin from the provided URI. Components of
 -- /@uri@/ other than protocol, host, and port do not affect the created

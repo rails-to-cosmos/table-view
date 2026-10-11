@@ -261,7 +261,7 @@ import {-# SOURCE #-} qualified GI.JavaScriptCore.Objects.Value as JavaScriptCor
       Documentation
         { rawDocText =
             Just
-              "Function used to iterate options.\n\nNot that @description string is not localized."
+              "Function used to iterate options.\n\nNote that @description string is not localized."
         , sinceVersion = Just "2.24"
         }
   , callableResolvable = Nothing
@@ -387,7 +387,7 @@ foreign import ccall "wrapper"
 
 -- | Function used to iterate options.
 -- 
--- Not that /@description@/ string is not localized.
+-- Note that /@description@/ string is not localized.
 -- 
 -- /Since: 2.24/
 type OptionsFunc =
@@ -406,7 +406,7 @@ noOptionsFunc = Nothing
 
 -- | Function used to iterate options.
 -- 
--- Not that /@description@/ string is not localized.
+-- Note that /@description@/ string is not localized.
 -- 
 -- /Since: 2.24/
 type OptionsFunc_WithClosures =
@@ -529,7 +529,7 @@ wrap_OptionsFunc gi'funptrptr gi'cb option type_ description userData = do
       Documentation
         { rawDocText =
             Just
-              "A function passed to @jsc_value_new_promise called during initialization\n\nIt is called like a JavaScript function, so exceptions raised will not be propagated\nto the context, but handled by the promise causing a rejection.\n@resolve and @reject can be reffed for later use to handle async task completion."
+              "A function passed to jsc_value_new_promise() called during initialization\n\nIt is called like a JavaScript function, so exceptions raised will not be propagated\nto the context, but handled by the promise causing a rejection.\n@resolve and @reject can be reffed for later use to handle async task completion."
         , sinceVersion = Just "2.48"
         }
   , callableResolvable = Nothing
@@ -629,7 +629,7 @@ dynamic_Executor __funPtr resolve reject userData = liftIO $ do
 foreign import ccall "wrapper"
     mk_Executor :: C_Executor -> IO (FunPtr C_Executor)
 
--- | A function passed to /@jscValueNewPromise@/ called during initialization
+-- | A function passed to 'GI.JavaScriptCore.Objects.Value.valueNewPromise' called during initialization
 -- 
 -- It is called like a JavaScript function, so exceptions raised will not be propagated
 -- to the context, but handled by the promise causing a rejection.
@@ -647,7 +647,7 @@ type Executor =
 noExecutor :: Maybe Executor
 noExecutor = Nothing
 
--- | A function passed to /@jscValueNewPromise@/ called during initialization
+-- | A function passed to 'GI.JavaScriptCore.Objects.Value.valueNewPromise' called during initialization
 -- 
 -- It is called like a JavaScript function, so exceptions raised will not be propagated
 -- to the context, but handled by the promise causing a rejection.
@@ -1927,7 +1927,7 @@ wrap_ClassEnumeratePropertiesFunction gi'funptrptr gi'cb jscClass context instan
       Documentation
         { rawDocText =
             Just
-              "%TRUE if handled or %FALSE to to forward the request to the parent class or prototype chain."
+              "%TRUE if handled or %FALSE to forward the request to the parent class or prototype chain."
         , sinceVersion = Nothing
         }
   , args =
@@ -2110,7 +2110,7 @@ dynamic_ClassDeletePropertyFunction ::
     -> T.Text
     -- ^ /@name@/: the property name
     -> m Bool
-    -- ^ __Returns:__ 'P.True' if handled or 'P.False' to to forward the request to the parent class or prototype chain.
+    -- ^ __Returns:__ 'P.True' if handled or 'P.False' to forward the request to the parent class or prototype chain.
 dynamic_ClassDeletePropertyFunction __funPtr jscClass context instance_ name = liftIO $ do
     jscClass' <- unsafeManagedPtrCastPtr jscClass
     context' <- unsafeManagedPtrCastPtr context
@@ -2138,7 +2138,7 @@ type ClassDeletePropertyFunction =
     -> T.Text
     -- ^ /@name@/: the property name
     -> IO Bool
-    -- ^ __Returns:__ 'P.True' if handled or 'P.False' to to forward the request to the parent class or prototype chain.
+    -- ^ __Returns:__ 'P.True' if handled or 'P.False' to forward the request to the parent class or prototype chain.
 
 -- | A convenience synonym for @`Nothing` :: `Maybe` `ClassDeletePropertyFunction`@.
 noClassDeletePropertyFunction :: Maybe ClassDeletePropertyFunction

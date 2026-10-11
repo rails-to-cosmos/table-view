@@ -815,8 +815,8 @@ foreign import ccall "jsc_value_new_array_buffer" jsc_value_new_array_buffer ::
 -- the memory region which contains the data:
 -- 
 -- 
--- 	
--- >!<-- language="C" -->
+-- === /C code/
+-- >
 -- >GMappedFile *f = g_mapped_file_new (file_path, TRUE, NULL);
 -- >JSCValue *value = jsc_value_new_array_buffer (context,
 -- >    g_mapped_file_get_contents (f), g_mapped_file_get_length (f),
@@ -826,8 +826,8 @@ foreign import ccall "jsc_value_new_array_buffer" jsc_value_new_array_buffer ::
 -- Note that the /@userData@/ can be the same value as /@data@/:
 -- 
 -- 
--- 	
--- >!<-- language="C" -->
+-- === /C code/
+-- >
 -- >void *bytes = g_malloc0 (100);
 -- >JSCValue *value = jsc_value_new_array_buffer (context, bytes, 100, g_free, bytes);
 -- 
@@ -993,7 +993,7 @@ foreign import ccall "jsc_value_new_array_from_strv" jsc_value_new_array_from_st
     Ptr CString ->                          -- strv : TCArray True (-1) (-1) (TBasicType TUTF8)
     IO (Ptr Value)
 
--- | Create a new t'GI.JavaScriptCore.Objects.Value.Value' referencing an array of strings with the items from /@strv@/. If /@array@/
+-- | Create a new t'GI.JavaScriptCore.Objects.Value.Value' referencing an array of strings with the items from /@strv@/. If /@strv@/
 -- is 'P.Nothing' or empty a new empty array will be created.
 valueNewArrayFromStrv ::
     (B.CallStack.HasCallStack, MonadIO m, JavaScriptCore.Context.IsContext a) =>
@@ -1287,7 +1287,7 @@ foreign import ccall "jsc_value_new_function_variadic" jsc_value_new_function_va
 
 -- | Create a function in /@context@/. If /@name@/ is 'P.Nothing' an anonymous function will be created.
 -- When the function is called by JavaScript or @/jsc_value_function_call()/@, /@callback@/ is called
--- receiving an t'GI.GLib.Structs.PtrArray.PtrArray' of t'GI.JavaScriptCore.Objects.Value.Value's with the arguments and then /@userData@/ as last parameter.
+-- receiving a t'GI.GLib.Structs.PtrArray.PtrArray' of t'GI.JavaScriptCore.Objects.Value.Value' objects with the arguments and then /@userData@/ as last parameter.
 -- When the function is cleared in /@context@/, /@destroyNotify@/ is called with /@userData@/ as parameter.
 -- 
 -- Note that the value returned by /@callback@/ must be fully transferred. In case of boxed types, you could use
@@ -1465,7 +1465,7 @@ valueNewFunctionVariadic context name callback returnType = liftIO $ do
 --           , argDoc =
 --               Documentation
 --                 { rawDocText =
---                     Just "a list of #GType<!-- -->s, one for each parameter, or %NULL"
+--                     Just "a list of #GType values, one for each parameter, or %NULL"
 --                 , sinceVersion = Nothing
 --                 }
 --           , argScope = ScopeTypeInvalid
@@ -1531,7 +1531,7 @@ valueNewFunction ::
     -> GType
     -- ^ /@returnType@/: the t'GType' of the function return value, or @/G_TYPE_NONE/@ if the function is void.
     -> Maybe ([GType])
-    -- ^ /@parameterTypes@/: a list of t'GType's, one for each parameter, or 'P.Nothing'
+    -- ^ /@parameterTypes@/: a list of t'GType' values, one for each parameter, or 'P.Nothing'
     -> m Value
     -- ^ __Returns:__ a t'GI.JavaScriptCore.Objects.Value.Value'.
 valueNewFunction context name callback returnType parameterTypes = liftIO $ do
@@ -1594,7 +1594,7 @@ foreign import ccall "jsc_value_new_null" jsc_value_new_null ::
     Ptr JavaScriptCore.Context.Context ->   -- context : TInterface (Name {namespace = "JavaScriptCore", name = "Context"})
     IO (Ptr Value)
 
--- | Create a new t'GI.JavaScriptCore.Objects.Value.Value' referencing \<function>null\<\/function> in /@context@/.
+-- | Create a new t'GI.JavaScriptCore.Objects.Value.Value' referencing @null@ in /@context@/.
 valueNewNull ::
     (B.CallStack.HasCallStack, MonadIO m, JavaScriptCore.Context.IsContext a) =>
     a
@@ -1850,7 +1850,7 @@ foreign import ccall "jsc_value_new_promise" jsc_value_new_promise ::
     IO (Ptr Value)
 
 -- | Creates a new Promise. /@executor@/ will be invoked during promise initialization
--- and it receives the /@resolve@/ and /@reject@/ objects than can be called to resolve
+-- and it receives the /@resolve@/ and /@reject@/ objects that can be called to resolve
 -- or reject the promise. It is called like a JavaScript function, so exceptions raised
 -- during the executor invocation will not be propagated to the context, but
 -- handled by the promise causing a rejection.
@@ -2159,7 +2159,7 @@ foreign import ccall "jsc_value_new_undefined" jsc_value_new_undefined ::
     Ptr JavaScriptCore.Context.Context ->   -- context : TInterface (Name {namespace = "JavaScriptCore", name = "Context"})
     IO (Ptr Value)
 
--- | Create a new t'GI.JavaScriptCore.Objects.Value.Value' referencing \<function>undefined\<\/function> in /@context@/.
+-- | Create a new t'GI.JavaScriptCore.Objects.Value.Value' referencing @undefined@ in /@context@/.
 valueNewUndefined ::
     (B.CallStack.HasCallStack, MonadIO m, JavaScriptCore.Context.IsContext a) =>
     a
@@ -2407,7 +2407,7 @@ instance O.OverloadedMethodInfo ValueArrayBufferGetSizeMethodInfo a where
 --               Documentation
 --                 { rawDocText =
 --                     Just
---                       "the #JSCValue<!-- -->s to pass as parameters to the constructor, or %NULL"
+--                       "the #JSCValue objects to pass as parameters to the constructor, or %NULL"
 --                 , sinceVersion = Nothing
 --                 }
 --           , argScope = ScopeTypeInvalid
@@ -2448,14 +2448,14 @@ foreign import ccall "jsc_value_constructor_callv" jsc_value_constructor_callv :
     Ptr (Ptr Value) ->                      -- parameters : TCArray False (-1) 1 (TInterface (Name {namespace = "JavaScriptCore", name = "Value"}))
     IO (Ptr Value)
 
--- | Invoke \<function>new\<\/function> with constructor referenced by /@value@/. If /@nParameters@/
+-- | Invoke @new@ with constructor referenced by /@value@/. If /@nParameters@/
 -- is 0 no parameters will be passed to the constructor.
 valueConstructorCall ::
     (B.CallStack.HasCallStack, MonadIO m, IsValue a) =>
     a
     -- ^ /@value@/: a t'GI.JavaScriptCore.Objects.Value.Value'
     -> Maybe ([Value])
-    -- ^ /@parameters@/: the t'GI.JavaScriptCore.Objects.Value.Value's to pass as parameters to the constructor, or 'P.Nothing'
+    -- ^ /@parameters@/: the t'GI.JavaScriptCore.Objects.Value.Value' objects to pass as parameters to the constructor, or 'P.Nothing'
     -> m Value
     -- ^ __Returns:__ a t'GI.JavaScriptCore.Objects.Value.Value' referencing the newly created object instance.
 valueConstructorCall value parameters = liftIO $ do
@@ -2543,7 +2543,7 @@ instance O.OverloadedMethodInfo ValueConstructorCallMethodInfo a where
 --               Documentation
 --                 { rawDocText =
 --                     Just
---                       "the #JSCValue<!-- -->s to pass as parameters to the function, or %NULL"
+--                       "the #JSCValue objects to pass as parameters to the function, or %NULL"
 --                 , sinceVersion = Nothing
 --                 }
 --           , argScope = ScopeTypeInvalid
@@ -2588,13 +2588,13 @@ foreign import ccall "jsc_value_function_callv" jsc_value_function_callv ::
 -- is 0 no parameters will be passed to the function.
 -- 
 -- This function always returns a t'GI.JavaScriptCore.Objects.Value.Value', in case of void functions a t'GI.JavaScriptCore.Objects.Value.Value' referencing
--- \<function>undefined\<\/function> is returned
+-- @undefined@ is returned
 valueFunctionCall ::
     (B.CallStack.HasCallStack, MonadIO m, IsValue a) =>
     a
     -- ^ /@value@/: a t'GI.JavaScriptCore.Objects.Value.Value'
     -> Maybe ([Value])
-    -- ^ /@parameters@/: the t'GI.JavaScriptCore.Objects.Value.Value's to pass as parameters to the function, or 'P.Nothing'
+    -- ^ /@parameters@/: the t'GI.JavaScriptCore.Objects.Value.Value' objects to pass as parameters to the function, or 'P.Nothing'
     -> m Value
     -- ^ __Returns:__ a t'GI.JavaScriptCore.Objects.Value.Value' with the return value of the function.
 valueFunctionCall value parameters = liftIO $ do
@@ -3006,13 +3006,13 @@ foreign import ccall "jsc_value_is_null" jsc_value_is_null ::
     Ptr Value ->                            -- value : TInterface (Name {namespace = "JavaScriptCore", name = "Value"})
     IO CInt
 
--- | Get whether the value referenced by /@value@/ is \<function>null\<\/function>.
+-- | Get whether the value referenced by /@value@/ is @null@.
 valueIsNull ::
     (B.CallStack.HasCallStack, MonadIO m, IsValue a) =>
     a
     -- ^ /@value@/: a t'GI.JavaScriptCore.Objects.Value.Value'
     -> m Bool
-    -- ^ __Returns:__ whether the value is null.
+    -- ^ __Returns:__ whether the value is @null@.
 valueIsNull value = liftIO $ do
     value' <- unsafeManagedPtrCastPtr value
     result <- jsc_value_is_null value'
@@ -3293,7 +3293,7 @@ foreign import ccall "jsc_value_is_undefined" jsc_value_is_undefined ::
     Ptr Value ->                            -- value : TInterface (Name {namespace = "JavaScriptCore", name = "Value"})
     IO CInt
 
--- | Get whether the value referenced by /@value@/ is \<function>undefined\<\/function>.
+-- | Get whether the value referenced by /@value@/ is @undefined@.
 valueIsUndefined ::
     (B.CallStack.HasCallStack, MonadIO m, IsValue a) =>
     a
@@ -3645,7 +3645,7 @@ instance O.OverloadedMethodInfo ValueNewTypedArrayWithBufferMethodInfo a where
           Documentation
             { rawDocText =
                 Just
-                  "Define or modify a property with @property_name in object referenced by @value. When the\nproperty value is read or set, @getter and @setter callbacks will be called.\nWhen the property is cleared in the #JSCClass context, @destroy_notify is called with\n@user_data as parameter. This is equivalent to JavaScript <function>Object.defineProperty()</function>\nwhen used with an accessor descriptor.\n\nNote that the value returned by @getter must be fully transferred. In case of boxed types, you could use\n%G_TYPE_POINTER instead of the actual boxed #GType to ensure that the instance owned by #JSCClass is used.\nIf you really want to return a new copy of the boxed type, use #JSC_TYPE_VALUE and return a #JSCValue created\nwith jsc_value_new_object() that receives the copy as instance parameter.\n\nNote that @getter and @setter are called as functions and not methods, so they don't receive an instance as\nfirst parameter. Use jsc_class_add_property() if you want to add property accessor invoked as a method."
+                  "Define or modify a property with @property_name in object referenced by @value. When the\nproperty value is read or set, @getter and @setter callbacks will be called.\nWhen the property is cleared in the #JSCClass context, @destroy_notify is called with\n@user_data as parameter. This is equivalent to JavaScript `Object.defineProperty()`\nwhen used with an accessor descriptor.\n\nNote that the value returned by @getter must be fully transferred. In case of boxed types, you could use\n%G_TYPE_POINTER instead of the actual boxed #GType to ensure that the instance owned by #JSCClass is used.\nIf you really want to return a new copy of the boxed type, use #JSC_TYPE_VALUE and return a #JSCValue created\nwith jsc_value_new_object() that receives the copy as instance parameter.\n\nNote that @getter and @setter are called as functions and not methods, so they don't receive an instance as\nfirst parameter. Use jsc_class_add_property() if you want to add property accessor invoked as a method."
             , sinceVersion = Nothing
             }
       , callableResolvable = Just True
@@ -3753,7 +3753,7 @@ foreign import ccall "jsc_value_object_define_property_data" jsc_value_object_de
     IO ()
 
 -- | Define or modify a property with /@propertyName@/ in object referenced by /@value@/. This is equivalent to
--- JavaScript \<function>Object.@/defineProperty()/@\<\/function> when used with a data descriptor.
+-- JavaScript @Object.defineProperty()@ when used with a data descriptor.
 valueObjectDefinePropertyData ::
     (B.CallStack.HasCallStack, MonadIO m, IsValue a, IsValue b) =>
     a
@@ -4240,7 +4240,7 @@ instance O.OverloadedMethodInfo ValueObjectHasPropertyMethodInfo a where
 --               Documentation
 --                 { rawDocText =
 --                     Just
---                       "the #JSCValue<!-- -->s to pass as parameters to the method, or %NULL"
+--                       "the #JSCValue objects to pass as parameters to the method, or %NULL"
 --                 , sinceVersion = Nothing
 --                 }
 --           , argScope = ScopeTypeInvalid
@@ -4289,7 +4289,7 @@ foreign import ccall "jsc_value_object_invoke_methodv" jsc_value_object_invoke_m
 -- of this function.
 -- 
 -- This function always returns a t'GI.JavaScriptCore.Objects.Value.Value', in case of void methods a t'GI.JavaScriptCore.Objects.Value.Value' referencing
--- \<function>undefined\<\/function> is returned.
+-- @undefined@ is returned.
 valueObjectInvokeMethod ::
     (B.CallStack.HasCallStack, MonadIO m, IsValue a) =>
     a
@@ -4297,7 +4297,7 @@ valueObjectInvokeMethod ::
     -> T.Text
     -- ^ /@name@/: the method name
     -> Maybe ([Value])
-    -- ^ /@parameters@/: the t'GI.JavaScriptCore.Objects.Value.Value's to pass as parameters to the method, or 'P.Nothing'
+    -- ^ /@parameters@/: the t'GI.JavaScriptCore.Objects.Value.Value' objects to pass as parameters to the method, or 'P.Nothing'
     -> m Value
     -- ^ __Returns:__ a t'GI.JavaScriptCore.Objects.Value.Value' with the return value of the method.
 valueObjectInvokeMethod value name parameters = liftIO $ do
@@ -5096,9 +5096,9 @@ foreign import ccall "jsc_value_typed_array_get_data" jsc_value_typed_array_get_
 -- | Obtains a pointer to the memory region that holds the elements of the typed
 -- array; modifications done to them will be visible to JavaScript code. If
 -- /@length@/ is not 'P.Nothing', the number of elements contained in the typed array
--- are also stored in the pointed location.
+-- is also stored in the pointed location.
 -- 
--- The returned pointer needs to be casted to the appropriate type (see
+-- The returned pointer needs to be cast to the appropriate type (see
 -- t'GI.JavaScriptCore.Enums.TypedArrayType'), and has the @offset@ over the underlying array
 -- buffer data applied—that is, points to the first element of the typed
 -- array:
@@ -5110,7 +5110,7 @@ foreign import ccall "jsc_value_typed_array_get_data" jsc_value_typed_array_get_
 -- >    g_error ("Only arrays of uint32_t are supported");
 -- >
 -- >gsize count = 0;
--- >uint32_t *elements = jsc_value_typed_array_get_contents (value, &count);
+-- >uint32_t *elements = jsc_value_typed_array_get_data (value, &count);
 -- >for (gsize i = 0; i < count; i++)
 -- >     g_print ("index %zu, value %" PRIu32 "\n", i, elements[i]);
 -- 

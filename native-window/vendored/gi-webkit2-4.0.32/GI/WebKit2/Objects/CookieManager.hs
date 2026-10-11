@@ -11,7 +11,7 @@
 -- You can get it from a t'GI.WebKit2.Objects.WebsiteDataManager.WebsiteDataManager' with
 -- 'GI.WebKit2.Objects.WebsiteDataManager.websiteDataManagerGetCookieManager', and use it to set where to
 -- store cookies with 'GI.WebKit2.Objects.CookieManager.cookieManagerSetPersistentStorage',
--- or to set the acceptance policy, with 'GI.WebKit2.Objects.CookieManager.cookieManagerGetAcceptPolicy'.
+-- or to set the acceptance policy, with 'GI.WebKit2.Objects.CookieManager.cookieManagerSetAcceptPolicy'.
 
 #if (MIN_VERSION_haskell_gi_overloading(1,0,0) && !defined(__HADDOCK_VERSION__))
 #define ENABLE_OVERLOADING
@@ -1582,7 +1582,7 @@ instance O.OverloadedMethodInfo CookieManagerGetAllCookiesFinishMethodInfo a whe
 --           , argDoc =
 --               Documentation
 --                 { rawDocText =
---                     Just "the URI associated to the cookies to be retrieved"
+--                     Just "the URI associated with the cookies to be retrieved"
 --                 , sinceVersion = Nothing
 --                 }
 --           , argScope = ScopeTypeInvalid
@@ -1677,7 +1677,7 @@ cookieManagerGetCookies ::
     a
     -- ^ /@cookieManager@/: a t'GI.WebKit2.Objects.CookieManager.CookieManager'
     -> T.Text
-    -- ^ /@uri@/: the URI associated to the cookies to be retrieved
+    -- ^ /@uri@/: the URI associated with the cookies to be retrieved
     -> Maybe (b)
     -- ^ /@cancellable@/: a t'GI.Gio.Objects.Cancellable.Cancellable' or 'P.Nothing' to ignore
     -> Maybe (Gio.Callbacks.AsyncReadyCallback)
@@ -2415,7 +2415,7 @@ instance O.OverloadedMethodInfo CookieManagerSetAcceptPolicyMethodInfo a where
 --           , mayBeNull = False
 --           , argDoc =
 --               Documentation
---                 { rawDocText = Just "the filename to read to/write from"
+--                 { rawDocText = Just "the filename to read from/write to"
 --                 , sinceVersion = Nothing
 --                 }
 --           , argScope = ScopeTypeInvalid
@@ -2467,13 +2467,13 @@ foreign import ccall "webkit_cookie_manager_set_persistent_storage" webkit_cooki
 -- By default, /@cookieManager@/ doesn\'t store the cookies persistently, so you need to call this
 -- method to keep cookies saved across sessions.
 -- 
--- This method should never be called on a t'GI.WebKit2.Objects.CookieManager.CookieManager' associated to an ephemeral t'GI.WebKit2.Objects.WebsiteDataManager.WebsiteDataManager'.
+-- This method should never be called on a t'GI.WebKit2.Objects.CookieManager.CookieManager' associated with an ephemeral t'GI.WebKit2.Objects.WebsiteDataManager.WebsiteDataManager'.
 cookieManagerSetPersistentStorage ::
     (B.CallStack.HasCallStack, MonadIO m, IsCookieManager a) =>
     a
     -- ^ /@cookieManager@/: a t'GI.WebKit2.Objects.CookieManager.CookieManager'
     -> T.Text
-    -- ^ /@filename@/: the filename to read to\/write from
+    -- ^ /@filename@/: the filename to read from\/write to
     -> WebKit2.Enums.CookiePersistentStorage
     -- ^ /@storage@/: a t'GI.WebKit2.Enums.CookiePersistentStorage'
     -> m ()

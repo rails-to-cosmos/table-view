@@ -5,7 +5,7 @@
 -- License    : LGPL-2.1
 -- Maintainer : Iñaki García Etxebarria
 -- 
--- A compiled set of rules which applied to resource loads.
+-- A compiled set of rules which are applied to resource loads.
 -- 
 -- /Since: 2.24/
 

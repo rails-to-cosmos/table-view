@@ -12,11 +12,11 @@
 -- a t'GI.WebKit2.Callbacks.URISchemeRequestCallback'. After that, when a URI response
 -- is made with that particular scheme, your callback will be
 -- called. There you will be able to provide more response parameters
--- when the methods and properties of a t'GI.WebKit2.Objects.URISchemeRequest.URISchemeRequest' is not
+-- when the methods and properties of a t'GI.WebKit2.Objects.URISchemeRequest.URISchemeRequest' are not
 -- enough.
 -- 
 -- When you finished setting up your t'GI.WebKit2.Objects.URISchemeResponse.URISchemeResponse', call
--- @/webkit_uri_request_finish_with_response()/@ with it to return the response.
+-- 'GI.WebKit2.Objects.URISchemeRequest.uRISchemeRequestFinishWithResponse' with it to return the response.
 
 #if (MIN_VERSION_haskell_gi_overloading(1,0,0) && !defined(__HADDOCK_VERSION__))
 #define ENABLE_OVERLOADING

@@ -495,7 +495,7 @@ foreign import ccall "jsc_context_new_with_virtual_machine" jsc_context_new_with
     Ptr JavaScriptCore.VirtualMachine.VirtualMachine -> -- vm : TInterface (Name {namespace = "JavaScriptCore", name = "VirtualMachine"})
     IO (Ptr Context)
 
--- | Create a new t'GI.JavaScriptCore.Objects.Context.Context' in /@virtualMachine@/.
+-- | Create a new t'GI.JavaScriptCore.Objects.Context.Context' in /@vm@/.
 contextNewWithVirtualMachine ::
     (B.CallStack.HasCallStack, MonadIO m, JavaScriptCore.VirtualMachine.IsVirtualMachine a) =>
     a
@@ -1033,7 +1033,7 @@ foreign import ccall "jsc_context_evaluate_in_object" jsc_context_evaluate_in_ob
     Ptr (Ptr JavaScriptCore.Value.Value) -> -- object : TInterface (Name {namespace = "JavaScriptCore", name = "Value"})
     IO (Ptr JavaScriptCore.Value.Value)
 
--- | Evaluate /@code@/ and create an new object where symbols defined in /@code@/ will be added as properties,
+-- | Evaluate /@code@/ and create a new object where symbols defined in /@code@/ will be added as properties,
 -- instead of being added to /@context@/ global object. The new object is returned as /@object@/ parameter.
 -- Similar to how 'GI.JavaScriptCore.Objects.Value.valueNewObject' works, if /@objectInstance@/ is not 'P.Nothing' /@objectClass@/ must be provided too.
 -- The /@lineNumber@/ is the starting line number in /@uri@/; the value is one-based so the first line is 1.
@@ -1271,7 +1271,7 @@ foreign import ccall "jsc_context_get_exception" jsc_context_get_exception ::
     Ptr Context ->                          -- context : TInterface (Name {namespace = "JavaScriptCore", name = "Context"})
     IO (Ptr JavaScriptCore.Exception.Exception)
 
--- | Get the last unhandled exception thrown in /@context@/ by API functions calls.
+-- | Get the last unhandled exception thrown in /@context@/ by API function calls.
 contextGetException ::
     (B.CallStack.HasCallStack, MonadIO m, IsContext a) =>
     a
@@ -1794,7 +1794,7 @@ foreign import ccall "jsc_context_register_class" jsc_context_register_class ::
 
 -- | Register a custom class in /@context@/ using the given /@name@/. If the new class inherits from
 -- another t'GI.JavaScriptCore.Objects.Class.Class', the parent should be passed as /@parentClass@/, otherwise 'P.Nothing' should be
--- used. The optional /@vtable@/ parameter allows to provide a custom implementation for handling
+-- used. The optional /@vtable@/ parameter allows providing a custom implementation for handling
 -- the class, for example, to handle external properties not added to the prototype.
 -- When an instance of the t'GI.JavaScriptCore.Objects.Class.Class' is cleared in the context, /@destroyNotify@/ is called with
 -- the instance as parameter.

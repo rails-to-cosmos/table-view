@@ -300,6 +300,7 @@ class Ev {
     this.key = init && init.key;
     this.ctrlKey = !!(init && init.ctrlKey);
     this.repeat = !!(init && init.repeat);
+    this.clientX = Number(init && init.clientX) || 0;
     this.touches = (init && init.touches) || [];
     this.target = null;
     this.defaultPrevented = false;
@@ -401,13 +402,13 @@ class El {
   }
   getBoundingClientRect() {
     const h = this.style.height;
-    if (h && /px$/.test(String(h))) return { height: parseFloat(String(h)), width: 0 };
-    if (this.tagName === "THEAD") return { height: HEAD_PX, width: 0 };
+    if (h && /px$/.test(String(h))) return { left: 0, height: parseFloat(String(h)), width: 0 };
+    if (this.tagName === "THEAD") return { left: 0, height: HEAD_PX, width: 0 };
     if (this.tagName === "TR") {
       const top = contentTop(this);
-      return { height: snapped(top + ROW_PX) - snapped(top), width: 0 };
+      return { left: 0, height: snapped(top + ROW_PX) - snapped(top), width: 0 };
     }
-    return { height: 0, width: 0 };
+    return { left: 0, height: 0, width: 0 };
   }
   get scrollHeight() { return Math.round(trueHeight(this)); }
   closest(sel) {
@@ -997,8 +998,8 @@ async function rowMarks() {
   {
     const css = cssText();
     check("the box glyph is drawn off the class, both states, under the marking root",
-          [css.indexOf('.tv-marking .tv-table td.tv-box::before{content:"[ ]"}') !== -1,
-           css.indexOf('.tv-marking .tv-table tbody tr.tv-marked td.tv-box::before'
+          [css.indexOf('.tv-mark-gutter .tv-table td.tv-box::before{content:"[ ]"}') !== -1,
+           css.indexOf('.tv-mark-gutter .tv-table tbody tr.tv-marked td.tv-box::before'
                        + '{content:"[X]"}') !== -1],
           [true, true]);
     check("and the root a marking mount wears is what turns them on",
@@ -1032,6 +1033,33 @@ async function rowMarks() {
         [M.handle.getSelection().id, M.handle.getSelection().col], [ids[5], 2]);
   check("and the cell mark lands on that td rather than one over",
         rows()[5].children.findIndex((td) => td.classes.has("tv-cell-sel")), 3);
+
+  {
+    const E = driver(MARK_VIEW, { marks: true });
+    const h = E.handle;
+    const root = E.box.querySelector(".tv-root");
+    const row = E.box.querySelector("tbody tr[data-id]");
+    const columnsBefore = [E.box.querySelectorAll("thead th").length, row.children.length];
+    check("marks default to no checkbox cells and declare the edge treatment",
+          [E.box.querySelectorAll(".tv-box").length,
+           root.classes.has("tv-mark-edge"), root.classes.has("tv-mark-gutter")],
+          [0, true, false]);
+    h.toggleMark("a");
+    h.flagRow("a");
+    await painted();
+    check("one row can carry the mark and flag edges together",
+          [row.classes.has("tv-marked"), row.classes.has("tv-flagged")], [true, true]);
+    check("marking shifts no declared column",
+          [E.box.querySelectorAll("thead th").length, row.children.length], columnsBefore);
+    row.children[0].dispatchEvent(new Ev("click", { clientX: 2 }));
+    await painted();
+    check("the first six pixels remain a pointer mark target without a gutter",
+          [h.getMarked(), h.getSelection().id], [[], null]);
+    const css = cssText();
+    check("the twin-edge rule keeps both state colours",
+          /tv-marked\.tv-flagged td:first-child\{box-shadow:inset 3px 0 0 var\(--tv-accent\),inset 6px 0 0 var\(--tv-flag\)\}/.test(css),
+          true);
+  }
 
   {
     const S = driver(MARK_VIEW, { marks: true, pageSize: 4 });

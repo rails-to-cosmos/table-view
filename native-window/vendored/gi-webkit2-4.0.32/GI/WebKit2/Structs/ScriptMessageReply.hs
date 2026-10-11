@@ -7,7 +7,7 @@
 -- 
 -- A reply for a script message received.
 -- If no reply has been sent by the user, an automatically generated reply with
--- undefined value with be sent.
+-- undefined value will be sent.
 -- 
 -- /Since: 2.40/
 
@@ -358,7 +358,8 @@ foreign import ccall "webkit_script_message_reply_return_value" webkit_script_me
 
 -- | Reply to a script message with a value.
 -- 
--- This function can be called twice for passing the reply value in.
+-- This function can only be called once. Further calls to it or to
+-- 'GI.WebKit2.Structs.ScriptMessageReply.scriptMessageReplyReturnErrorMessage' emit a critical warning and are ignored.
 -- 
 -- /Since: 2.40/
 scriptMessageReplyReturnValue ::

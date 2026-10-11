@@ -9,7 +9,7 @@
 -- 
 -- When a select element in a t'GI.WebKit2.Objects.WebView.WebView' needs to display a dropdown menu, the signal
 -- [WebView::showOptionMenu]("GI.WebKit2.Objects.WebView#g:signal:showOptionMenu") is emitted, providing a WebKitOptionMenu with the
--- t'GI.WebKit2.Structs.OptionMenuItem.OptionMenuItem's that should be displayed.
+-- t'GI.WebKit2.Structs.OptionMenuItem.OptionMenuItem' objects that should be displayed.
 -- 
 -- /Since: 2.18/
 
@@ -677,7 +677,7 @@ optionMenuGetNItems ::
     a
     -- ^ /@menu@/: a t'GI.WebKit2.Objects.OptionMenu.OptionMenu'
     -> m Word32
-    -- ^ __Returns:__ the number of t'GI.WebKit2.Structs.OptionMenuItem.OptionMenuItem's in /@menu@/
+    -- ^ __Returns:__ the number of t'GI.WebKit2.Structs.OptionMenuItem.OptionMenuItem' objects in /@menu@/
 optionMenuGetNItems menu = liftIO $ do
     menu' <- unsafeManagedPtrCastPtr menu
     result <- webkit_option_menu_get_n_items menu'
@@ -752,7 +752,7 @@ foreign import ccall "webkit_option_menu_select_item" webkit_option_menu_select_
 -- 
 -- Selecting an item changes the
 -- text shown by the combo button, but it doesn\'t change the value of the element. You need to
--- explicitly activate the item with 'GI.WebKit2.Objects.OptionMenu.optionMenuSelectItem' or close the menu with
+-- explicitly activate the item with 'GI.WebKit2.Objects.OptionMenu.optionMenuActivateItem' or close the menu with
 -- 'GI.WebKit2.Objects.OptionMenu.optionMenuClose' in which case the currently selected item will be activated.
 -- 
 -- /Since: 2.18/

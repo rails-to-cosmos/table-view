@@ -5,7 +5,7 @@
 -- License    : LGPL-2.1
 -- Maintainer : Iñaki García Etxebarria
 -- 
--- Control the behaviour of a t'GI.WebKit2.Objects.WebView.WebView'.
+-- Control the behavior of a t'GI.WebKit2.Objects.WebView.WebView'.
 -- 
 -- t'GI.WebKit2.Objects.Settings.Settings' can be applied to a t'GI.WebKit2.Objects.WebView.WebView' to control text charset,
 -- color, font sizes, printing mode, script support, loading of images and various
@@ -1144,7 +1144,7 @@ module GI.WebKit2.Objects.Settings
 -- | Whether file access is allowed from file URLs. By default, when
 -- something is loaded in a t'GI.WebKit2.Objects.WebView.WebView' using a file URI, cross
 -- origin requests to other file resources are not allowed. This
--- setting allows you to change that behaviour, so that it would be
+-- setting allows you to change that behavior, so that it would be
 -- possible to do a XMLHttpRequest of a local file, for example.
 -- 
 -- /Since: 2.10/
@@ -1163,7 +1163,7 @@ module GI.WebKit2.Objects.Settings
 -- ** allowModalDialogs #attr:allowModalDialogs#
 -- | Determine whether it\'s allowed to create and run modal dialogs
 -- from a t'GI.WebKit2.Objects.WebView.WebView' through JavaScript with
--- \<function>window.showModalDialog\<\/function>. If it\'s set to
+-- @window.showModalDialog@. If it\'s set to
 -- 'P.False', the associated t'GI.WebKit2.Objects.WebView.WebView' won\'t be able to create
 -- new modal dialogs, so not even the [WebView::create]("GI.WebKit2.Objects.WebView#g:signal:create")
 -- signal will be emitted.
@@ -1183,7 +1183,7 @@ module GI.WebKit2.Objects.Settings
 -- | Whether or not the top frame is allowed to navigate to data URLs. It is disabled by default
 -- due to the risk it poses when loading untrusted URLs, with data URLs being used in scamming
 -- and phishing attacks. In contrast, a scenario where it could be enabled could be an app that
--- embeds a WebView and you have control of the pages being show instead of a generic browser.
+-- embeds a WebView and you have control of the pages being shown instead of a generic browser.
 -- 
 -- /Since: 2.28/
 
@@ -1203,7 +1203,7 @@ module GI.WebKit2.Objects.Settings
 -- should be allowed to access content from any origin.  By default, when
 -- something is loaded in a t'GI.WebKit2.Objects.WebView.WebView' using a file scheme URL,
 -- access to the local file system and arbitrary local storage is not
--- allowed. This setting allows you to change that behaviour, so that
+-- allowed. This setting allows you to change that behavior, so that
 -- it would be possible to use local storage, for example.
 -- 
 -- /Since: 2.14/
@@ -1803,9 +1803,9 @@ module GI.WebKit2.Objects.Settings
 -- | Whether to enable Spatial Navigation. This feature consists in the ability
 -- to navigate between focusable elements in a Web page, such as hyperlinks
 -- and form controls, by using Left, Right, Up and Down arrow keys.
--- For example, if an user presses the Right key, heuristics determine whether
+-- For example, if a user presses the Right key, heuristics determine whether
 -- there is an element they might be trying to reach towards the right, and if
--- there are multiple elements, which element they probably wants.
+-- there are multiple elements, which element they probably want.
 -- 
 -- /Since: 2.4/
 
@@ -2020,7 +2020,7 @@ module GI.WebKit2.Objects.Settings
 
 
 -- ** mediaContentTypesRequiringHardwareSupport #attr:mediaContentTypesRequiringHardwareSupport#
--- | List of media content types requiring hardware support, split by semicolons (:).
+-- | List of media content types requiring hardware support, split by colons (:).
 -- For example: \'video\/webm; codecs=\"vp*\":video\/mp4; codecs=\"avc*\":video\/&ast; codecs=\"av1*\"\'.
 -- 
 -- /Since: 2.30/
@@ -2182,8 +2182,8 @@ module GI.WebKit2.Objects.Settings
 -- ** webrtcUdpPortsRange #attr:webrtcUdpPortsRange#
 -- | Allow customization of the WebRTC UDP ports range.
 -- 
--- In some constrained environments where a firewall blocks UDP network traffic excepted on a
--- specific port range, this settings can be used to give hints to the WebRTC backend regarding
+-- In some constrained environments where a firewall blocks UDP network traffic except on a
+-- specific port range, this setting can be used to give hints to the WebRTC backend regarding
 -- which ports to allocate. The format is min-port:max-port, so for instance 20000:30000. The
 -- default empty string value means the OS will use no hints from the WebRTC backend. Using 0
 -- for one of the values is allowed and means the value is unspecified.
@@ -6212,7 +6212,7 @@ foreign import ccall "webkit_settings_apply_from_key_file" webkit_settings_apply
     Ptr (Ptr GError) ->                     -- error
     IO CInt
 
--- | Reads the contents of the given /@groupName@/ from the given /@keyFile@/ and apply the value of
+-- | Reads the contents of the given /@groupName@/ from the given /@keyFile@/ and applies the value of
 -- each key\/value to the corresponding property on the /@settings@/.
 -- 
 -- Value types have to match with the corresponding setting property type and the group keys have to
@@ -6413,7 +6413,7 @@ settingsGetAllowTopNavigationToDataUrls ::
     a
     -- ^ /@settings@/: a t'GI.WebKit2.Objects.Settings.Settings'
     -> m Bool
-    -- ^ __Returns:__ 'P.True' If navigation to data URLs from the top frame is allowed or 'P.False'\\
+    -- ^ __Returns:__ 'P.True' If navigation to data URLs from the top frame is allowed or 'P.False'
     -- otherwise.
 settingsGetAllowTopNavigationToDataUrls settings = liftIO $ do
     settings' <- unsafeManagedPtrCastPtr settings
@@ -7110,7 +7110,7 @@ settingsGetEnableBackForwardNavigationGestures ::
     a
     -- ^ /@settings@/: a t'GI.WebKit2.Objects.Settings.Settings'
     -> m Bool
-    -- ^ __Returns:__ 'P.True' if horizontal swipe gesture will trigger back-forward navigaiton or 'P.False' otherwise.
+    -- ^ __Returns:__ 'P.True' if horizontal swipe gesture will trigger back-forward navigation or 'P.False' otherwise.
 settingsGetEnableBackForwardNavigationGestures settings = liftIO $ do
     settings' <- unsafeManagedPtrCastPtr settings
     result <- webkit_settings_get_enable_back_forward_navigation_gestures settings'
@@ -7679,7 +7679,7 @@ foreign import ccall "webkit_settings_get_enable_java" webkit_settings_get_enabl
     Ptr Settings ->                         -- settings : TInterface (Name {namespace = "WebKit2", name = "Settings"})
     IO CInt
 
-{-# DEPRECATED settingsGetEnableJava ["(Since version 2.38.)","This function always returns 'P.False'."] #-}
+{-# DEPRECATED settingsGetEnableJava ["(Since version 2.38)","This function always returns 'P.False'."] #-}
 -- | Get the [Settings:enableJava]("GI.WebKit2.Objects.Settings#g:attr:enableJava") property.
 settingsGetEnableJava ::
     (B.CallStack.HasCallStack, MonadIO m, IsSettings a) =>
@@ -8212,7 +8212,7 @@ settingsGetEnablePageCache ::
     a
     -- ^ /@settings@/: a t'GI.WebKit2.Objects.Settings.Settings'
     -> m Bool
-    -- ^ __Returns:__ 'P.True' if page cache enabled or 'P.False' otherwise.
+    -- ^ __Returns:__ 'P.True' if page cache is enabled or 'P.False' otherwise.
 settingsGetEnablePageCache settings = liftIO $ do
     settings' <- unsafeManagedPtrCastPtr settings
     result <- webkit_settings_get_enable_page_cache settings'
@@ -8321,7 +8321,7 @@ foreign import ccall "webkit_settings_get_enable_private_browsing" webkit_settin
     Ptr Settings ->                         -- settings : TInterface (Name {namespace = "WebKit2", name = "Settings"})
     IO CInt
 
-{-# DEPRECATED settingsGetEnablePrivateBrowsing ["(Since version 2.16.)","Use [WebView:isEphemeral](\"GI.WebKit2.Objects.WebView#g:attr:isEphemeral\") or t'GI.WebKit2.Objects.WebContext.WebContext':@/is-ephemeral/@ instead."] #-}
+{-# DEPRECATED settingsGetEnablePrivateBrowsing ["(Since version 2.16)","Use [WebView:isEphemeral](\"GI.WebKit2.Objects.WebView#g:attr:isEphemeral\") or [WebsiteDataManager:isEphemeral](\"GI.WebKit2.Objects.WebsiteDataManager#g:attr:isEphemeral\") instead."] #-}
 -- | Get the [Settings:enablePrivateBrowsing]("GI.WebKit2.Objects.Settings#g:attr:enablePrivateBrowsing") property.
 settingsGetEnablePrivateBrowsing ::
     (B.CallStack.HasCallStack, MonadIO m, IsSettings a) =>
@@ -8899,7 +8899,7 @@ foreign import ccall "webkit_settings_get_enable_xss_auditor" webkit_settings_ge
     Ptr Settings ->                         -- settings : TInterface (Name {namespace = "WebKit2", name = "Settings"})
     IO CInt
 
-{-# DEPRECATED settingsGetEnableXssAuditor ["(Since version 2.38.)","This function does nothing."] #-}
+{-# DEPRECATED settingsGetEnableXssAuditor ["(Since version 2.38)","This function does nothing."] #-}
 -- | The XSS auditor has been removed. This function returns 'P.False'.
 settingsGetEnableXssAuditor ::
     (B.CallStack.HasCallStack, MonadIO m, IsSettings a) =>
@@ -9014,7 +9014,7 @@ instance O.OverloadedMethodInfo SettingsGetFantasyFontFamilyMethodInfo a where
 --           , mayBeNull = False
 --           , argDoc =
 --               Documentation
---                 { rawDocText = Just "the feature to toggle."
+--                 { rawDocText = Just "the feature to query."
 --                 , sinceVersion = Nothing
 --                 }
 --           , argScope = ScopeTypeInvalid
@@ -9043,7 +9043,7 @@ settingsGetFeatureEnabled ::
     a
     -- ^ /@settings@/: a t'GI.WebKit2.Objects.Settings.Settings'
     -> WebKit2.Feature.Feature
-    -- ^ /@feature@/: the feature to toggle.
+    -- ^ /@feature@/: the feature to query.
     -> m Bool
     -- ^ __Returns:__ Whether the feature is enabled.
 settingsGetFeatureEnabled settings feature = liftIO $ do
@@ -9223,7 +9223,7 @@ settingsGetJavascriptCanOpenWindowsAutomatically ::
     a
     -- ^ /@settings@/: a t'GI.WebKit2.Objects.Settings.Settings'
     -> m Bool
-    -- ^ __Returns:__ 'P.True' If JavaScript can open window automatically or 'P.False' otherwise.
+    -- ^ __Returns:__ 'P.True' If JavaScript can open windows automatically or 'P.False' otherwise.
 settingsGetJavascriptCanOpenWindowsAutomatically settings = liftIO $ do
     settings' <- unsafeManagedPtrCastPtr settings
     result <- webkit_settings_get_javascript_can_open_windows_automatically settings'
@@ -9333,14 +9333,14 @@ foreign import ccall "webkit_settings_get_math_font_family" webkit_settings_get_
     IO CString
 
 -- | Gets the [Settings:mathFontFamily]("GI.WebKit2.Objects.Settings#g:attr:mathFontFamily") property.
+-- 
+-- /Since: 2.52/
 settingsGetMathFontFamily ::
     (B.CallStack.HasCallStack, MonadIO m, IsSettings a) =>
     a
     -- ^ /@settings@/: a t'GI.WebKit2.Objects.Settings.Settings'
     -> m (Maybe T.Text)
     -- ^ __Returns:__ The default font family used to display content marked with math font.
-    -- 
-    -- Since 2.52
 settingsGetMathFontFamily settings = liftIO $ do
     settings' <- unsafeManagedPtrCastPtr settings
     result <- webkit_settings_get_math_font_family settings'
@@ -9517,7 +9517,7 @@ settingsGetMediaPlaybackRequiresUserGesture ::
     a
     -- ^ /@settings@/: a t'GI.WebKit2.Objects.Settings.Settings'
     -> m Bool
-    -- ^ __Returns:__ 'P.True' If an user gesture is needed to play or load media
+    -- ^ __Returns:__ 'P.True' If a user gesture is needed to play or load media
     --    or 'P.False' if no user gesture is needed.
 settingsGetMediaPlaybackRequiresUserGesture settings = liftIO $ do
     settings' <- unsafeManagedPtrCastPtr settings
@@ -11939,7 +11939,7 @@ foreign import ccall "webkit_settings_set_enable_java" webkit_settings_set_enabl
     CInt ->                                 -- enabled : TBasicType TBoolean
     IO ()
 
-{-# DEPRECATED settingsSetEnableJava ["(Since version 2.38.)","This function does nothing."] #-}
+{-# DEPRECATED settingsSetEnableJava ["(Since version 2.38)","This function does nothing."] #-}
 -- | Set the [Settings:enableJava]("GI.WebKit2.Objects.Settings#g:attr:enableJava") property.
 -- 
 -- Deprecated function that does nothing.
@@ -12479,7 +12479,7 @@ foreign import ccall "webkit_settings_set_enable_mock_capture_devices" webkit_se
 
 -- | Set the [Settings:enableMockCaptureDevices]("GI.WebKit2.Objects.Settings#g:attr:enableMockCaptureDevices") property.
 -- 
--- /Since: 2.4/
+-- /Since: 2.24/
 settingsSetEnableMockCaptureDevices ::
     (B.CallStack.HasCallStack, MonadIO m, IsSettings a) =>
     a
@@ -12781,7 +12781,7 @@ foreign import ccall "webkit_settings_set_enable_private_browsing" webkit_settin
     CInt ->                                 -- enabled : TBasicType TBoolean
     IO ()
 
-{-# DEPRECATED settingsSetEnablePrivateBrowsing ["(Since version 2.16.)","Use [WebView:isEphemeral](\"GI.WebKit2.Objects.WebView#g:attr:isEphemeral\") or t'GI.WebKit2.Objects.WebContext.WebContext':@/is-ephemeral/@ instead."] #-}
+{-# DEPRECATED settingsSetEnablePrivateBrowsing ["(Since version 2.16)","Use [WebView:isEphemeral](\"GI.WebKit2.Objects.WebView#g:attr:isEphemeral\") or [WebsiteDataManager:isEphemeral](\"GI.WebKit2.Objects.WebsiteDataManager#g:attr:isEphemeral\") instead."] #-}
 -- | Set the [Settings:enablePrivateBrowsing]("GI.WebKit2.Objects.Settings#g:attr:enablePrivateBrowsing") property.
 settingsSetEnablePrivateBrowsing ::
     (B.CallStack.HasCallStack, MonadIO m, IsSettings a) =>
@@ -13540,7 +13540,7 @@ foreign import ccall "webkit_settings_set_enable_xss_auditor" webkit_settings_se
     CInt ->                                 -- enabled : TBasicType TBoolean
     IO ()
 
-{-# DEPRECATED settingsSetEnableXssAuditor ["(Since version 2.38.)","This function does nothing."] #-}
+{-# DEPRECATED settingsSetEnableXssAuditor ["(Since version 2.38)","This function does nothing."] #-}
 -- | The XSS auditor has been removed. This function does nothing.
 settingsSetEnableXssAuditor ::
     (B.CallStack.HasCallStack, MonadIO m, IsSettings a) =>
@@ -14114,7 +14114,7 @@ foreign import ccall "webkit_settings_set_math_font_family" webkit_settings_set_
 
 -- | Set the [Settings:mathFontFamily]("GI.WebKit2.Objects.Settings#g:attr:mathFontFamily") property.
 -- 
--- Since 2.52
+-- /Since: 2.52/
 settingsSetMathFontFamily ::
     (B.CallStack.HasCallStack, MonadIO m, IsSettings a) =>
     a
@@ -14177,7 +14177,7 @@ instance O.OverloadedMethodInfo SettingsSetMathFontFamilyMethodInfo a where
 --               Documentation
 --                 { rawDocText =
 --                     Just
---                       "list of media content types requiring hardware support split by semicolons (:) or %NULL to use the default value."
+--                       "list of media content types requiring hardware support split by colons (:) or %NULL to use the default value."
 --                 , sinceVersion = Nothing
 --                 }
 --           , argScope = ScopeTypeInvalid
@@ -14206,7 +14206,7 @@ settingsSetMediaContentTypesRequiringHardwareSupport ::
     a
     -- ^ /@settings@/: a t'GI.WebKit2.Objects.Settings.Settings'
     -> Maybe (T.Text)
-    -- ^ /@contentTypes@/: list of media content types requiring hardware support split by semicolons (:) or 'P.Nothing' to use the default value.
+    -- ^ /@contentTypes@/: list of media content types requiring hardware support split by colons (:) or 'P.Nothing' to use the default value.
     -> m ()
 settingsSetMediaContentTypesRequiringHardwareSupport settings contentTypes = liftIO $ do
     settings' <- unsafeManagedPtrCastPtr settings
@@ -14980,7 +14980,7 @@ instance O.OverloadedMethodInfo SettingsSetUserAgentMethodInfo a where
 --               Documentation
 --                 { rawDocText =
 --                     Just
---                       "The application version for the user agent or %NULL to user the default version."
+--                       "The application version for the user agent or %NULL to use the default version."
 --                 , sinceVersion = Nothing
 --                 }
 --           , argScope = ScopeTypeInvalid
@@ -15005,8 +15005,8 @@ foreign import ccall "webkit_settings_set_user_agent_with_application_details" w
 -- | Set the [Settings:userAgent]("GI.WebKit2.Objects.Settings#g:attr:userAgent") property by appending the application details.
 -- 
 -- Set the [Settings:userAgent]("GI.WebKit2.Objects.Settings#g:attr:userAgent") property by appending the application details to the default user
--- agent. If no application name or version is given, the default user agent used will be used. If only
--- the version is given, the default engine version is used with the given application name.
+-- agent. If no application name is given, the default user agent will be used and /@applicationVersion@/
+-- is ignored. If only the name is given, the default engine version is used with the given application name.
 settingsSetUserAgentWithApplicationDetails ::
     (B.CallStack.HasCallStack, MonadIO m, IsSettings a) =>
     a
@@ -15014,7 +15014,7 @@ settingsSetUserAgentWithApplicationDetails ::
     -> Maybe (T.Text)
     -- ^ /@applicationName@/: The application name used for the user agent or 'P.Nothing' to use the default user agent.
     -> Maybe (T.Text)
-    -- ^ /@applicationVersion@/: The application version for the user agent or 'P.Nothing' to user the default version.
+    -- ^ /@applicationVersion@/: The application version for the user agent or 'P.Nothing' to use the default version.
     -> m ()
 settingsSetUserAgentWithApplicationDetails settings applicationName applicationVersion = liftIO $ do
     settings' <- unsafeManagedPtrCastPtr settings
@@ -15352,7 +15352,7 @@ foreign import ccall "webkit_settings_get_development_features" webkit_settings_
 -- | Gets the list of available development WebKit features.
 -- 
 -- The returned features are a subset of those returned by
--- @/Settings.get_all_features/@, and includes those which
+-- @/Settings.get_all_features/@, and include those which
 -- web and WebKit developers might find useful, but in general should
 -- *not* be exposed to end users; see [enum/@featureStatus@/] for
 -- more details.
@@ -15386,7 +15386,7 @@ foreign import ccall "webkit_settings_get_experimental_features" webkit_settings
 -- | Gets the list of available experimental WebKit features.
 -- 
 -- The returned features are a subset of those returned by
--- @/Settings.get_all_features/@, and includes those which
+-- @/Settings.get_all_features/@, and include those which
 -- certain applications may want to expose to end users; see
 -- [enum/@featureStatus@/] for more details.
 -- 

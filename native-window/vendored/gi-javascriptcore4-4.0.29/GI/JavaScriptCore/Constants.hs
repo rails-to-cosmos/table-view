@@ -91,12 +91,12 @@ pattern OPTIONS_USE_DFG = "useDFGJIT" :: T.Text
 -- | Like 'GI.JavaScriptCore.Functions.getMinorVersion', but from the headers used at
 -- application compile time, rather than from the library linked
 -- against at application run time.
-pattern MINOR_VERSION = 52 :: Int32
+pattern MINOR_VERSION = 54 :: Int32
 
 -- | Like 'GI.JavaScriptCore.Functions.getMicroVersion', but from the headers used at
 -- application compile time, rather than from the library linked
 -- against at application run time.
-pattern MICRO_VERSION = 6 :: Int32
+pattern MICRO_VERSION = 1 :: Int32
 
 -- | Like 'GI.JavaScriptCore.Functions.getMajorVersion', but from the headers used at
 -- application compile time, rather than from the library linked

@@ -767,7 +767,7 @@ exceptionGetSourceUri ::
     a
     -- ^ /@exception@/: a t'GI.JavaScriptCore.Objects.Exception.Exception'
     -> m (Maybe T.Text)
-    -- ^ __Returns:__ the the source URI of /@exception@/, or 'P.Nothing'.
+    -- ^ __Returns:__ the source URI of /@exception@/, or 'P.Nothing'.
 exceptionGetSourceUri exception = liftIO $ do
     exception' <- unsafeManagedPtrCastPtr exception
     result <- jsc_exception_get_source_uri exception'
@@ -821,7 +821,7 @@ foreign import ccall "jsc_exception_report" jsc_exception_report ::
     Ptr Exception ->                        -- exception : TInterface (Name {namespace = "JavaScriptCore", name = "Exception"})
     IO CString
 
--- | Return a report message of /@exception@/, containing all the possible details such us
+-- | Return a report message of /@exception@/, containing all the possible details such as
 -- source URI, line, column and backtrace, and formatted to be printed.
 exceptionReport ::
     (B.CallStack.HasCallStack, MonadIO m, IsException a) =>

@@ -612,8 +612,8 @@ foreign import ccall "webkit_navigation_action_get_request" webkit_navigation_ac
 
 -- | Return the t'GI.WebKit2.Objects.URIRequest.URIRequest' associated with the navigation action.
 -- 
--- Modifications to the returned object are \<emphasis>not\<\/emphasis> taken
--- into account when the request is sent over the network, and is intended
+-- Modifications to the returned object are *not* taken
+-- into account when the request is sent over the network, and the object is intended
 -- only to aid in evaluating whether a navigation action should be taken or
 -- not. To modify requests before they are sent over the network the
 -- @/WebKitPage::send-request/@ signal can be used instead.

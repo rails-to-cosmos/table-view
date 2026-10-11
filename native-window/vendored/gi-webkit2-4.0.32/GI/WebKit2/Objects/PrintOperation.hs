@@ -418,7 +418,7 @@ instance (info ~ ResolvePrintOperationMethod t PrintOperation, O.OverloadedMetho
 -- | Emitted when displaying the print dialog with 'GI.WebKit2.Objects.PrintOperation.printOperationRunDialog'.
 -- The returned t'GI.WebKit2.Objects.PrintCustomWidget.PrintCustomWidget' will be added to the print dialog and
 -- it will be owned by the /@printOperation@/. However, the object is guaranteed
--- to be alive until the [PrintCustomWidget::apply]("GI.WebKit2.Objects.PrintCustomWidget#g:signal:apply") is emitted.
+-- to be alive until the [PrintCustomWidget::apply]("GI.WebKit2.Objects.PrintCustomWidget#g:signal:apply") signal is emitted.
 -- 
 -- /Since: 2.16/
 type PrintOperationCreateCustomWidgetCallback =
@@ -1127,8 +1127,8 @@ foreign import ccall "webkit_print_operation_run_dialog" webkit_print_operation_
 -- is returned and the print operation starts. In this case, the [PrintOperation::finished]("GI.WebKit2.Objects.PrintOperation#g:signal:finished")
 -- signal is emitted when the operation finishes. If an error occurs while printing, the signal
 -- [PrintOperation::failed]("GI.WebKit2.Objects.PrintOperation#g:signal:failed") is emitted before [PrintOperation::finished]("GI.WebKit2.Objects.PrintOperation#g:signal:finished").
--- If the print dialog is not cancelled current print settings and page setup of /@printOperation@/
--- are updated with options selected by the user when Print button is pressed in print dialog.
+-- If the print dialog is not cancelled, the current print settings and page setup of /@printOperation@/
+-- are updated with the options selected by the user when the Print button is pressed in the print dialog.
 -- You can get the updated print settings and page setup by calling
 -- 'GI.WebKit2.Objects.PrintOperation.printOperationGetPrintSettings' and 'GI.WebKit2.Objects.PrintOperation.printOperationGetPageSetup'
 -- after this method.

@@ -8,7 +8,7 @@
 -- View specific website policies.
 -- 
 -- WebKitWebsitePolicies allows you to configure per-page policies,
--- currently only autoplay policies are supported.
+-- currently only autoplay and custom user agent policies are supported.
 -- 
 -- /Since: 2.30/
 
@@ -33,7 +33,7 @@ module GI.WebKit2.Objects.WebsitePolicies
 -- [bindProperty]("GI.GObject.Objects.Object#g:method:bindProperty"), [bindPropertyFull]("GI.GObject.Objects.Object#g:method:bindPropertyFull"), [forceFloating]("GI.GObject.Objects.Object#g:method:forceFloating"), [freezeNotify]("GI.GObject.Objects.Object#g:method:freezeNotify"), [getv]("GI.GObject.Objects.Object#g:method:getv"), [isFloating]("GI.GObject.Objects.Object#g:method:isFloating"), [notify]("GI.GObject.Objects.Object#g:method:notify"), [notifyByPspec]("GI.GObject.Objects.Object#g:method:notifyByPspec"), [ref]("GI.GObject.Objects.Object#g:method:ref"), [refSink]("GI.GObject.Objects.Object#g:method:refSink"), [runDispose]("GI.GObject.Objects.Object#g:method:runDispose"), [stealData]("GI.GObject.Objects.Object#g:method:stealData"), [stealQdata]("GI.GObject.Objects.Object#g:method:stealQdata"), [thawNotify]("GI.GObject.Objects.Object#g:method:thawNotify"), [unref]("GI.GObject.Objects.Object#g:method:unref"), [watchClosure]("GI.GObject.Objects.Object#g:method:watchClosure").
 -- 
 -- ==== Getters
--- [getAutoplayPolicy]("GI.WebKit2.Objects.WebsitePolicies#g:method:getAutoplayPolicy"), [getData]("GI.GObject.Objects.Object#g:method:getData"), [getProperty]("GI.GObject.Objects.Object#g:method:getProperty"), [getQdata]("GI.GObject.Objects.Object#g:method:getQdata").
+-- [getAutoplayPolicy]("GI.WebKit2.Objects.WebsitePolicies#g:method:getAutoplayPolicy"), [getCustomUserAgent]("GI.WebKit2.Objects.WebsitePolicies#g:method:getCustomUserAgent"), [getData]("GI.GObject.Objects.Object#g:method:getData"), [getProperty]("GI.GObject.Objects.Object#g:method:getProperty"), [getQdata]("GI.GObject.Objects.Object#g:method:getQdata").
 -- 
 -- ==== Setters
 -- [setData]("GI.GObject.Objects.Object#g:method:setData"), [setDataFull]("GI.GObject.Objects.Object#g:method:setDataFull"), [setProperty]("GI.GObject.Objects.Object#g:method:setProperty").
@@ -48,6 +48,14 @@ module GI.WebKit2.Objects.WebsitePolicies
     WebsitePoliciesGetAutoplayPolicyMethodInfo,
 #endif
     websitePoliciesGetAutoplayPolicy        ,
+
+
+-- ** getCustomUserAgent #method:getCustomUserAgent#
+
+#if defined(ENABLE_OVERLOADING)
+    WebsitePoliciesGetCustomUserAgentMethodInfo,
+#endif
+    websitePoliciesGetCustomUserAgent       ,
 
 
 -- ** new #method:new#
@@ -72,6 +80,22 @@ module GI.WebKit2.Objects.WebsitePolicies
     getWebsitePoliciesAutoplay              ,
 #if defined(ENABLE_OVERLOADING)
     websitePoliciesAutoplay                 ,
+#endif
+
+
+-- ** customUserAgent #attr:customUserAgent#
+-- | The custom user agent string to send for navigations governed by these
+-- t'GI.WebKit2.Objects.WebsitePolicies.WebsitePolicies', or 'P.Nothing' to use the default user agent.
+-- 
+-- /Since: 2.54/
+
+#if defined(ENABLE_OVERLOADING)
+    WebsitePoliciesCustomUserAgentPropertyInfo,
+#endif
+    constructWebsitePoliciesCustomUserAgent ,
+    getWebsitePoliciesCustomUserAgent       ,
+#if defined(ENABLE_OVERLOADING)
+    websitePoliciesCustomUserAgent          ,
 #endif
 
 
@@ -180,6 +204,7 @@ type family ResolveWebsitePoliciesMethod (t :: Symbol) (o :: DK.Type) :: DK.Type
     ResolveWebsitePoliciesMethod "unref" o = GObject.Object.ObjectUnrefMethodInfo
     ResolveWebsitePoliciesMethod "watchClosure" o = GObject.Object.ObjectWatchClosureMethodInfo
     ResolveWebsitePoliciesMethod "getAutoplayPolicy" o = WebsitePoliciesGetAutoplayPolicyMethodInfo
+    ResolveWebsitePoliciesMethod "getCustomUserAgent" o = WebsitePoliciesGetCustomUserAgentMethodInfo
     ResolveWebsitePoliciesMethod "getData" o = GObject.Object.ObjectGetDataMethodInfo
     ResolveWebsitePoliciesMethod "getProperty" o = GObject.Object.ObjectGetPropertyMethodInfo
     ResolveWebsitePoliciesMethod "getQdata" o = GObject.Object.ObjectGetQdataMethodInfo
@@ -253,15 +278,61 @@ instance AttrInfo WebsitePoliciesAutoplayPropertyInfo where
         })
 #endif
 
+-- VVV Prop "custom-user-agent"
+   -- Type: TBasicType TUTF8
+   -- Flags: [PropertyReadable,PropertyWritable,PropertyConstructOnly]
+   -- Nullable: (Just True,Nothing)
+
+-- | Get the value of the “@custom-user-agent@” property.
+-- When <https://github.com/haskell-gi/haskell-gi/wiki/Overloading overloading> is enabled, this is equivalent to
+-- 
+-- @
+-- 'Data.GI.Base.Attributes.get' websitePolicies #customUserAgent
+-- @
+getWebsitePoliciesCustomUserAgent :: (MonadIO m, IsWebsitePolicies o) => o -> m (Maybe T.Text)
+getWebsitePoliciesCustomUserAgent obj = MIO.liftIO $ B.Properties.getObjectPropertyString obj "custom-user-agent"
+
+-- | Construct a t'GValueConstruct' with valid value for the “@custom-user-agent@” property. This is rarely needed directly, but it is used by `Data.GI.Base.Constructible.new`.
+constructWebsitePoliciesCustomUserAgent :: (IsWebsitePolicies o, MIO.MonadIO m) => T.Text -> m (GValueConstruct o)
+constructWebsitePoliciesCustomUserAgent val = MIO.liftIO $ do
+    MIO.liftIO $ B.Properties.constructObjectPropertyString "custom-user-agent" (P.Just val)
+
+#if defined(ENABLE_OVERLOADING)
+data WebsitePoliciesCustomUserAgentPropertyInfo
+instance AttrInfo WebsitePoliciesCustomUserAgentPropertyInfo where
+    type AttrAllowedOps WebsitePoliciesCustomUserAgentPropertyInfo = '[ 'AttrConstruct, 'AttrGet, 'AttrClear]
+    type AttrBaseTypeConstraint WebsitePoliciesCustomUserAgentPropertyInfo = IsWebsitePolicies
+    type AttrSetTypeConstraint WebsitePoliciesCustomUserAgentPropertyInfo = (~) T.Text
+    type AttrTransferTypeConstraint WebsitePoliciesCustomUserAgentPropertyInfo = (~) T.Text
+    type AttrTransferType WebsitePoliciesCustomUserAgentPropertyInfo = T.Text
+    type AttrGetType WebsitePoliciesCustomUserAgentPropertyInfo = (Maybe T.Text)
+    type AttrLabel WebsitePoliciesCustomUserAgentPropertyInfo = "custom-user-agent"
+    type AttrOrigin WebsitePoliciesCustomUserAgentPropertyInfo = WebsitePolicies
+    attrGet = getWebsitePoliciesCustomUserAgent
+    attrSet = undefined
+    attrPut = undefined
+    attrTransfer _ v = do
+        return v
+    attrConstruct = constructWebsitePoliciesCustomUserAgent
+    attrClear = undefined
+    dbgAttrInfo = P.Just (O.ResolvedSymbolInfo {
+        O.resolvedSymbolName = "GI.WebKit2.Objects.WebsitePolicies.customUserAgent"
+        , O.resolvedSymbolURL = "https://hackage.haskell.org/package/gi-webkit2-4.0.32/docs/GI-WebKit2-Objects-WebsitePolicies.html#g:attr:customUserAgent"
+        })
+#endif
+
 #if defined(ENABLE_OVERLOADING)
 instance O.HasAttributeList WebsitePolicies
 type instance O.AttributeList WebsitePolicies = WebsitePoliciesAttributeList
-type WebsitePoliciesAttributeList = ('[ '("autoplay", WebsitePoliciesAutoplayPropertyInfo)] :: [(Symbol, DK.Type)])
+type WebsitePoliciesAttributeList = ('[ '("autoplay", WebsitePoliciesAutoplayPropertyInfo), '("customUserAgent", WebsitePoliciesCustomUserAgentPropertyInfo)] :: [(Symbol, DK.Type)])
 #endif
 
 #if defined(ENABLE_OVERLOADING)
 websitePoliciesAutoplay :: AttrLabelProxy "autoplay"
 websitePoliciesAutoplay = AttrLabelProxy
+
+websitePoliciesCustomUserAgent :: AttrLabelProxy "customUserAgent"
+websitePoliciesCustomUserAgent = AttrLabelProxy
 
 #endif
 
@@ -359,6 +430,71 @@ instance O.OverloadedMethodInfo WebsitePoliciesGetAutoplayPolicyMethodInfo a whe
     overloadedMethodInfo = P.Just (O.ResolvedSymbolInfo {
         O.resolvedSymbolName = "GI.WebKit2.Objects.WebsitePolicies.websitePoliciesGetAutoplayPolicy",
         O.resolvedSymbolURL = "https://hackage.haskell.org/package/gi-webkit2-4.0.32/docs/GI-WebKit2-Objects-WebsitePolicies.html#v:websitePoliciesGetAutoplayPolicy"
+        })
+
+
+#endif
+
+-- method WebsitePolicies::get_custom_user_agent
+-- method type : OrdinaryMethod
+-- Args: [ Arg
+--           { argCName = "policies"
+--           , argType =
+--               TInterface
+--                 Name { namespace = "WebKit2" , name = "WebsitePolicies" }
+--           , argCType = Just "WebKitWebsitePolicies*"
+--           , direction = DirectionIn
+--           , mayBeNull = False
+--           , argDoc =
+--               Documentation
+--                 { rawDocText = Just "a #WebKitWebsitePolicies"
+--                 , sinceVersion = Nothing
+--                 }
+--           , argScope = ScopeTypeInvalid
+--           , argClosure = -1
+--           , argDestroy = -1
+--           , argCallerAllocates = False
+--           , argCallbackUserData = False
+--           , transfer = TransferNothing
+--           }
+--       ]
+-- Lengths: []
+-- returnType: Just (TBasicType TUTF8)
+-- throws : False
+-- Skip return : False
+
+foreign import ccall "webkit_website_policies_get_custom_user_agent" webkit_website_policies_get_custom_user_agent :: 
+    Ptr WebsitePolicies ->                  -- policies : TInterface (Name {namespace = "WebKit2", name = "WebsitePolicies"})
+    IO CString
+
+-- | Get the [WebsitePolicies:customUserAgent]("GI.WebKit2.Objects.WebsitePolicies#g:attr:customUserAgent") property.
+-- 
+-- /Since: 2.54/
+websitePoliciesGetCustomUserAgent ::
+    (B.CallStack.HasCallStack, MonadIO m, IsWebsitePolicies a) =>
+    a
+    -- ^ /@policies@/: a t'GI.WebKit2.Objects.WebsitePolicies.WebsitePolicies'
+    -> m (Maybe T.Text)
+    -- ^ __Returns:__ the custom user agent string, or 'P.Nothing' if the default
+    --    user agent is used
+websitePoliciesGetCustomUserAgent policies = liftIO $ do
+    policies' <- unsafeManagedPtrCastPtr policies
+    result <- webkit_website_policies_get_custom_user_agent policies'
+    maybeResult <- convertIfNonNull result $ \result' -> do
+        result'' <- cstringToText result'
+        return result''
+    touchManagedPtr policies
+    return maybeResult
+
+#if defined(ENABLE_OVERLOADING)
+data WebsitePoliciesGetCustomUserAgentMethodInfo
+instance (signature ~ (m (Maybe T.Text)), MonadIO m, IsWebsitePolicies a) => O.OverloadedMethod WebsitePoliciesGetCustomUserAgentMethodInfo a signature where
+    overloadedMethod = websitePoliciesGetCustomUserAgent
+
+instance O.OverloadedMethodInfo WebsitePoliciesGetCustomUserAgentMethodInfo a where
+    overloadedMethodInfo = P.Just (O.ResolvedSymbolInfo {
+        O.resolvedSymbolName = "GI.WebKit2.Objects.WebsitePolicies.websitePoliciesGetCustomUserAgent",
+        O.resolvedSymbolURL = "https://hackage.haskell.org/package/gi-webkit2-4.0.32/docs/GI-WebKit2-Objects-WebsitePolicies.html#v:websitePoliciesGetCustomUserAgent"
         })
 
 

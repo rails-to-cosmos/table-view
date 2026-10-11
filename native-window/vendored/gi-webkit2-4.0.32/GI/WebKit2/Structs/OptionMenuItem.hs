@@ -7,7 +7,7 @@
 -- 
 -- One item of a t'GI.WebKit2.Objects.OptionMenu.OptionMenu'.
 -- 
--- The t'GI.WebKit2.Objects.OptionMenu.OptionMenu' is composed of WebKitOptionMenuItems.
+-- The t'GI.WebKit2.Objects.OptionMenu.OptionMenu' is composed of WebKitOptionMenuItem objects.
 -- A WebKitOptionMenuItem always has a label and can contain a tooltip text.
 -- You can use the WebKitOptionMenuItem of a t'GI.WebKit2.Objects.OptionMenu.OptionMenu' to build your
 -- own menus.

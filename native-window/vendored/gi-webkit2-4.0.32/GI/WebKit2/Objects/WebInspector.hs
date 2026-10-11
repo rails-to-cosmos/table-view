@@ -1128,7 +1128,7 @@ foreign import ccall "webkit_web_inspector_get_attached_height" webkit_web_inspe
     Ptr WebInspector ->                     -- inspector : TInterface (Name {namespace = "WebKit2", name = "WebInspector"})
     IO Word32
 
--- | Get the height that the inspector view when attached.
+-- | Get the height that the inspector view should have when attached.
 -- 
 -- Get the height that the inspector view should have when
 -- it\'s attached. If the inspector view is not attached this
@@ -1257,7 +1257,7 @@ foreign import ccall "webkit_web_inspector_get_inspected_uri" webkit_web_inspect
 -- 
 -- This can be 'P.Nothing' if
 -- nothing has been loaded yet in the inspected view, if the inspector
--- has been closed or when inspected view was loaded from a HTML string
+-- has been closed or when the inspected view was loaded from an HTML string
 -- instead of a URI.
 webInspectorGetInspectedUri ::
     (B.CallStack.HasCallStack, MonadIO m, IsWebInspector a) =>

@@ -385,7 +385,7 @@ foreign import ccall "webkit_response_policy_decision_get_request" webkit_respon
 
 -- | Return the t'GI.WebKit2.Objects.URIRequest.URIRequest' associated with the response decision.
 -- 
--- Modifications to the returned object are \<emphasis>not\<\/emphasis> taken
+-- Modifications to the returned object are *not* taken
 -- into account when the request is sent over the network, and is intended
 -- only to aid in evaluating whether a response decision should be taken or
 -- not. To modify requests before they are sent over the network the
@@ -520,7 +520,7 @@ responsePolicyDecisionIsMainFrameMainResource ::
     a
     -- ^ /@decision@/: a t'GI.WebKit2.Objects.ResponsePolicyDecision.ResponsePolicyDecision'
     -> m Bool
-    -- ^ __Returns:__ 'P.True' if the request is the main frame main resouce or 'P.False' otherwise
+    -- ^ __Returns:__ 'P.True' if the request is the main frame main resource or 'P.False' otherwise
 responsePolicyDecisionIsMainFrameMainResource decision = liftIO $ do
     decision' <- unsafeManagedPtrCastPtr decision
     result <- webkit_response_policy_decision_is_main_frame_main_resource decision'

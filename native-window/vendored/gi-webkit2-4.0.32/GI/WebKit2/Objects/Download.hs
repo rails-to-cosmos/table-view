@@ -171,7 +171,7 @@ module GI.WebKit2.Objects.Download
 -- This value will range from 0.0 to 1.0. The value is an estimate
 -- based on the total number of bytes expected to be received for
 -- a download.
--- If you need a more accurate progress information you can connect to
+-- If you need more accurate progress information you can connect to
 -- [Download::receivedData]("GI.WebKit2.Objects.Download#g:signal:receivedData") signal to track the progress.
 
 #if defined(ENABLE_OVERLOADING)
@@ -1349,7 +1349,6 @@ foreign import ccall "webkit_download_get_estimated_progress" webkit_download_ge
     IO CDouble
 
 -- | Gets the value of the [Download:estimatedProgress]("GI.WebKit2.Objects.Download#g:attr:estimatedProgress") property.
--- Gets the value of the [Download:estimatedProgress]("GI.WebKit2.Objects.Download#g:attr:estimatedProgress") property.
 -- You can monitor the estimated progress of the download operation by
 -- connecting to the notify[estimatedProgress](#g:signal:estimatedProgress) signal of /@download@/.
 downloadGetEstimatedProgress ::
@@ -1357,7 +1356,7 @@ downloadGetEstimatedProgress ::
     a
     -- ^ /@download@/: a t'GI.WebKit2.Objects.Download.Download'
     -> m Double
-    -- ^ __Returns:__ an estimate of the of the percent complete for a download
+    -- ^ __Returns:__ an estimate of the percent complete for a download
     --     as a range from 0.0 to 1.0.
 downloadGetEstimatedProgress download = liftIO $ do
     download' <- unsafeManagedPtrCastPtr download

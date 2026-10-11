@@ -246,7 +246,7 @@ foreign import ccall "webkit_mime_info_get_extensions" webkit_mime_info_get_exte
     IO (Ptr CString)
 
 {-# DEPRECATED mimeInfoGetExtensions ["(Since version 2.32)"] #-}
--- | Get the list of file extensions associated to the MIME type.
+-- | Get the list of file extensions associated with the MIME type.
 mimeInfoGetExtensions ::
     (B.CallStack.HasCallStack, MonadIO m) =>
     MimeInfo

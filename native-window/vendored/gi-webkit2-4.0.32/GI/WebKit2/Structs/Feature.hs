@@ -19,7 +19,7 @@
 --   for details): [method/@feature@/.get_status].
 -- * A category, which may be used to group features together:
 --   [method/@feature@/.get_category].
--- * An optional short “name” which can be presented to an user:
+-- * An optional short “name” which can be presented to a user:
 --   [method/@feature@/.get_name].
 -- * An optional longer “detailed” description:
 --   [method/@feature@/.get_details].
@@ -27,7 +27,7 @@
 -- 
 -- The lists of available features can be obtained with
 -- @/Settings.get_all_features/@, @/Settings.get_experimental_features/@,
--- and @/Settings.get_development_features/@). As a rule of thumb,
+-- and @/Settings.get_development_features/@. As a rule of thumb,
 -- applications which may want to allow users (i.e. web developers) to test
 -- WebKit features should use the list of experimental features. Additionally,
 -- applications might want to expose development features *when targeting
@@ -381,7 +381,7 @@ foreign import ccall "webkit_feature_get_details" webkit_feature_get_details ::
 -- The returned string is suitable to be displayed to end users, but it
 -- should not be relied upon being localized.
 -- 
--- Note that some *features may not* have a detailed description, and /@nULL@/
+-- Note that some *features may not* have a detailed description, and 'P.Nothing'
 -- is returned in this case.
 -- 
 -- /Since: 2.42/
@@ -508,7 +508,7 @@ foreign import ccall "webkit_feature_get_name" webkit_feature_get_name ::
 -- The returned string is suitable to be displayed to end users, but it
 -- should not be relied upon being localized.
 -- 
--- Note that some *features may not* have a short name, and /@nULL@/
+-- Note that some *features may not* have a short name, and 'P.Nothing'
 -- is returned in this case.
 -- 
 -- /Since: 2.42/
@@ -695,7 +695,7 @@ foreign import ccall "webkit_feature_unref" webkit_feature_unref ::
 
 -- | Atomically releases a reference on the given /@feature@/.
 -- 
--- If the reference was the last, the resources associated to the
+-- If the reference was the last, the resources associated with the
 -- /@feature@/ are freed. This function is MT-safe and may be called from
 -- any thread.
 -- 

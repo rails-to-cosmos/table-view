@@ -68,12 +68,12 @@ import qualified Foreign.C.Types as FCT
 -- | Like 'GI.WebKit2.Functions.getMinorVersion', but from the headers used at
 -- application compile time, rather than from the library linked
 -- against at application run time.
-pattern MINOR_VERSION = 52 :: Int32
+pattern MINOR_VERSION = 54 :: Int32
 
 -- | Like 'GI.WebKit2.Functions.getMicroVersion', but from the headers used at
 -- application compile time, rather than from the library linked
 -- against at application run time.
-pattern MICRO_VERSION = 6 :: Int32
+pattern MICRO_VERSION = 1 :: Int32
 
 -- | Like 'GI.WebKit2.Functions.getMajorVersion', but from the headers used at
 -- application compile time, rather than from the library linked
@@ -119,7 +119,7 @@ pattern EDITING_COMMAND_PASTE_AS_PLAIN_TEXT = "PasteAsPlainText" :: T.Text
 pattern EDITING_COMMAND_PASTE = "Paste" :: T.Text
 
 -- | The insert image command. Creates an image element that is inserted at
--- the current cursor position. It receives an URI as argument,
+-- the current cursor position. It receives a URI as argument,
 -- that is used as the image source. This command should be executed with
 -- 'GI.WebKit2.Objects.WebView.webViewExecuteEditingCommandWithArgument'.
 -- 
@@ -138,7 +138,7 @@ pattern EDITING_COMMAND_CUT = "Cut" :: T.Text
 -- the current cursor position. If there\'s a selection, the selected text
 -- will be used as the link text, otherwise the URL itself will be used.
 -- It receives the link URL as argument. This command should be executed
--- with 'GI.WebKit2.Objects.WebView.webViewExecuteEditingCommandWithArgument'
+-- with 'GI.WebKit2.Objects.WebView.webViewExecuteEditingCommandWithArgument'.
 -- 
 -- /Since: 2.10/
 pattern EDITING_COMMAND_CREATE_LINK = "CreateLink" :: T.Text
