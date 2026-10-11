@@ -53,6 +53,7 @@ interface TableViewRow {
   id: string;
   cells?: Record<string, TableViewCell>;
   linked?: boolean;
+  conflictCount?: number;
 }
 
 interface TableViewSavedView {
@@ -97,6 +98,8 @@ interface TableViewMountOptions {
   markGutter?: boolean;
   flags?: boolean;
   actionHints?: boolean;
+  showSortStatus?: boolean;
+  footerStatus?: string;
   flagHelp?: string;
   pageSize?: number;
   initialQuery?: string;
@@ -166,6 +169,7 @@ interface TableViewHandle {
   sortPromote(column: string): boolean;
   getSort(): TableViewSortKey[];
   setSort(sort?: TableViewSort | TableViewSort[] | TableViewSortKey[] | null): void;
+  setFooterStatus(status: string): void;
   toggleMark(id: string): boolean;
   markAll(): number;
   flagRow(id: string): boolean;
