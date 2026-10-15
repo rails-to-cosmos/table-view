@@ -93,6 +93,7 @@ interface TableViewMountOptions {
     kind: "cell" | "header"
   ) => void;
   omnibox?: boolean;
+  steadyCaret?: boolean;
   palette?: boolean;
   marks?: boolean;
   markGutter?: boolean;

@@ -110,6 +110,7 @@
      *             onCellKey?: (e: KeyboardEvent, cell: OpenCell) => boolean,
      *             onFilterKey?: (e: KeyboardEvent) => boolean,
  *             omnibox?: boolean,
+ *             steadyCaret?: boolean,
  *             palette?: boolean,
  *             marks?: boolean,
  *             markGutter?: boolean,
@@ -1296,6 +1297,14 @@
   position:relative;
   display:flex;
 }
+.tv-steady-caret .tv-filter{caret-color:transparent;}
+.tv-filter-caret{
+  position:absolute;
+  background:var(--tv-caret,var(--tv-link));
+  opacity:.82;
+  pointer-events:none;
+  z-index:2;
+}
 /* A LEADING NEGATION IS AN OPERATOR, not punctuation the reader has to decode.
    The input keeps the literal minus -- parsing, selection, completion and query
    delivery all continue to read the same bytes -- while this badge covers its
@@ -2122,6 +2131,70 @@
     document.head.appendChild(el);
   }
 
+  /** Draw a steady block over the native input's collapsed selection.
+   * @param {HTMLInputElement} input @param {HTMLElement} wrap
+   * @returns {() => void} release observers and listeners
+   */
+  function steadyCaret(input, wrap) {
+    const caret = document.createElement("span");
+    caret.className = "tv-filter-caret";
+    caret.setAttribute("aria-hidden", "true");
+    caret.hidden = true;
+    wrap.classList.add("tv-steady-caret");
+    wrap.appendChild(caret);
+    const measure = document.createElement("canvas").getContext("2d");
+    let pending = 0, composing = false, disposed = false;
+    function paint() {
+      pending = 0;
+      caret.hidden = true;
+      if (disposed || composing || document.activeElement !== input || !measure ||
+          input.selectionStart === null || input.selectionStart !== input.selectionEnd ||
+          !input.getClientRects().length) return;
+      const css = getComputedStyle(input), box = input.getBoundingClientRect();
+      const parent = wrap.getBoundingClientRect();
+      measure.font = css.font;
+      const start = input.selectionStart;
+      const before = measure.measureText(input.value.slice(0, start)).width;
+      const glyph = Array.from(input.value.slice(start))[0] || " ";
+      const width = Math.max(1, measure.measureText(glyph).width);
+      const left = parseFloat(css.borderLeftWidth) + parseFloat(css.paddingLeft);
+      const right = box.width - parseFloat(css.borderRightWidth) - parseFloat(css.paddingRight);
+      const x = left + before - input.scrollLeft;
+      if (x < left || x >= right) return;
+      const height = parseFloat(css.lineHeight) || parseFloat(css.fontSize) * 1.2;
+      caret.style.left = `${box.left - parent.left + x}px`;
+      caret.style.top = `${box.top - parent.top + (box.height - height) / 2}px`;
+      caret.style.width = `${Math.min(width, right - x)}px`;
+      caret.style.height = `${height}px`;
+      caret.hidden = false;
+    }
+    function queue() {
+      if (!pending && !disposed) pending = requestAnimationFrame(paint);
+    }
+    function compositionStart() { composing = true; caret.hidden = true; }
+    function compositionEnd() { composing = false; queue(); }
+    const events = ["input", "keyup", "click", "select", "scroll", "focus", "blur"];
+    for (const name of events) input.addEventListener(name, queue);
+    input.addEventListener("compositionstart", compositionStart);
+    input.addEventListener("compositionend", compositionEnd);
+    document.addEventListener("selectionchange", queue);
+    window.addEventListener("resize", queue);
+    const resize = new ResizeObserver(queue);
+    resize.observe(input);
+    return () => {
+      disposed = true;
+      cancelAnimationFrame(pending);
+      resize.disconnect();
+      for (const name of events) input.removeEventListener(name, queue);
+      input.removeEventListener("compositionstart", compositionStart);
+      input.removeEventListener("compositionend", compositionEnd);
+      document.removeEventListener("selectionchange", queue);
+      window.removeEventListener("resize", queue);
+      wrap.classList.remove("tv-steady-caret");
+      caret.remove();
+    };
+  }
+
   /**
    * Mount a table-view into CONTAINER; return a live handle (the streaming API).
    * @param {Element} container
@@ -2477,6 +2550,7 @@
     filterWrap.appendChild(filterNeg);
     filterWrap.appendChild(input);
     filterWrap.appendChild(acEl);
+    const stopCaret = o.steadyCaret ? steadyCaret(input, filterWrap) : () => {};
     // A SUMMONED MOUNT DRAWS NO TITLE and hangs its chips in a row of their
     // own: the bar it would sit in belongs to the box, which is away until it
     // is called for, and a title that comes and goes with the box is no title.
@@ -5726,6 +5800,7 @@
        * gesture may not.
        */
       destroy() {
+        stopCaret();
         if (themeQuery && themeQuery.removeEventListener)
           themeQuery.removeEventListener("change", onTheme);
         if (themeWatch) themeWatch.disconnect();

@@ -290,6 +290,9 @@ bare word:
   commits again on every settling debounce. The chips already applied ride along
   untouched: the strip is not the box, so narrowing never loses the order. The
   flag is the SESSION's and the refusals go with it when the box closes.
+- =steadyCaret: true= draws a steady block at the query input's collapsed
+  selection. =--tv-caret= sets its color, defaulting to =--tv-link=. Selection,
+  composition, and blur hide the block; native text editing remains intact.
 - *Dock placement for a summoned box*:
   =filterDock: "overlay" | "strip"=. Overlay raises the veil, strip lays the box
   on the CHIP STRIP'S OWN ROW (chips auto column, box taking the slack, revealed
