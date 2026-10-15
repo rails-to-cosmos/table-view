@@ -9,6 +9,23 @@ one file, no build; the palette CSS lives in the =const css= template
 the reasons behind the numbers and non-obvious behavior; the source carries
 one-line pointers here.
 
+* Wrapped row details
+
+A browser column declaring =detail: true= appears below its row's main cells,
+across the full width, in smaller muted text with full wrapping. Main columns
+retain their declaration order, with the first taking spare width. Detail
+columns follow below in declaration order; empty details are hidden. This
+presentation hides the header and keeps the same row IDs, filtering, selection,
+and action dispatch. Other renderers retain their existing column presentation.
+
+Detail rows render the current page in full and use actual DOM bounds for
+keyboard scrolling. Ordinary tables retain fixed-height virtualization. Large
+producers should supply =pageSize= or narrow their results before rendering
+wrapped details. The focused browser check mounts 600 variable-height rows,
+checks scrolling at two widths and across a page boundary, and confirms ordinary
+virtualization. Run =node web/detail-rows-check.cjs= with Playwright available
+from the working directory. It fails if the browser prerequisite is missing.
+
 * Palette & contrast
 
 Both palettes are the author's Emacs theme, mapped role for role (default

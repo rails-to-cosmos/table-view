@@ -57,6 +57,7 @@ view is offered with no renderer change.
 | `badges`    | array<Badge>    | —        | palette for a `"badge"` column                      |
 | `values`    | array<string>   | —        | explicit categorical order (sort priority), and any filter metas |
 | `compare`   | string          | —        | comparator name: `"number"`, `"string"`, `"natural"`|
+| `detail`    | bool            | `false`  | browser: wrapped secondary line below the main cells |
 | `multi`     | bool            | —        | cells hold a delimited value list (experimental)    |
 
 **Sort order of a column** resolves as: `compare` name → `values` order (else the

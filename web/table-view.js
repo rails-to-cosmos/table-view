@@ -50,6 +50,7 @@
  *             badges?: Badge[],
  *             values?: string[],
  *             multi?: boolean,
+ *             detail?: boolean,
  *             editable?: boolean,
  *             secret?: boolean,
  *             compare?: string,
@@ -1810,6 +1811,11 @@
 .tv-fill col.tv-gut{
   width:calc(3ch + 24px);
 }
+.tv-table.tv-details,.tv-details tbody{display:block;width:100%;}
+.tv-details colgroup,.tv-details thead,.tv-details td.tv-detail:empty{display:none;}
+.tv-table.tv-details tbody tr{display:grid;grid-template-columns:var(--tv-row-tracks);gap:3px 16px;padding:9px 10px;}
+.tv-table.tv-details tbody td{display:block;min-width:0;padding:0;border:0;overflow:hidden;text-overflow:ellipsis;}
+.tv-table.tv-details tbody td.tv-detail{grid-column:1 / -1;order:1;white-space:normal;overflow-wrap:anywhere;color:var(--tv-muted);font-size:.8em;line-height:1.45;}
 .tv-table th,.tv-table td{
   padding:5px 12px;
   text-align:left;
@@ -2640,6 +2646,7 @@
     }
 
     function columns() { return state.view.columns || []; }
+    function hasDetails() { return columns().some((column) => column.detail); }
     /**
      * The SAVED VIEWS the producer named, each a `{name, query}'. The
      * vocabulary `view:' completes from, and the whole of what this side knows
@@ -3151,8 +3158,12 @@
       if (!pageSize || continuous) return;
       const skipped = page * pageSize;
       continuous = true;
-      scroll.scrollTop += skipped * geom.row;
       if (selAt >= 0) selAt += skipped;
+      if (hasDetails()) {
+        renderRows(true);
+        const row = tbody.children[skipped];
+        if (row) scroll.scrollTop += row.getBoundingClientRect().top - tbody.getBoundingClientRect().top;
+      } else scroll.scrollTop += skipped * geom.row;
     }
 
     /** Whether ROW passes the current filter. @param {Row} r */
@@ -3241,6 +3252,7 @@
      * `title' column keeps the widths as hints under the auto layout.
      */
     function applyWidths() {
+      if (hasDetails()) { table.classList.remove("tv-fill"); table.style.minWidth = ""; return; }
       const w = colWidths(), at = titleColumn(), fill = at !== -1;
       if (table.classList.contains("tv-fill") !== fill)
         table.classList.toggle("tv-fill", fill);
@@ -3269,6 +3281,12 @@
      * (docs/bugs/fixed/2026-09-13-a-cell-editor-closing-rebuilds-the-head-bare.md).
      */
     function renderHead() {
+      table.classList.toggle("tv-details", hasDetails());
+      if (hasDetails()) {
+        const main = columns().filter((column) => !column.detail).length;
+        const tracks = [...Array(chrome).fill("auto"), "minmax(0,1fr)", ...Array(Math.max(0, main - 1)).fill("auto")];
+        table.style.setProperty("--tv-row-tracks", tracks.join(" "));
+      }
       colgroup.innerHTML = "";
       headRow.innerHTML = "";
       colEls = [];
@@ -3402,7 +3420,8 @@
      */
     function cellClasses(r, c, linkedAt, multi) {
       const col = columns()[c], inCol = c === state.selCol;
-      return [["tv-right", !!col && col.align === "right"],
+      return [["tv-detail", !!col && !!col.detail],
+              ["tv-right", !!col && col.align === "right"],
               ["tv-colsel", inCol],
               ["tv-cell-sel", inCol && r.id === state.selected],
               // the multi-valued cell NAMES ITSELF, which is the whole of what a
@@ -3474,8 +3493,8 @@
       const port = scroll.clientHeight || rowH * 20;   // before layout: a screenful
       // overscan covers the rounding and the band the sticky header hides.
       const top = Math.max(0, (scroll.scrollTop || 0) - geom.head);
-      const first = Math.max(0, Math.floor(top / rowH) - OVERSCAN);
-      const last = Math.min(total, first + Math.ceil(port / rowH) + OVERSCAN * 2);
+      const first = hasDetails() ? 0 : Math.max(0, Math.floor(top / rowH) - OVERSCAN);
+      const last = hasDetails() ? total : Math.min(total, first + Math.ceil(port / rowH) + OVERSCAN * 2);
       if (!force && first === win.first && last === win.last) return;
       win.first = first;
       win.last = last;
@@ -3524,6 +3543,7 @@
 
     /** Re-read the row and header heights the spacers are sized from. */
     function measure() {
+      if (hasDetails()) return; // wrapped rows use their DOM bounds
       const tr = /** @type {HTMLElement|null} */ (tbody.querySelector("tr[data-id]"));
       if (!tr || typeof tr.getBoundingClientRect !== "function") return;
       const head = thead.getBoundingClientRect().height;
@@ -3873,7 +3893,7 @@
           const was = scroll.scrollTop;
           scroll.scrollTop = was + step * EASE;
           // a refused step is an arrival: scrollTop snaps to a device pixel past scrollHeight's fractional end, so ending only on arrival loops forever.
-          if (scroll.scrollTop === was) easing = false;
+          if (scroll.scrollTop === was) { scroll.scrollTop = easeAt; easing = false; }
         }
         wantWindow = true;
       }
@@ -3893,7 +3913,11 @@
      * viewport's height.
      */
     function aimed(port) {
-      const top = geom.head + aim.row * geom.row, foot = top + geom.row;
+      const row = hasDetails() ? tbody.children[aim.row] : null;
+      const bounds = row ? row.getBoundingClientRect() : null;
+      const top = bounds ? bounds.top - scroll.getBoundingClientRect().top + scroll.scrollTop - scroll.clientTop
+                         : geom.head + aim.row * geom.row;
+      const foot = top + (bounds ? bounds.height : geom.row);
       let to = aim.from;
       if (aim.down) { if (foot - aim.from > port * 2 / 3) to = foot - port * 2 / 3; }
       else if (top - aim.from < port / 3) to = top - port / 3;

@@ -25,6 +25,7 @@ interface TableViewColumn {
   badges?: TableViewBadge[];
   values?: string[];
   multi?: boolean;
+  detail?: boolean;
   editable?: boolean;
   compare?: string;
   valueType?: TableViewValueType;
