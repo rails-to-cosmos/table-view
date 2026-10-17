@@ -48,7 +48,22 @@ const path = require('node:path');
       const row=document.querySelector('tr.tv-sel').getBoundingClientRect(),port=document.querySelector('.tv-scroll').getBoundingClientRect();
       return row.top>=port.top-1&&row.bottom<=port.bottom+1;
     });
+    const iconElapsed=await page.evaluate(()=>{
+      window.table.destroy();
+      const start=performance.now();
+      const png='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aMioAAAAASUVORK5CYII=';
+      window.table=TableView.mount(document.querySelector('#table'),{columns:window.fixture.columns,rows:window.fixture.rows.map((row,i)=>({...row,icon:i%3===0?png:i%3===1?'https://invalid.example/icon.png':''}))},{icons:true,marks:false,flags:false});
+      return performance.now()-start;
+    });
+    const primary=page.locator('tr[data-id="0"]');
+    assert.equal(await primary.evaluate(el=>getComputedStyle(el,'::before').width),'36px');
+    assert.ok(await primary.evaluate(el=>getComputedStyle(el,'::before').backgroundImage.includes('data:image/png;base64,')));
+    const fallback=await page.locator('tr[data-id="1"]').evaluate(el=>getComputedStyle(el,'::before').backgroundImage);
+    assert.ok(fallback.includes('data:image/svg+xml'));
+    assert.equal(fallback,await page.locator('tr[data-id="2"]').evaluate(el=>getComputedStyle(el,'::before').backgroundImage));
+    await page.evaluate(()=>window.table.select('2'));
+    assert.equal(await page.locator('tr.tv-sel').getAttribute('data-id'),'2');
     assert.deepEqual(errors,[]);
-    console.log(`Detail rows: wrap, 600-row selection/scroll, resize, empty details, page crossing, and ordinary virtualization passed; initial mount ${elapsed.toFixed(1)} ms`);
+    console.log(`Detail rows: wrap, 600-row selection/scroll, resize, empty details, page crossing, ordinary virtualization, and icons/fallback passed; initial mount ${elapsed.toFixed(1)} ms, 600-icon mount ${iconElapsed.toFixed(1)} ms`);
   } finally {await browser.close();}
 })().catch(error=>{console.error(error);process.exitCode=1;});

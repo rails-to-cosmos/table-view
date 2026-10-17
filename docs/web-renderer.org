@@ -26,6 +26,16 @@ checks scrolling at two widths and across a page boundary, and confirms ordinary
 virtualization. Run =node web/detail-rows-check.cjs= with Playwright available
 from the working directory. It fails if the browser prerequisite is missing.
 
+* Application icons
+
+=icons: true= enables stacked rows with a 36 px decorative application icon
+beside the main cells and wrapped details. Each row may supply =icon= as a PNG
+data URL. Missing or unsupported values use a local generic application icon;
+external URLs are ignored. The =--tv-icon-size= property adjusts the icon size.
+The same row ID, cell indexes, filtering, and action dispatch remain in use.
+PNG transport and caching belong to the producer. Selection and fallback keep
+the icon space reserved. Icon rows use actual DOM bounds for scrolling.
+
 * Palette & contrast
 
 Both palettes are the author's Emacs theme, mapped role for role (default

@@ -66,6 +66,7 @@
  * @typedef {{ column: string, ascending: boolean, nullsFirst: boolean }} SortKey
  *          A normalized sort key (internal).
  * @typedef {{ id: string, cells?: Record<string, Cell>, linked?: boolean,
+ *             icon?: string,
  *             conflictCount?: number,
  *             producer?: boolean, under?: string|null,
  *             refused?: string }} Row
@@ -112,6 +113,7 @@
      *             onFilterKey?: (e: KeyboardEvent) => boolean,
  *             omnibox?: boolean,
  *             steadyCaret?: boolean,
+ *             icons?: boolean,
  *             palette?: boolean,
  *             marks?: boolean,
  *             markGutter?: boolean,
@@ -1815,7 +1817,8 @@
 .tv-details colgroup,.tv-details thead,.tv-details td.tv-detail:empty{display:none;}
 .tv-table.tv-details tbody tr{display:grid;grid-template-columns:var(--tv-row-tracks);gap:3px 16px;padding:9px 10px;}
 .tv-table.tv-details tbody td{display:block;min-width:0;padding:0;border:0;overflow:hidden;text-overflow:ellipsis;}
-.tv-table.tv-details tbody td.tv-detail{grid-column:1 / -1;order:1;white-space:normal;overflow-wrap:anywhere;color:var(--tv-muted);font-size:.8em;line-height:1.45;}
+.tv-table.tv-details tbody td.tv-detail{grid-column:var(--tv-detail-start,1) / -1;order:1;white-space:normal;overflow-wrap:anywhere;color:var(--tv-muted);font-size:.8em;line-height:1.45;}
+.tv-table.tv-icons tbody tr::before{content:"";grid-column:var(--tv-icon-column);grid-row:1 / span var(--tv-icon-rows);align-self:center;width:var(--tv-icon-size,36px);height:var(--tv-icon-size,36px);background:var(--tv-row-icon,url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='36' height='36' viewBox='0 0 36 36'%3E%3Crect x='3' y='3' width='30' height='30' rx='7' fill='%238995a2'/%3E%3Cpath d='M11 11h6v6h-6zm8 0h6v6h-6zm-8 8h6v6h-6zm8 0h6v6h-6z' fill='%23edf0f4'/%3E%3C/svg%3E")) center / contain no-repeat;pointer-events:none;}
 .tv-table th,.tv-table td{
   padding:5px 12px;
   text-align:left;
@@ -2646,7 +2649,7 @@
     }
 
     function columns() { return state.view.columns || []; }
-    function hasDetails() { return columns().some((column) => column.detail); }
+    function stackedRows() { return !!o.icons || columns().some((column) => column.detail); }
     /**
      * The SAVED VIEWS the producer named, each a `{name, query}'. The
      * vocabulary `view:' completes from, and the whole of what this side knows
@@ -3159,7 +3162,7 @@
       const skipped = page * pageSize;
       continuous = true;
       if (selAt >= 0) selAt += skipped;
-      if (hasDetails()) {
+      if (stackedRows()) {
         renderRows(true);
         const row = tbody.children[skipped];
         if (row) scroll.scrollTop += row.getBoundingClientRect().top - tbody.getBoundingClientRect().top;
@@ -3252,7 +3255,7 @@
      * `title' column keeps the widths as hints under the auto layout.
      */
     function applyWidths() {
-      if (hasDetails()) { table.classList.remove("tv-fill"); table.style.minWidth = ""; return; }
+      if (stackedRows()) { table.classList.remove("tv-fill"); table.style.minWidth = ""; return; }
       const w = colWidths(), at = titleColumn(), fill = at !== -1;
       if (table.classList.contains("tv-fill") !== fill)
         table.classList.toggle("tv-fill", fill);
@@ -3281,11 +3284,15 @@
      * (docs/bugs/fixed/2026-09-13-a-cell-editor-closing-rebuilds-the-head-bare.md).
      */
     function renderHead() {
-      table.classList.toggle("tv-details", hasDetails());
-      if (hasDetails()) {
+      table.classList.toggle("tv-details", stackedRows());
+      table.classList.toggle("tv-icons", !!o.icons);
+      if (stackedRows()) {
         const main = columns().filter((column) => !column.detail).length;
-        const tracks = [...Array(chrome).fill("auto"), "minmax(0,1fr)", ...Array(Math.max(0, main - 1)).fill("auto")];
+        const tracks = [...Array(chrome).fill("auto"), ...(o.icons ? ["var(--tv-icon-size, 36px)"] : []), "minmax(0,1fr)", ...Array(Math.max(0, main - 1)).fill("auto")];
         table.style.setProperty("--tv-row-tracks", tracks.join(" "));
+        table.style.setProperty("--tv-detail-start", String(o.icons ? chrome + 2 : 1));
+        table.style.setProperty("--tv-icon-column", String(chrome + 1));
+        table.style.setProperty("--tv-icon-rows", String(1 + columns().filter((column) => column.detail).length));
       }
       colgroup.innerHTML = "";
       headRow.innerHTML = "";
@@ -3469,7 +3476,9 @@
         tds += `<td class="${classAttr(cellClasses(r, c, linkedAt, multi))}">`
              + `${shown}</td>`;
       }
-      return `<tr class="${classAttr(rowClasses(r, i))}" data-id="${esc(r.id)}">${tds}</tr>`;
+      const icon = o.icons && typeof r.icon === "string" && /^data:image\/png;base64,[A-Za-z0-9+/]+={0,2}$/.test(r.icon)
+        ? ` style="--tv-row-icon:url('${r.icon}')"` : "";
+      return `<tr class="${classAttr(rowClasses(r, i))}" data-id="${esc(r.id)}"${icon}>${tds}</tr>`;
     }
 
     /** A spacer row H pixels tall, standing in for the rows outside the window. */
@@ -3493,8 +3502,8 @@
       const port = scroll.clientHeight || rowH * 20;   // before layout: a screenful
       // overscan covers the rounding and the band the sticky header hides.
       const top = Math.max(0, (scroll.scrollTop || 0) - geom.head);
-      const first = hasDetails() ? 0 : Math.max(0, Math.floor(top / rowH) - OVERSCAN);
-      const last = hasDetails() ? total : Math.min(total, first + Math.ceil(port / rowH) + OVERSCAN * 2);
+      const first = stackedRows() ? 0 : Math.max(0, Math.floor(top / rowH) - OVERSCAN);
+      const last = stackedRows() ? total : Math.min(total, first + Math.ceil(port / rowH) + OVERSCAN * 2);
       if (!force && first === win.first && last === win.last) return;
       win.first = first;
       win.last = last;
@@ -3543,7 +3552,7 @@
 
     /** Re-read the row and header heights the spacers are sized from. */
     function measure() {
-      if (hasDetails()) return; // wrapped rows use their DOM bounds
+      if (stackedRows()) return; // wrapped rows use their DOM bounds
       const tr = /** @type {HTMLElement|null} */ (tbody.querySelector("tr[data-id]"));
       if (!tr || typeof tr.getBoundingClientRect !== "function") return;
       const head = thead.getBoundingClientRect().height;
@@ -3913,7 +3922,7 @@
      * viewport's height.
      */
     function aimed(port) {
-      const row = hasDetails() ? tbody.children[aim.row] : null;
+      const row = stackedRows() ? tbody.children[aim.row] : null;
       const bounds = row ? row.getBoundingClientRect() : null;
       const top = bounds ? bounds.top - scroll.getBoundingClientRect().top + scroll.scrollTop - scroll.clientTop
                          : geom.head + aim.row * geom.row;

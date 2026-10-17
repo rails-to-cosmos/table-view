@@ -6,6 +6,8 @@ the rails-to-cosmos ELPA archive publishes date-stamped snapshots.
 ## Unreleased
 
 ### Added
+- Optional application icons in browser rows, with a stable local fallback
+  and PNG data URL metadata.
 - Browser columns can declare `detail: true` for full-width wrapped secondary
   text beneath each row, with selection scrolling based on actual row bounds.
 - **Gutterless row marks in the browser renderer.** `marks: true` now draws a

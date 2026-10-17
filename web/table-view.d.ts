@@ -52,6 +52,7 @@ interface TableViewSortKey {
 
 interface TableViewRow {
   id: string;
+  icon?: string;
   cells?: Record<string, TableViewCell>;
   linked?: boolean;
   conflictCount?: number;
@@ -95,6 +96,7 @@ interface TableViewMountOptions {
   ) => void;
   omnibox?: boolean;
   steadyCaret?: boolean;
+  icons?: boolean;
   palette?: boolean;
   marks?: boolean;
   markGutter?: boolean;

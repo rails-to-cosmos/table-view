@@ -180,6 +180,9 @@ opens the view and stays invisible until a reader diverges from it.
 
 ## Row object
 
+The browser accepts optional `icon` metadata as a PNG data URL when mounted
+with `icons: true`; unavailable icons use a local generic fallback.
+
 | field    | type              | meaning                                      |
 |----------|-------------------|----------------------------------------------|
 | `id`     | string            | stable identity; keys updates and marks      |
