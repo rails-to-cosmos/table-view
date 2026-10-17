@@ -95,6 +95,7 @@ interface TableViewMountOptions {
     kind: "cell" | "header"
   ) => void;
   omnibox?: boolean;
+  persistentFilter?: boolean;
   steadyCaret?: boolean;
   icons?: boolean;
   palette?: boolean;

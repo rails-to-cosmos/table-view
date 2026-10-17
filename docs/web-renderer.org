@@ -26,6 +26,12 @@ checks scrolling at two widths and across a page boundary, and confirms ordinary
 virtualization. Run =node web/detail-rows-check.cjs= with Playwright available
 from the working directory. It fails if the browser prerequisite is missing.
 
+* Persistent filter
+
+=persistentFilter: true= keeps a docked filter visible when it loses focus.
+The producer owns keyboard routing and focus policy; the default summoned
+filter continues to hide on blur.
+
 * Application icons
 
 =icons: true= enables stacked rows with a 36 px decorative application icon

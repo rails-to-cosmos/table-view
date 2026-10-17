@@ -6,6 +6,7 @@ the rails-to-cosmos ELPA archive publishes date-stamped snapshots.
 ## Unreleased
 
 ### Added
+- `persistentFilter: true` keeps a docked query field visible across focus changes.
 - Optional application icons in browser rows, with a stable local fallback
   and PNG data URL metadata.
 - Browser columns can declare `detail: true` for full-width wrapped secondary

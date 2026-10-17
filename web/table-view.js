@@ -112,6 +112,7 @@
      *             onCellKey?: (e: KeyboardEvent, cell: OpenCell) => boolean,
      *             onFilterKey?: (e: KeyboardEvent) => boolean,
  *             omnibox?: boolean,
+ *             persistentFilter?: boolean,
  *             steadyCaret?: boolean,
  *             icons?: boolean,
  *             palette?: boolean,
@@ -1654,7 +1655,7 @@
   grid-area:1 / 3;
   margin-right:12px;
 }
-.tv-dock.tv-typing > .tv-bar{
+.tv-dock.tv-typing > .tv-bar,.tv-dock.tv-persistent-filter > .tv-bar{
   display:flex;
 }
 .tv-dock > .tv-scroll{
@@ -2524,6 +2525,7 @@
                                 ["tv-calm", calm], ["tv-omni", omnibox && !palette],
                                 ["tv-pal", palette], ["tv-inline", inline],
                                 ["tv-dock", dock === "strip"],
+                                ["tv-persistent-filter", !!o.persistentFilter],
                                 ["tv-summon", summoned]]);
     container.innerHTML = "";
     container.appendChild(root);
@@ -5428,7 +5430,7 @@
     input.addEventListener("blur", () => {
       closeAc();
       endNarrow();           // the session is the box's; one owner for the flag
-      if (dock === "strip") root.classList.remove("tv-typing");
+      if (dock === "strip" && !o.persistentFilter) root.classList.remove("tv-typing");
     });
 
     /**

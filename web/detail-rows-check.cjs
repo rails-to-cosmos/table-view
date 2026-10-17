@@ -63,6 +63,13 @@ const path = require('node:path');
     assert.equal(fallback,await page.locator('tr[data-id="2"]').evaluate(el=>getComputedStyle(el,'::before').backgroundImage));
     await page.evaluate(()=>window.table.select('2'));
     assert.equal(await page.locator('tr.tv-sel').getAttribute('data-id'),'2');
+    await page.evaluate(()=>{
+      window.table.destroy();
+      window.table=TableView.mount(document.querySelector('#table'),window.fixture,{inline:true,persistentFilter:true,marks:false,flags:false});
+      window.table.openFilter();
+      document.querySelector('input').blur();
+    });
+    assert.equal(await page.locator('input').isVisible(),true,'persistent filter remains visible on blur');
     assert.deepEqual(errors,[]);
     console.log(`Detail rows: wrap, 600-row selection/scroll, resize, empty details, page crossing, ordinary virtualization, and icons/fallback passed; initial mount ${elapsed.toFixed(1)} ms, 600-icon mount ${iconElapsed.toFixed(1)} ms`);
   } finally {await browser.close();}
