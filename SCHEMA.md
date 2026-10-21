@@ -117,6 +117,16 @@ use it to group or separate a palette it lists (a filter's value suggestions, a
 legend), and one that ignores it is conformant — an unknown field, by the rule
 above, and neither renderer reads it today.
 
+The browser renderer accepts `checkbox: {"checked": "On", "unchecked": "Off"}`
+on a Column. Optional `appearance: "switch"` inside that mapping selects a
+rounded switch with a sliding thumb and native checkbox behavior. Cells retain
+their string values. It renders native checkboxes,
+interactive on producer Rows or editable Columns and disabled elsewhere.
+Space toggles an open checkbox editor; normal editor commit, cancel and producer
+key handling remain in force. Pointer toggling reports `onEdit` and keeps a
+checkbox editor focused. This optional extension leaves other renderers free
+to display the underlying string.
+
 ## Action object
 
 A named command the view can dispatch on the row at point / clicked.

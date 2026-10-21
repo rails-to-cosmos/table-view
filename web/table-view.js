@@ -52,6 +52,7 @@
  *             multi?: boolean,
  *             editable?: boolean,
  *             secret?: boolean,
+ *             checkbox?: { checked: string, unchecked: string, appearance?: "switch" },
  *             compare?: string,
  *             valueType?: ValueType }} Column
  *          `editable' opts the column into cell editing (`editCell'/double-
@@ -1274,6 +1275,9 @@
 }
 /* THE IN-CELL EDITOR fills the cell it stands in, its accent edge the one sign
    it is an input and not the drawn value. */
+.tv-cell-edit[type="checkbox"],.tv-cell-checkbox{
+  width:1em; height:1em; margin:0; accent-color:var(--tv-accent);
+}
 .tv-cell-edit{
   font:inherit;
   box-sizing:border-box;
@@ -1286,6 +1290,23 @@
   background:var(--tv-bg);
   color:var(--tv-fg);
 }
+.tv-root input.tv-cell-switch{
+  appearance:none; -webkit-appearance:none; position:relative; display:inline-block;
+  width:36px; height:22px; padding:0; margin:0; vertical-align:middle;
+  border:0; border-radius:20px; background:var(--tv-border); outline:none;
+  box-shadow:inset 0 0 0 1px #00000005; cursor:pointer;
+  transition:background .16s;
+}
+.tv-root input.tv-cell-switch::before{
+  content:""; position:absolute; left:2px; top:2px; width:18px; height:18px;
+  border-radius:50%; background:#fff; box-shadow:0 1px 3px #0003;
+  transition:transform .16s;
+}
+.tv-root input.tv-cell-switch:checked{background:#34c759}
+.tv-root input.tv-cell-switch:checked::before{transform:translateX(14px)}
+.tv-root input.tv-cell-switch:focus-visible{outline:2px solid var(--tv-accent);outline-offset:3px}
+.tv-root input.tv-cell-switch:disabled{cursor:default;opacity:.65}
+@media(prefers-reduced-motion:reduce){.tv-root input.tv-cell-switch,.tv-root input.tv-cell-switch::before{transition:none}}
 /* Quiet enough to be read past, not so quiet it cannot be read. Firefox dims
    placeholders on top of the colour, which is what the opacity is undoing. */
 .tv-filter::placeholder{
@@ -3368,7 +3389,12 @@
       const linkedAt = linkedCell(r);
       let tds = chrome ? `<td class="tv-box"></td>` : "";
       for (let c = 0; c < cols.length; c++) {
-        const value = cellHTML(cols[c], cs[cols[c].key], dark, c === multi ? room : null);
+        const box = cols[c].checkbox;
+        const value = box
+          ? `<input type="checkbox" class="tv-cell-checkbox${box.appearance === "switch" ? " tv-cell-switch" : ""}"${box.appearance === "switch" ? ' role="switch"' : ""} tabindex="-1" aria-label="${esc(cols[c].header || cols[c].key)}"`
+            + (displayText(cs[cols[c].key]) === box.checked ? " checked" : "")
+            + (r.producer || cols[c].editable ? "" : " disabled") + ">"
+          : cellHTML(cols[c], cs[cols[c].key], dark, c === multi ? room : null);
         const conflictCount = Number(r.conflictCount);
         const shown = c === titleColumn() && conflictCount > 1
           ? value + `<span class="tv-conflict" title="${esc(String(conflictCount))} unresolved versions">conflict</span>`
@@ -4228,7 +4254,19 @@
       const input = document.createElement("input");
       input.className = "tv-cell-edit";
       const column = columns()[col];
-      input.type = column && column.secret ? "password" : "text";
+      const checkbox = kind === "cell" && column && column.checkbox;
+      input.type = checkbox ? "checkbox" : column && column.secret ? "password" : "text";
+      if (checkbox) {
+        if (checkbox.appearance === "switch") {
+          input.classList.add("tv-cell-switch");
+          input.setAttribute("role", "switch");
+        }
+        input.checked = raw === checkbox.checked;
+        input.setAttribute("aria-label", column.header || column.key);
+        input.addEventListener("change", () => {
+          input.value = input.checked ? checkbox.checked : checkbox.unchecked;
+        });
+      }
       if (column && column.secret) input.autocomplete = "off";
       input.value = raw;
       cell.innerHTML = "";
@@ -4236,8 +4274,10 @@
       const open = keep || { raw, token: ++cellToken };
       cellEdit = { cell, id, col, kind, input, raw: open.raw, token: open.token };
       input.focus();
-      if (sel) input.setSelectionRange(sel[0], sel[1]);
-      else if (input.select) input.select();
+      if (!checkbox) {
+        if (sel) input.setSelectionRange(sel[0], sel[1]);
+        else if (input.select) input.select();
+      }
       input.addEventListener("keydown", (e) => {
         // The input takes its own keys; a driver's key map does not see them.
         e.stopPropagation();
@@ -4340,6 +4380,19 @@
       // draw a blank cell rather than the key fallback) opens as empty.
       return openCellEditor(th, null, col, "header", c ? String(c.header || "").trim() : "");
     }
+    scroll.addEventListener("change", (event) => {
+      const input = event.target;
+      if (!(input instanceof HTMLInputElement) || !input.classList.contains("tv-cell-checkbox")) return;
+      const tr = input.closest("tr[data-id]"), td = input.closest("td");
+      if (!tr || !td) return;
+      const id = tr.getAttribute("data-id"), col = colOf(tr, td), box = columns()[col]?.checkbox;
+      if (!box) return;
+      const value = input.checked ? box.checked : box.unchecked;
+      commitCellEditor();
+      if (o.onEdit) o.onEdit(id, col, value, "cell");
+      root.dispatchEvent(new CustomEvent("tableview-edit", {detail: {id, col, value, kind: "cell"}}));
+      editCell(id, col, null, value);
+    });
     // A DOUBLE-CLICK opens an editable data cell. Header edits require the
     // consumer's explicit editHeader command; a pointer gesture never renames
     // a column while the reader is aiming at sort or column selection.

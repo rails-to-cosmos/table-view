@@ -26,6 +26,7 @@ interface TableViewColumn {
   values?: string[];
   multi?: boolean;
   editable?: boolean;
+  checkbox?: { checked: string; unchecked: string; appearance?: "switch" };
   compare?: string;
   valueType?: TableViewValueType;
 }

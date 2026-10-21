@@ -6,6 +6,9 @@ the rails-to-cosmos ELPA archive publishes date-stamped snapshots.
 ## Unreleased
 
 ### Added
+- **Boolean cell controls.** Optional Column `checkbox` mappings render native
+  checkbox editors, with `appearance: "switch"` for an Apple-style switch.
+  Space, pointer toggling, producer keys and editor restoration remain shared.
 - **Gutterless row marks in the browser renderer.** `marks: true` now draws a
   quiet accent edge without adding a checkbox column; marked and flagged rows
   retain both edges together, and the first six pixels remain a pointer target.
