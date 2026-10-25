@@ -73,3 +73,6 @@ bump-version:
 	sed -i -E "s/^version = \"[0-9.]+\"/version = \"$$new\"/" native/tvx/Cargo.toml; \
 	sed -i -E '/^name = \"tvx\"$$/{n;s/^version = \"[0-9.]+\"/version = \"'"$$new"'\"/;}' native/tvx/Cargo.lock; \
 	echo "table-view: $$cur -> $$new"
+
+ELPA_TOOLS ?= $(abspath ../elpa)
+-include $(ELPA_TOOLS)/package.mk

@@ -1,0 +1,9 @@
+[
+  {"main": "table-view.el", "files": {"table-view.el": "."}},
+  {"main": "table-view-native.el", "files": {
+    "table-view-native.el": ".",
+    "native/tvx/Cargo.toml": "native/tvx",
+    "native/tvx/Cargo.lock": "native/tvx",
+    "native/tvx/src/*.rs": "native/tvx/src"
+  }}
+]

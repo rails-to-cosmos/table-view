@@ -1,0 +1,11 @@
+#+TITLE: Component package installation
+
+=packages.json= selects files for =table-view= and =table-view-native=. Their Lisp
+headers own versions and dependencies. The native package includes the Rust crate
+sources; compiling its accelerator remains an explicit Emacs operation.
+
+With the sibling =elpa= checkout available, =make package= builds both release
+artifacts and =make install-emacs= installs them into =~/.emacs.d=.
+=make check-emacs= reads installation receipts. Set =ELPA_TOOLS=, =EMACS=, or
+=EMACS_CONFIG= to override the tools and profile. =DEV=1= permits working changes
+and same-version development installs. Restart Emacs after updates.
