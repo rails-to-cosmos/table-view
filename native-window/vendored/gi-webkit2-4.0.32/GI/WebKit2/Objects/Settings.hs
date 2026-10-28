@@ -1512,7 +1512,7 @@ module GI.WebKit2.Objects.Settings
 -- simple synchronous storage access.
 -- 
 -- HTML5 local storage specification is available at
--- http:\/\/dev.w3.org\/html5\/webstorage\/.
+-- https:\/\/html.spec.whatwg.org\/multipage\/webstorage.html.
 
 #if defined(ENABLE_OVERLOADING)
     SettingsEnableHtml5LocalStoragePropertyInfo,

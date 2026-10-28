@@ -470,14 +470,21 @@ instance SignalInfo InputMethodContextCommittedSignalInfo where
 
 -- signal InputMethodContext::delete-surrounding
 -- | Emitted when the input method wants to delete the context surrounding the cursor.
--- If /@offset@/ is a negative value, it means a position before the cursor.
+-- If /@offset@/ is a negative value, it means a position before the start of the selection,
+-- or before the cursor if there is no selection. The text to be deleted can include
+-- part of the selection. If /@nChars@/ is 0, nothing is deleted and the cursor is moved
+-- by /@offset@/.
+-- 
+-- Both /@offset@/ and /@nChars@/ are counted in UTF-16 code units, not in characters:
+-- a character outside the Basic Multilingual Plane, like most emoji, counts as 2.
+-- Note that the indexes passed to 'GI.WebKit2.Objects.InputMethodContext.inputMethodContextNotifySurrounding' are in bytes instead.
 -- 
 -- /Since: 2.28/
 type InputMethodContextDeleteSurroundingCallback =
     Int32
-    -- ^ /@offset@/: the character offset from the cursor position of the text to be deleted.
+    -- ^ /@offset@/: the offset of the text to be deleted from the start of the selection, in UTF-16 code units
     -> Word32
-    -- ^ /@nChars@/: the number of characters to be deleted
+    -- ^ /@nChars@/: the number of UTF-16 code units to be deleted
     -> IO ()
 
 type C_InputMethodContextDeleteSurroundingCallback =
