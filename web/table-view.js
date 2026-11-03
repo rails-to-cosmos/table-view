@@ -50,12 +50,15 @@
  *             badges?: Badge[],
  *             values?: string[],
  *             multi?: boolean,
- *             detail?: boolean,
  *             editable?: boolean,
  *             secret?: boolean,
  *             checkbox?: { checked: string, unchecked: string, appearance?: "switch" },
  *             compare?: string,
- *             valueType?: ValueType }} Column
+ *             minWidthCh?: number,
+ *             valueType?: ValueType,
+ *             editor?: TableViewColumnEditor, headerEditor?: TableViewColumnEditor,
+ *             activate?: {action: string}|{edit: true}, widthPx?: number,
+ *             render?: (host: HTMLElement, context: TableViewCellContext) => void|(() => void) }} Column
  *          `editable' opts the column into cell editing (`editCell'/double-
  *          click / `onEdit') AND into explicit header editing; columns are
  *          read-only by default, and a `producer' row is editable whole.
@@ -67,10 +70,10 @@
  * @typedef {{ column: string, ascending: boolean, nullsFirst: boolean }} SortKey
  *          A normalized sort key (internal).
  * @typedef {{ id: string, cells?: Record<string, Cell>, linked?: boolean,
- *             icon?: string,
- *             conflictCount?: number,
+ *             conflictCount?: number, familyProblems?: string[],
  *             producer?: boolean, under?: string|null,
- *             refused?: string }} Row
+ *             refused?: string, revision?: TableViewRevision, data?: any,
+ *             custom?: boolean }} Row
  *          `linked' says the row leads somewhere; its `title' cell is
  *          underlined, and a view with no such column shows nothing.
  *          `producer' says the row is the PRODUCER'S OWN and is no data: it
@@ -80,15 +83,10 @@
  *          editable whatever their column declares.  `refused' DRESSES that row
  *          `tv-refused' and says nothing of its own: what it was refused FOR is
  *          the producer's to say, wherever it says such things.
- * @typedef {{ name: string, query?: string }} SavedView
- *          A view the producer has named, which `view:NAME' completes from.
- *          What applying one MEANS is the producer's: this side offers the
- *          vocabulary and narrows nothing.
  * @typedef {{ title?: string,
  *             columns: Column[],
  *             actions?: Action[],
  *             sort?: Sort | Sort[],
- *             views?: SavedView[],
  *             rows?: Row[] }} View
  * @typedef {{ op: "insert", index: number, row: Row }
  *        | { op: "delete", index: number }
@@ -105,17 +103,16 @@
  *          edit from the next where the id and the column repeat, and a repaint's
  *          re-open is the SAME open wearing the same number.
  * @typedef {{ onAction?: (command: string, id: string, row: Row) => void,
+ *             cellTone?: (row: Row, column: Column) => string | null,
  *             onLink?: (target: string, row: Row | null) => void,
  *             onFilter?: (q: string) => void,
  *             onFilterInput?: (value: string) => void,
+ *             filterTerms?: string[],
  *             onEdit?: (id: string | null, col: number, value: string,
  *                       kind: "cell" | "header") => void,
      *             onCellKey?: (e: KeyboardEvent, cell: OpenCell) => boolean,
      *             onFilterKey?: (e: KeyboardEvent) => boolean,
  *             omnibox?: boolean,
- *             persistentFilter?: boolean,
- *             steadyCaret?: boolean,
- *             icons?: boolean,
  *             palette?: boolean,
  *             marks?: boolean,
  *             markGutter?: boolean,
@@ -129,6 +126,7 @@
  *             chipLabel?: (token: string) => string|null,
  *             composer?: boolean,
  *             inline?: boolean,
+ *             wrapRows?: boolean,
  *             filterDock?: "overlay"|"strip",
  *             onPin?: () => void,
  *             onRefused?: (token: string) => void,
@@ -341,8 +339,9 @@
   /** @param {Column} col  @param {Cell|undefined} val  @param {boolean} [dark]
    *  @param {number|null} [room]  Characters a MULTI-VALUED cell may draw in,
    *  `Infinity' where nothing caps it; null where the column is not that one.
+   *  @param {boolean} [lines] Preserve line breaks for wrapped rows.
    *  @returns {string} */
-  function cellHTML(col, val, dark, room) {
+  function cellHTML(col, val, dark, room, lines) {
     if (room !== null && room !== undefined) {
       const raw = displayText(val);
       const tags = tagsIn(raw);
@@ -363,15 +362,16 @@
       return esc(raw);
     }
     const s = typeof val === "string" ? val : displayText(val);
+    const controls = lines ? /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]+/g : /[\u0000-\u001f\u007f]+/g;
     let out = "", last = 0, m;
     ORG_LINK.lastIndex = 0;
     while ((m = ORG_LINK.exec(s))) {
-      out += esc(s.slice(last, m.index).replace(/[\u0000-\u001f\u007f]+/g, " "));
+      out += esc(s.slice(last, m.index).replace(controls, " "));
       const target = m[1], desc = m[2] || m[1];
       out += `<a class="tv-link" href="#" data-target="${esc(target)}">${esc(desc)}</a>`;
       last = m.index + m[0].length;
     }
-    out += esc(s.slice(last).replace(/[\u0000-\u001f\u007f]+/g, " "));
+    out += esc(s.slice(last).replace(controls, " "));
     return out;
   }
 
@@ -419,6 +419,11 @@
         if (!hasBody) quoted = true;      // a token that opens with a quote is free text
         seen = hasBody = true;
         inQ = !inQ;
+      } else if (!inQ && c !== "&" && isSep(c)
+                 && (body.startsWith(COLUMNS_KEY + ":")
+                     || body.startsWith(COLUMNS_KEY + "="))
+                 && body.endsWith(",")) {
+        continue;
       } else if (!inQ && isSep(c)) {
         flush(i);
       } else if (!seen && (c === "-" || c === "+")) {
@@ -909,14 +914,7 @@
    */
   const COLUMNS_KEY = "columns";
 
-  /**
-   * `view:NAME' — a SAVED VIEW the producer named, narrowing nothing here.
-   * `VIEW_KEYS' is the one list, so `queryKeys' and `queryMatcher' cannot come
-   * to disagree about which keys skip narrowing.
-   */
-  const VIEW_KEY = "view";
-
-  const VIEW_KEYS = [SORT_KEY, COLUMNS_KEY, VIEW_KEY];
+  const SHAPING_KEYS = [SORT_KEY, COLUMNS_KEY];
 
   /**
    * Whether KEY SHAPES the view rather than NARROWING it.  THE GRAMMAR HAS TWO
@@ -925,7 +923,7 @@
    * draws the line where every reader of a query already draws it.
    * @param {string|null} key  @returns {boolean}
    */
-  const shapesView = (key) => key !== null && VIEW_KEYS.indexOf(key) !== -1;
+  const shapesView = (key) => key !== null && SHAPING_KEYS.indexOf(key) !== -1;
 
   /** The directions a sort token may spell; the empty one ascends. */
   const SORT_DIRS = { "": true, asc: true, desc: false };
@@ -1322,14 +1320,6 @@
   position:relative;
   display:flex;
 }
-.tv-steady-caret .tv-filter{caret-color:transparent;}
-.tv-filter-caret{
-  position:absolute;
-  background:var(--tv-caret,var(--tv-link));
-  opacity:.82;
-  pointer-events:none;
-  z-index:2;
-}
 /* A LEADING NEGATION IS AN OPERATOR, not punctuation the reader has to decode.
    The input keeps the literal minus -- parsing, selection, completion and query
    delivery all continue to read the same bytes -- while this badge covers its
@@ -1463,15 +1453,6 @@
 .tv-pal .tv-chip-cols,.tv-summon .tv-chip-cols{
   background:color-mix(in srgb,var(--tv-link) var(--tv-cols-wash),transparent);
   border-color:color-mix(in srgb,var(--tv-link) var(--tv-chip-edge),transparent);
-}
-/* THE SAVED-VIEW CHIP WEARS THE ACCENT — the fourth chip voice, and the token
-   that names a whole view rather than shaping one. Same shape, same edge rule,
-   same wash arithmetic as its two siblings, one hue over. Only a token naming a
-   view the producer DECLARED wears it — "namesView" is that test — so a
-   half-typed "view:" and a name nobody carries keep the ordinary chip. */
-.tv-pal .tv-chip-view,.tv-summon .tv-chip-view{
-  background:color-mix(in srgb,var(--tv-accent) var(--tv-cols-wash),transparent);
-  border-color:color-mix(in srgb,var(--tv-accent) var(--tv-chip-edge),transparent);
 }
 .tv-pal .tv-chip:not(.tv-chip-muted):hover,
 .tv-summon .tv-chip:not(.tv-chip-muted):hover{
@@ -1676,7 +1657,7 @@
   grid-area:1 / 3;
   margin-right:12px;
 }
-.tv-dock.tv-typing > .tv-bar,.tv-dock.tv-persistent-filter > .tv-bar{
+.tv-dock.tv-typing > .tv-bar{
   display:flex;
 }
 .tv-dock > .tv-scroll{
@@ -1835,12 +1816,6 @@
 .tv-fill col.tv-gut{
   width:calc(3ch + 24px);
 }
-.tv-table.tv-details,.tv-details tbody{display:block;width:100%;}
-.tv-details colgroup,.tv-details thead,.tv-details td.tv-detail:empty{display:none;}
-.tv-table.tv-details tbody tr{display:grid;grid-template-columns:var(--tv-row-tracks);gap:3px 16px;padding:9px 10px;}
-.tv-table.tv-details tbody td{display:block;min-width:0;padding:0;border:0;overflow:hidden;text-overflow:ellipsis;}
-.tv-table.tv-details tbody td.tv-detail{grid-column:var(--tv-detail-start,1) / -1;order:1;white-space:normal;overflow-wrap:anywhere;color:var(--tv-muted);font-size:.8em;line-height:1.45;}
-.tv-table.tv-icons tbody tr::before{content:"";grid-column:var(--tv-icon-column);grid-row:1 / span var(--tv-icon-rows);align-self:center;width:var(--tv-icon-size,36px);height:var(--tv-icon-size,36px);background:var(--tv-row-icon,url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='36' height='36' viewBox='0 0 36 36'%3E%3Crect x='3' y='3' width='30' height='30' rx='7' fill='%238995a2'/%3E%3Cpath d='M11 11h6v6h-6zm8 0h6v6h-6zm-8 8h6v6h-6zm8 0h6v6h-6z' fill='%23edf0f4'/%3E%3C/svg%3E")) center / contain no-repeat;pointer-events:none;}
 .tv-table th,.tv-table td{
   padding:5px 12px;
   text-align:left;
@@ -2028,17 +2003,26 @@
   text-decoration:underline;
   text-underline-offset:2px;
 }
-.tv-conflict{
-  display:inline-block;
-  margin-left:.7em;
-  padding:0 .45em;
-  border:1px solid var(--tv-warn);
-  border-radius:999px;
-  color:var(--tv-warn);
+.tv-doctor{
+  display:inline-flex;
+  align-items:center;
+  padding:3px;
+  border:1px solid transparent;
+  border-radius:5px;
+  color:var(--tv-doctor-ink);
+  background:var(--tv-doctor-bg);
+  font:inherit;
   font-size:.82em;
-  line-height:1.35;
+  line-height:1.5;
   white-space:nowrap;
+  cursor:pointer;
 }
+.tv-doctor::before{content:"";width:12px;height:12px;flex:none;background:currentColor;mask:var(--tv-doctor-icon) center/contain no-repeat}
+.tv-doctor[data-tone="damage"]{--tv-doctor-icon:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%221.6%22%3E%3Cpath%20d%3D%22m8%202%206%2011H2Z%22%2F%3E%3Cpath%20d%3D%22M8%206v3m0%201.5v1%22%2F%3E%3C%2Fsvg%3E")}
+.tv-doctor[data-tone="warning"]{--tv-doctor-icon:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%221.6%22%3E%3Ccircle%20cx%3D%228%22%20cy%3D%228%22%20r%3D%225.5%22%2F%3E%3Cpath%20d%3D%22M5%208h6%22%2F%3E%3C%2Fsvg%3E")}
+.tv-doctor[data-tone="choice"]{--tv-doctor-icon:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%221.6%22%3E%3Cpath%20d%3D%22M4%203v3c0%204%208%200%208%204v3M12%203v3c0%204-8%200-8%204v3%22%2F%3E%3Cpath%20d%3D%22m2%2011%202%202%202-2m4%200%202%202%202-2%22%2F%3E%3C%2Fsvg%3E")}
+.tv-doctor:focus-visible{outline:2px solid var(--tv-point);outline-offset:2px}
+
 .tv-table tbody tr{
   cursor:default;
 }
@@ -2162,80 +2146,671 @@
     document.head.appendChild(el);
   }
 
-  /** Draw a steady block over the native input's collapsed selection.
-   * @param {HTMLInputElement} input @param {HTMLElement} wrap
-   * @returns {() => void} release observers and listeners
-   */
-  function steadyCaret(input, wrap) {
-    const caret = document.createElement("span");
-    caret.className = "tv-filter-caret";
-    caret.setAttribute("aria-hidden", "true");
-    caret.hidden = true;
-    wrap.classList.add("tv-steady-caret");
-    wrap.appendChild(caret);
-    const measure = document.createElement("canvas").getContext("2d");
-    let pending = 0, composing = false, disposed = false;
-    function paint() {
-      pending = 0;
-      caret.hidden = true;
-      if (disposed || composing || document.activeElement !== input || !measure ||
-          input.selectionStart === null || input.selectionStart !== input.selectionEnd ||
-          !input.getClientRects().length) return;
-      const css = getComputedStyle(input), box = input.getBoundingClientRect();
-      const parent = wrap.getBoundingClientRect();
-      measure.font = css.font;
-      const start = input.selectionStart;
-      const before = measure.measureText(input.value.slice(0, start)).width;
-      const glyph = Array.from(input.value.slice(start))[0] || " ";
-      const width = Math.max(1, measure.measureText(glyph).width);
-      const left = parseFloat(css.borderLeftWidth) + parseFloat(css.paddingLeft);
-      const right = box.width - parseFloat(css.borderRightWidth) - parseFloat(css.paddingRight);
-      const x = left + before - input.scrollLeft;
-      if (x < left || x >= right) return;
-      const height = parseFloat(css.lineHeight) || parseFloat(css.fontSize) * 1.2;
-      caret.style.left = `${box.left - parent.left + x}px`;
-      caret.style.top = `${box.top - parent.top + (box.height - height) / 2}px`;
-      caret.style.width = `${Math.min(width, right - x)}px`;
-      caret.style.height = `${height}px`;
-      caret.hidden = false;
+  /** One table policy over the renderer's authoritative interaction state.
+   * @param {TableViewControllerAdapter} a
+   * @param {TableViewDefinition} initial
+   * @param {TableViewWidgetHost} [services]
+   * @returns {TableViewController} */
+  function createController(a, initial, services) {
+    let definition = initial;
+    const host = services || {};
+    let closed = false, suspended = false, loading = false, resyncing = false, generation = 0, epoch = 0;
+    /** @type {TableViewRevision|null} */ let revision = initial.source.revision ?? null;
+    /** @type {AbortController|null} */ let source = null;
+    /** @type {void|(() => void)} */ let unsubscribe;
+    /** @type {Map<string, {controller: AbortController, result: Promise<any>}>} */ const jobs = new Map();
+    /** @type {null|{row: TableViewRow, basis: any, initialColumn?: string}} */ let draft = null;
+    /** @type {TableViewSnapshot|null} */ let deferredRestore = null;
+    /** @type {TableViewDataFrame|null} */ let blockedFrame = null;
+    let error = "", sourceError = "";
+    /** @type {any} */ let editSession = null;
+    /** @type {WeakMap<TableViewRow, string>} */ let matchTexts = new WeakMap();
+    const active = () => !closed && !suspended && (!host.active || host.active());
+    const dataRows = () => a.rows().filter(row => !row.producer);
+    const mode = () => draft ? "producer" : a.editor() ? "edit" : a.filter().open ? "filter" : "rows";
+    const producerValue = () => draft ? {initialColumn: draft.initialColumn, cells: Object.assign({}, draft.row.cells), basis: draft.basis, under: draft.row.under ?? null} : null;
+    function stateValue() {
+      const point = a.point(), columns = a.columns();
+      return {id: definition.id, mode: mode(), point: {id: point.id, column: point.col === null ? null : columns[point.col]?.key || null},
+        query: a.query(), draft: a.filter().value, revision,
+        marked: a.marked(), flagged: a.flagged(), producer: producerValue(), pending: [...jobs.keys()], error: error || sourceError, suspended, loading, total: a.total ? a.total() : a.rows().length - (draft ? 1 : 0)};
     }
-    function queue() {
-      if (!pending && !disposed) pending = requestAnimationFrame(paint);
+    function changed(interacted = false) {
+      if (closed) return;
+      if (interacted) generation++;
+      if (host.changed) host.changed(stateValue());
     }
-    function compositionStart() { composing = true; caret.hidden = true; }
-    function compositionEnd() { composing = false; queue(); }
-    const events = ["input", "keyup", "click", "select", "scroll", "focus", "blur"];
-    for (const name of events) input.addEventListener(name, queue);
-    input.addEventListener("compositionstart", compositionStart);
-    input.addEventListener("compositionend", compositionEnd);
-    document.addEventListener("selectionchange", queue);
-    window.addEventListener("resize", queue);
-    const resize = new ResizeObserver(queue);
-    resize.observe(input);
-    return () => {
-      disposed = true;
-      cancelAnimationFrame(pending);
-      resize.disconnect();
-      for (const name of events) input.removeEventListener(name, queue);
-      input.removeEventListener("compositionstart", compositionStart);
-      input.removeEventListener("compositionend", compositionEnd);
-      document.removeEventListener("selectionchange", queue);
-      window.removeEventListener("resize", queue);
-      wrap.classList.remove("tv-steady-caret");
-      caret.remove();
+    function report(message, failed = false) {
+      if (failed) error = message;
+      a.status(message);
+      if (host.report) host.report(message, failed ? "error" : "info");
+      changed();
+    }
+    function reportSource(message) {
+      sourceError = message;
+      a.status(message);
+      if (host.report) host.report(message, "error");
+      changed();
+    }
+    function delivered(work) {
+      if (closed) return;
+      return host.deliver ? host.deliver(() => closed ? undefined : work()) : work();
+    }
+    function fail(reason) { return {handled: true, ok: false, reason}; }
+    function handled() { return {handled: true, ok: true}; }
+    function leaveState() {
+      if (jobs.size) return "pending";
+      if (error || sourceError) return "failed";
+      if (draft || a.editor()) return "dirty";
+      return "clean";
+    }
+    function schemaAllows(columns) {
+      const editing = a.editor();
+      if (!editing) return true;
+      const old = a.columns().find(column => column.key === editing.key);
+      const next = columns.find(column => column.key === editing.key);
+      const before = editing.kind === "header" ? old?.headerEditor : old?.editor;
+      const after = editing.kind === "header" ? next?.headerEditor : next?.editor;
+      return !!next && !!after && (before?.kind || "text") === (after.kind || "text")
+        && before?.id === after.id && !!before?.when === !!after.when && !!before?.capture === !!after.capture && !!before?.commit === !!after.commit && !!before?.cancel === !!after.cancel;
+    }
+    /** @param {TableViewDataFrame} frame @returns {TableViewUpdateResult} */
+    function update(frame) {
+      if (closed) return {ok: false, reason: "destroyed"};
+      if (frame.kind === "producer") {
+        if (!draft) return {ok: false, reason: "definition"};
+        if (jobs.has("@submit")) return {ok: false, reason: "pending"};
+        if (frame.columns && !schemaAllows(frame.columns)) return {ok: false, reason: "dirty-schema"};
+        stageDraft();
+        Object.assign(draft.row.cells, frame.cells);
+        if ("basis" in frame) draft.basis = frame.basis;
+        const creating = producerDefinition();
+        if (creating?.derive) Object.assign(draft.row.cells, creating.derive(draft.row.cells));
+        if (frame.columns) a.apply({kind: "snapshot", rows: dataRows(), columns: frame.columns});
+        a.putProducer(draft.row);
+        const editing = a.editor();
+        if (editing && frame.cells && Object.prototype.hasOwnProperty.call(frame.cells, editing.key)) a.writeEditor(String(draft.row.cells[editing.key] ?? ""));
+        if (editSession && "basis" in frame) { editSession.basis = frame.basis; if (a.editBasis) a.editBasis(frame.basis); }
+        changed();
+        return {ok: true};
+      }
+      if (frame.kind === "snapshot" && typeof frame.revision === "number" && typeof revision === "number" && frame.revision < revision) return {ok: false, reason: "basis"};
+      if (frame.kind === "patch" && frame.base !== revision) {
+        reportSource("table update has a stale source basis");
+        if (!resyncing) { resyncing = true; Promise.resolve().then(() => read()); }
+        return {ok: false, reason: "basis"};
+      }
+      if (frame.kind === "snapshot" && frame.columns && !schemaAllows(frame.columns)) return {ok: false, reason: "dirty-schema"};
+      const editing = a.editor();
+      if (editing?.id && (!draft || editing.id !== draft.row.id)) {
+        let ids = frame.kind === "snapshot" ? frame.rows.map(row => row.id) : (a.visible ? a.visible() : a.rows()).filter(row => !row.producer).map(row => row.id);
+        if (frame.kind === "patch") for (const op of frame.ops) {
+          if (op.op === "reset") ids = op.rows.map(row => row.id);
+          else if (op.op === "insert") ids.splice(op.index, 0, op.row.id);
+          else if (op.op === "upsert") { if (!ids.includes(op.row.id)) ids.push(op.row.id); }
+          else if (op.op === "delete") ids.splice(op.index, 1);
+        }
+        if (!ids.includes(editing.id)) {
+          blockedFrame = frame;
+          report("the edited Row is absent from the new source; finish or cancel its draft first", true);
+          return {ok: false, reason: "dirty-row"};
+        }
+      }
+      blockedFrame = null;
+      if (frame.kind === "snapshot" && frame.actions) definition = Object.assign({}, definition, {actions: frame.actions});
+      matchTexts = new WeakMap();
+      a.apply(frame);
+      // A NEW QUESTION'S ANSWER may ask to be read from its top.
+      if (frame.kind === "snapshot" && frame.land === "first") {
+        const first = (a.visible ? a.visible() : a.rows()).find(row => !row.producer);
+        if (first) a.select(first.id, a.point().col ?? undefined);
+      }
+      if (definition.filter?.kind === "match") filterInput(a.query(), false);
+      if (!a.point().id) a.move(1);
+      if (frame.kind === "snapshot") { resyncing = false; if (sourceError) { sourceError = ""; a.status(error); } }
+      revision = frame.revision ?? revision;
+      if (deferredRestore) {
+        const kept = deferredRestore;
+        deferredRestore = null;
+        a.restore(kept);
+      }
+      changed();
+      return {ok: true};
+    }
+    async function read() {
+      if (closed || definition.source.kind !== "remote") return;
+      const reading = definition.source;
+      const ownEpoch = ++epoch;
+      source?.abort();
+      if (unsubscribe) unsubscribe();
+      unsubscribe = undefined;
+      source = new AbortController();
+      const controller = source;
+      loading = !!reading.read; changed();
+      const snap = a.snapshot();
+      const request = {query: a.query(), sort: snap.sort, page: snap.page, pageSize: a.pageSize ? a.pageSize() : definition.presentation?.pageSize || 0, epoch: ownEpoch};
+      const current = () => !closed && ownEpoch === epoch && !controller.signal.aborted;
+      const receive = frame => {
+        if (!current()) return;
+        return delivered(() => { if (current()) update(frame); });
+      };
+      try {
+        if (reading.subscribe) unsubscribe = reading.subscribe(request, receive, controller.signal);
+        // A read with nothing newer than the loaded Rows answers with no frame.
+        if (reading.read) { const frame = await reading.read(request, controller.signal); if (frame) await receive(frame); }
+      } catch (failure) {
+        if (current()) await delivered(() => reportSource(failure instanceof Error ? failure.message : String(failure)));
+      } finally { if (current()) { loading = false; changed(); } }
+    }
+    function matchRows(rows) {
+      if (definition.filter?.kind !== "match") return rows.slice();
+      const value = a.query();
+      const needle = String(definition.filter.normalize ? definition.filter.normalize(value) : value).trim().toLowerCase();
+      const primary = definition.primaryColumn || a.columns()[0]?.key;
+      const result = rows.filter(row => {
+        if (row.producer || row.custom) return true;
+        let text = matchTexts.get(row);
+        if (text === undefined) { text = a.columns().map(column => displayText(row.cells?.[column.key]).toLowerCase()).join("\u001f"); matchTexts.set(row, text); }
+        return text.includes(needle);
+      });
+      const rank = row => row.custom || needle && displayText(row.cells?.[primary]).toLowerCase() === needle ? 0 : 1;
+      return needle ? result.sort((left, right) => rank(left) - rank(right)) : result;
+    }
+    function filterInput(value, interacted = true) {
+      if (definition.filter?.kind !== "match" || !a.matchValue || closed) return false;
+      const rows = a.rows().filter(row => !row.custom);
+      const typed = value.trim(), primary = definition.primaryColumn || a.columns()[0]?.key;
+      const folded = String(definition.filter.normalize ? definition.filter.normalize(typed) : typed).toLowerCase();
+      let literal = null;
+      if (typed && definition.filter.allowCustom && !definition.filter.validate?.(typed)
+        && !rows.some(row => displayText(row.cells?.[primary]).toLowerCase() === folded)) {
+        let id = `@table-literal:${definition.id}`;
+        while (rows.some(row => row.id === id)) id += ":";
+        literal = {id, custom: true, cells: Object.assign({[primary]: typed}, definition.filter.customCells ? definition.filter.customCells(typed) : {})};
+      }
+      a.matchValue(value, literal);
+      const matching = matchRows(a.rows()).filter(row => !row.producer);
+      const first = matching[0];
+      if (first && (interacted || !matching.some(row => row.id === a.point().id))) a.select(first.id);
+      changed(interacted);
+      if (interacted && definition.source.kind === "remote") read();
+      return true;
+    }
+    function filterKey(event) {
+      if (definition.filter?.kind !== "match" || !active()) return false;
+      const key = host.key ? host.key(event) : event.key;
+      const down = ["ArrowDown", "<down>", "C-n"].includes(key) || event.ctrlKey && event.key === "n";
+      const up = ["ArrowUp", "<up>", "C-p"].includes(key) || event.ctrlKey && event.key === "p";
+      if (down || up) { event.preventDefault(); event.stopPropagation(); a.move(down ? 1 : -1); changed(true); return true; }
+      if (["Enter", "RET"].includes(key)) {
+        event.preventDefault(); event.stopPropagation();
+        const invalid = definition.filter.validate?.(a.filter().value.trim());
+        if (invalid) { report(invalid, true); return true; }
+        if (!a.point().id) return true;
+        a.closeFilter(); command("activate"); return true;
+      }
+      if (["Escape", "ESC"].includes(key)) { event.preventDefault(); event.stopPropagation(); a.closeFilter(); changed(true); return true; }
+      return false;
+    }
+    function targetRows(action) {
+      const point = a.point().id, marked = a.marked();
+      const ids = action.targets === "flagged" ? a.flagged()
+        : action.targets === "marked-or-point" && marked.length ? marked : point ? [point] : [];
+      const rows = dataRows();
+      return ids.map(id => rows.find(row => row.id === id) || {id}).filter(row => !rows.includes(row) || !action.eligible || action.eligible(row));
+    }
+    function frozenRow(row) {
+      return Object.freeze(Object.assign({}, row, {cells: Object.freeze(Object.assign({}, row.cells))}));
+    }
+    function applyResult(result, request, started) {
+      const answer = result || {};
+      const editing = a.editor();
+      if (editing?.id && answer.identities?.[editing.id]) {
+        const id = answer.identities[editing.id];
+        if (editSession) { editSession.id = id; editSession.row = Object.assign({}, editSession.row, {id}); }
+        if (a.editIdentity) a.editIdentity(id);
+      }
+      if (draft?.row.under && answer.identities?.[draft.row.under]) draft.row.under = answer.identities[draft.row.under];
+      if (answer.data) update(answer.data);
+      const outcomes = answer.outcomes || request.ids.map(id => ({id, status: answer.ok === false ? "failure" : "success", message: answer.error}));
+      const succeeded = new Set(outcomes.filter(outcome => outcome.status === "success").map(outcome => outcome.id));
+      const identities = answer.identities || {};
+      const flags = a.flagged(), marks = a.marked();
+      const nextFlags = flags.filter(id => request.action !== definition.flaggedAction || !succeeded.has(id)).map(id => identities[id] || id);
+      const nextMarks = marks.map(id => identities[id] || id);
+      const sameIds = (left, right) => left.length === right.length && left.every((id, index) => id === right[index]);
+      if (!sameIds(flags, nextFlags)) a.setFlags(nextFlags);
+      if (!sameIds(marks, nextMarks)) a.setMarks(nextMarks);
+      const point = a.point();
+      if (point.id && identities[point.id]) a.select(identities[point.id], point.col ?? undefined);
+      if (answer.point && started === generation) {
+        const col = answer.point.column ? a.columns().findIndex(column => column.key === answer.point.column) : undefined;
+        a.select(answer.point.id, col);
+      }
+      const failures = outcomes.filter(outcome => outcome.status !== "success");
+      error = answer.error || failures.map(outcome => outcome.message || `${outcome.id}: ${outcome.status}`).join("; ");
+      if (error) report(error, true);
+      changed();
+      return answer;
+    }
+    function run(action) {
+      // A job still at its question is superseded by a new press; one past it is pending.
+      const held = jobs.get(action.id);
+      if (held && !held.confirming) return fail("pending");
+      if (held) { held.controller.abort(); jobs.delete(action.id); }
+      if (!(action.modes || ["rows"]).includes(mode())) return fail("mode");
+      const rows = targetRows(action);
+      if (!rows.length && action.targets !== undefined) return fail("no-target");
+      const frozen = Object.freeze(rows.map(frozenRow));
+      const value = definition.filter?.kind === "match" ? a.filter().value : undefined;
+      const request = Object.freeze({action: action.id, ids: Object.freeze(rows.map(row => row.id)), rows: frozen, revision,
+        basis: action.capture ? action.capture({rows: frozen, loaded: dataRows(), revision, value}) : undefined, value});
+      const controller = new AbortController(), started = generation;
+      error = "";
+      // THE QUESTION IS RAISED WITH THE PRESS, so the next key already answers it.
+      let asked;
+      try {
+        if (action.confirm) {
+          const question = typeof action.confirm === "function" ? action.confirm(request) : action.confirm;
+          if (!host.confirm) throw new Error("table action requires a confirmation host");
+          asked = host.confirm(typeof question === "string" ? {title: question} : question, request);
+        } else asked = true;
+      } catch (failure) { asked = Promise.reject(failure); }
+      const job = {controller, result: /** @type {any} */ (null), confirming: !!action.confirm};
+      const result = Promise.resolve(asked).then(async accepted => {
+        job.confirming = false;
+        // A declined question releases its action at once, so the next press asks again.
+        if (!accepted || closed || controller.signal.aborted) { if (jobs.get(action.id) === job) jobs.delete(action.id); return; }
+        const answer = await action.run(request, controller.signal);
+        return await delivered(() => applyResult(answer, request, started));
+      }).catch(failure => delivered(() => {
+        report(failure instanceof Error ? failure.message : String(failure), true);
+        return {ok: false, error};
+      })).finally(() => {
+        if (jobs.get(action.id) === job) jobs.delete(action.id);
+        changed();
+      });
+      job.result = result;
+      jobs.set(action.id, job);
+      changed();
+      return {handled: true, ok: true, pending: result};
+    }
+    function flag(action, all, remove = false) {
+      const eligible = row => !row.producer && !row.custom && (!action?.eligible || action.eligible(row));
+      const flags = new Set(a.flagged());
+      if (all) {
+        flags.clear();
+        for (const row of dataRows()) if (eligible(row)) flags.add(row.id);
+      } else {
+        const id = a.point().id, row = dataRows().find(row => row.id === id);
+        if (!row) return fail("no-target");
+        if (remove) flags.delete(row.id);
+        else if (!eligible(row)) return fail("ineligible");
+        else flags.add(row.id);
+      }
+      a.setFlags([...flags]);
+      // `d' flags and steps; `u' clears the flag where point stands.
+      if (!all && !remove) a.move(1);
+      changed();
+      return handled();
+    }
+    function producerDefinition() {
+      return definition.create && "submit" in definition.create ? definition.create : null;
+    }
+    function draftFields() {
+      const fields = producerDefinition()?.fields?.(draft?.row.cells || {});
+      return a.columns().filter(column => (!fields || fields.includes(column.key)) && column.editor).map(column => column.key);
+    }
+    function openProducer() {
+      const creating = definition.create;
+      if (!creating) return fail("no-producer");
+      if ("action" in creating) return command({type: creating.action});
+      if (draft) { openEditor(draft.row.id, draft.initialColumn || creating.initialColumn || draftFields()[0]); return handled(); }
+      if (jobs.has("@producer")) return fail("pending");
+      const controller = new AbortController();
+      const point = a.point();
+      const result = Promise.resolve().then(() => typeof creating.initial === "function" ? creating.initial({point, rows: dataRows()}) : creating.initial)
+        .then(seed => delivered(() => {
+          if (closed || controller.signal.aborted || jobs.get("@producer")?.controller !== controller) return;
+          let id = `@table-producer:${definition.id}`;
+          while (a.rows().some(row => row.id === id)) id += ":";
+          draft = {row: {id, producer: true, under: seed.under === undefined ? point.id : seed.under, cells: Object.assign({}, seed.cells)}, basis: seed.basis, initialColumn: seed.initialColumn || creating.initialColumn};
+          if (creating.derive) Object.assign(draft.row.cells, creating.derive(draft.row.cells));
+          a.putProducer(draft.row);
+          openEditor(id, seed.initialColumn || creating.initialColumn || draftFields()[0]);
+          changed();
+        })).catch(failure => delivered(() => { if (!controller.signal.aborted) report(String(failure), true); })).finally(() => { if (jobs.get("@producer")?.controller === controller) { jobs.delete("@producer"); changed(); } });
+      jobs.set("@producer", {controller, result}); changed();
+      return {handled: true, ok: true, pending: result};
+    }
+    function stageDraft() {
+      const editing = a.editor(), creating = producerDefinition();
+      if (!draft || !editing || editing.id !== draft.row.id) return;
+      draft.row.cells[editing.key] = editing.value;
+      if (creating?.derive) Object.assign(draft.row.cells, creating.derive(draft.row.cells));
+      a.putProducer(draft.row);
+    }
+    /** Within one draft Row a pointer moves the editor: the open field is staged first. */
+    function moveDraft(key) {
+      const editing = a.editor();
+      if (!draft || !editing || editing.id !== draft.row.id || !draftFields().includes(key)) return false;
+      stageDraft();
+      return openEditor(draft.row.id, key);
+    }
+    function canEdit(id, key, kind = "cell") {
+      const column = a.columns().find(candidate => candidate.key === key);
+      const row = kind === "header" ? {id: "", cells: {}} : a.rows().find(candidate => candidate.id === id);
+      const editor = kind === "header" ? column?.headerEditor : column?.editor;
+      return !!row && !!column && !!editor && (!editor.when || editor.when({row, column,
+        value: kind === "header" ? column.header : row.cells?.[key], producer: !!row.producer, dark: a.dark ? a.dark() : false}));
+    }
+    function editorOpened() {
+      const editing = a.editor();
+      if (!editing) { editSession = null; return; }
+      if (!canEdit(editing.id, editing.key, editing.kind)) { a.closeEditor(); return; }
+      const column = a.columns().find(candidate => candidate.key === editing.key);
+      const row = editing.kind === "header" ? {id: "", cells: {}} : a.rows().find(candidate => candidate.id === editing.id);
+      const contract = editing.kind === "header" ? column.headerEditor : column.editor;
+      const basis = contract.capture ? contract.capture({row, column, value: row.cells?.[editing.key], producer: !!row.producer, dark: a.dark ? a.dark() : false})
+        : draft && editing.id === draft.row.id ? draft.basis : undefined;
+      editSession = {id: editing.id, key: editing.key, raw: editing.raw, contract, basis, row};
+      if (a.editBasis) a.editBasis(basis);
+    }
+    function editorClosed() { editSession = null; }
+    // POINT STANDS ON THE ROW BEING EDITED, a draft's included.
+    function openEditor(id, key, kind = "cell") {
+      if (!canEdit(id, key, kind)) return false;
+      if (kind === "cell" && id !== null && a.point().id !== id) a.select(id, a.columns().findIndex(column => column.key === key));
+      return a.edit(id, key, kind);
+    }
+    function validation(value) { return typeof value === "string" ? {error: value} : value || {}; }
+    async function commit() {
+      if (!active()) return;
+      const editing = a.editor();
+      if (!editing || jobs.has("@editor") || jobs.has("@submit")) return;
+      const creating = draft && editing.id === draft.row.id ? producerDefinition() : null;
+      stageDraft();
+      const column = a.columns().find(candidate => candidate.key === editing.key);
+      const editor = editSession?.contract || editing.contract || (editing.kind === "header" ? column?.headerEditor : column?.editor);
+      const frozen = Object.freeze({id: editing.id, key: editing.key, value: editing.value, raw: editSession ? editSession.raw : editing.raw,
+        row: editSession?.row ? frozenRow(editSession.row) : editing.row ? frozenRow(editing.row) : null, basis: editSession ? editSession.basis : editing.basis});
+      const values = producerValue();
+      let refused;
+      try { refused = validation(creating ? creating.validate?.(values) : editor?.validate?.(frozen)); }
+      catch (failure) { refused = {error: failure instanceof Error ? failure.message : String(failure)}; }
+      if (refused.error) {
+        report(refused.error, true);
+        if (draft) {draft.row.refused = refused.error; a.putProducer(draft.row);}
+        if (draft && refused.column) openEditor(draft.row.id, refused.column);
+        return {ok: false, error: refused.error};
+      }
+      const name = creating ? "@submit" : "@editor";
+      const controller = new AbortController(), started = generation;
+      error = ""; a.editStatus(true);
+      const execute = creating ? () => creating.submit(Object.freeze(values), controller.signal)
+        : () => editor?.commit?.(frozen, controller.signal);
+      const current = () => !closed && !controller.signal.aborted && jobs.get(name)?.controller === controller;
+      const result = Promise.resolve().then(() => current() ? execute() : undefined).then(answer => delivered(() => {
+        if (!current()) return;
+        if (answer && "basis" in answer) {
+          if (creating && draft) draft.basis = answer.basis;
+          if (editSession) editSession.basis = answer.basis;
+          if (a.editBasis) a.editBasis(answer.basis);
+        }
+        if (answer?.ok === false || answer?.error) {
+          applyResult(Object.assign({}, answer, {error: answer.error || "edit failed"}),
+            {action: name, ids: editing.id ? [editing.id] : [], rows: [], revision}, started);
+          if (draft) { draft.row.refused = answer.error || "edit failed"; a.putProducer(draft.row); }
+          report(answer.error || "edit failed", true); return answer;
+        }
+        blockedFrame = null;
+        if (creating) { draft = null; a.closeEditor(); a.putProducer(null); }
+        else {
+          a.closeEditor();
+          if (!answer?.data && editing.kind === "header" && !editor?.commit) {
+            update({kind: "snapshot", columns: a.columns().map(column => column.key === editing.key ? Object.assign({}, column, {header: editing.value}) : column), rows: dataRows()});
+          }
+          if (!answer?.data && editing.id !== null && !editor?.commit) {
+            const row = dataRows().find(candidate => candidate.id === editing.id);
+            if (row) update({kind: "snapshot", rows: dataRows().map(candidate => candidate === row ? Object.assign({}, row, {cells: Object.assign({}, row.cells, {[editing.key]: editing.value})}) : candidate)});
+          }
+        }
+        const request = {action: name, ids: editing.id ? [editing.id] : [], rows: [], revision};
+        return applyResult(answer, request, started);
+      })).catch(failure => delivered(() => { if (!current()) return; report(failure instanceof Error ? failure.message : String(failure), true); return {ok: false, error}; }))
+        .finally(() => { if (jobs.get(name)?.controller === controller) { jobs.delete(name); if (!closed) { a.editStatus(false); changed(); } } });
+      jobs.set(name, {controller, result}); changed();
+      return result;
+    }
+    function cancel() {
+      const editing = a.editor();
+      const previous = editSession;
+      const produced = producerValue();
+      const creating = draft ? producerDefinition() : null;
+      const opening = jobs.get("@producer");
+      if (opening) { opening.controller.abort(); jobs.delete("@producer"); }
+      for (const name of ["@editor", "@submit"]) {
+        const pending = jobs.get(name);
+        if (pending) { pending.controller.abort(); jobs.delete(name); }
+      }
+      a.editStatus(false);
+      a.closeEditor();
+      if (draft) { draft = null; a.putProducer(null); }
+      error = "";
+      try {
+        if (creating?.cancel && produced) creating.cancel(produced);
+        else if (previous?.contract.cancel && editing) previous.contract.cancel(Object.freeze({id: editing.id, key: editing.key,
+          value: editing.value, raw: previous.raw, row: previous.row, basis: previous.basis}));
+      } catch (failure) { if (!closed) report(failure instanceof Error ? failure.message : String(failure), true); }
+      if (blockedFrame) { const waiting = blockedFrame; blockedFrame = null; update(waiting); }
+      changed(); return handled();
+    }
+    function editorKey(event) {
+      const key = host.key ? host.key(event) : event.key === "Enter" ? "RET" : event.key === "Escape" ? "ESC" : event.key === "Tab" ? event.shiftKey ? "S-TAB" : "TAB" : null;
+      if (!["RET", "ESC", "TAB", "S-TAB"].includes(key)) return false;
+      event.preventDefault();
+      if (key !== "ESC" && (jobs.has("@editor") || jobs.has("@submit"))) return true;
+      if (key === "ESC") { cancel(); return true; }
+      if (key === "RET") { if (!event.repeat) commit(); return true; }
+      const editing = a.editor();
+      if (!editing) return true;
+      if (draft && editing.id === draft.row.id) {
+        const editor = editSession?.contract || a.columns().find(column => column.key === editing.key)?.editor;
+        let refused;
+        try { refused = validation(editor?.validate?.(Object.freeze({id: editing.id, key: editing.key, value: editing.value, raw: editSession?.raw ?? editing.raw, row: editSession?.row || editing.row || null, basis: editSession?.basis ?? editing.basis}))); }
+        catch (failure) { refused = {error: failure instanceof Error ? failure.message : String(failure)}; }
+        if (refused.error) { report(refused.error, true); return true; }
+        stageDraft();
+        const fields = draftFields(), index = fields.indexOf(editing.key), by = key === "TAB" ? 1 : -1;
+        openEditor(draft.row.id, fields[(index + by + fields.length) % fields.length]);
+      } else {
+        const cols = a.columns(), at = cols.findIndex(column => column.key === editing.key), by = key === "TAB" ? 1 : -1;
+        const next = cols.slice().map((column, index) => ({column, index})).filter(value => value.column.editor);
+        // THE WALK WRAPS within the Row; a Row with one editable cell keeps its editor as it stands.
+        const ring = by > 0 ? next : next.slice().reverse();
+        const after = ring.find(value => by > 0 ? value.index > at : value.index < at) || ring[0];
+        if (!after || after.index === at) return true;
+        commit().then(result => { if (result?.ok !== false && after && active()) openEditor(editing.id, after.column.key); });
+      }
+      changed(); return true;
+    }
+    const keyCommands = {n: "next", j: "next", "<down>": "next", ArrowDown: "next", "C-n": "next", p: "previous", k: "previous", "<up>": "previous", ArrowUp: "previous", "C-p": "previous",
+      f: "forward", l: "forward", "<right>": "forward", ArrowRight: "forward", b: "backward", h: "backward", "<left>": "backward", ArrowLeft: "backward",
+      "<next>": "page-next", PageDown: "page-next", "<prior>": "page-previous", PageUp: "page-previous", "<home>": "first", Home: "first", "<end>": "last", End: "last",
+      RET: "activate", Enter: "activate", "/": "filter", ".": "query", d: "flag", D: "flag-all", u: "unflag", x: "execute", "+": "create", ESC: "back", Escape: "back", DEL: "back", Backspace: "back", q: "back", m: "mark", M: "mark-all", U: "clear-marks"};
+    /** @param {TableViewCommand} supplied @returns {TableViewCommandResult} */
+    function command(supplied) {
+      if (!active()) return fail(closed ? "destroyed" : "inactive");
+      generation++;
+      const cmd = typeof supplied === "string" ? {type: supplied} : supplied;
+      let type = cmd.type;
+      if (type === "key") {
+        const own = (definition.actions || []).find(action => action.keys?.includes(cmd.key));
+        if (own) type = own.id;
+        else type = keyCommands[cmd.key] || "";
+        if (!type) return {handled: false, ok: false};
+        if ((host.repeating && cmd.event ? host.repeating(cmd.event) : cmd.event?.repeat) && !["next", "previous", "forward", "backward"].includes(type)) return handled();
+        if (a.editor() && !["back"].includes(type)) return {handled: false, ok: false};
+        if (a.filter().open) return {handled: false, ok: false};
+      }
+      const action = (definition.actions || []).find(candidate => candidate.id === type || candidate.commands?.includes(type));
+      if (action) return run(action);
+      if (a.editor() && !["commit", "cancel", "back"].includes(type)) return fail("mode");
+      const flagAction = (definition.actions || []).find(candidate => candidate.id === definition.flaggedAction);
+      if (["flag", "flag-all", "unflag", "execute"].includes(type)) {
+        if (!flagAction) return {handled: false, ok: false};
+        return type === "execute" ? run(Object.assign({}, flagAction, {targets: "flagged"})) : flag(flagAction, type === "flag-all", type === "unflag");
+      }
+      const point = a.point();
+      if (type === "next" || type === "previous") { a.move((cmd.step || 1) * (type === "next" ? 1 : -1)); changed(); return handled(); }
+      if (type === "forward" || type === "backward") {
+        // Nothing sits left of a whole row: backward from one stays put.
+        if (point.id && (point.col !== null || type === "forward")) { const count = a.columns().length;
+          const col = point.col === null ? 0 : point.col + (type === "forward" ? 1 : -1);
+          a.select(point.id, col < 0 || col >= count ? undefined : col); }
+        changed(); return handled();
+      }
+      if (type === "filter" || type === "query") {
+        if (cmd.value !== undefined) { a.setQuery(cmd.value); changed(); read(); }
+        else a.openFilter(type === "filter");
+        return handled();
+      }
+      if (type === "page-next" || type === "page-previous") {
+        if (!a.page?.(type === "page-next" ? 1 : -1)) return fail("page");
+        changed(); read(); return handled();
+      }
+      if (type === "first" || type === "last") { a.edge?.(type === "last"); changed(); return handled(); }
+      if (type === "sort") { const key = cmd.column || (point.col === null ? "" : a.columns()[point.col]?.key); if (!key || !a.sort(key)) return fail("column"); changed(); read(); return handled(); }
+      if (type === "mark" || type === "unmark" || type === "mark-all" || type === "clear-marks") {
+        if (!definition.marks) return {handled: false, ok: false};
+        const marks = new Set(a.marked());
+        if (type === "clear-marks") marks.clear();
+        else if (type === "mark-all") {
+          const rows = dataRows().filter(row => !row.custom);
+          if (rows.length && rows.every(row => marks.has(row.id))) marks.clear();
+          else for (const row of rows) marks.add(row.id);
+        }
+        else if (type === "unmark") {
+          const flags = a.flagged();
+          if (point.id && flags.includes(point.id)) a.setFlags(flags.filter(id => id !== point.id));
+          else if (point.id) marks.delete(point.id);
+        }
+        else if (point.id) marks.has(point.id) ? marks.delete(point.id) : marks.add(point.id);
+        a.setMarks([...marks]); if (type === "mark" || type === "unmark") a.move(1); changed(); return handled();
+      }
+      if (type === "create") return openProducer();
+      if (type === "commit") { const result = commit(); return {handled: true, ok: true, pending: result}; }
+      if (type === "cancel") return cancel();
+      if (type === "back") {
+        if (a.editor() || draft) return cancel();
+        if (a.filter().open) { a.closeFilter(); changed(); return handled(); }
+        if (a.marked().length) { a.setMarks([]); changed(); return handled(); }
+        if (definition.filter?.kind === "match" && a.query()) { filterInput(""); return handled(); }
+        if (a.dropQuery()) { changed(); return handled(); }
+        if (host.back) host.back(); return handled();
+      }
+      if (type === "edit") {
+        const id = cmd.id || point.id, key = cmd.column || (point.col === null ? definition.primaryColumn : a.columns()[point.col]?.key);
+        return id && key && openEditor(id, key) ? handled() : fail("read-only");
+      }
+      if (type === "activate") {
+        if (!point.id) return fail("no-target");
+        const column = point.col === null ? null : a.columns()[point.col];
+        const activation = column?.activate || definition.activate;
+        if (activation && "action" in activation) return command(activation.action);
+        const key = activation && "edit" in activation ? activation.edit === true ? column?.key : activation.edit : column?.editor ? column.key : null;
+        return point.id && key && openEditor(point.id, key) ? handled() : fail("no-activation");
+      }
+      return {handled: false, ok: false};
+    }
+    const schema = () => a.columns().map(column => `${column.key}|${column.editor ? (column.editor.kind || "text") + ":" + (column.editor.id || "") : "readonly"}|${column.headerEditor ? (column.headerEditor.kind || "text") + ":" + (column.headerEditor.id || "") : "readonly"}`);
+    function snapshot() {
+      const kept = a.snapshot();
+      kept.schema = schema();
+      kept.id = definition.id;
+      // A draft already submitting belongs to that request, not to a later restore.
+      kept.producer = jobs.has("@submit") ? undefined : producerValue() || undefined;
+      return kept;
+    }
+    function restore(kept) {
+      if (closed) return {ok: false, reason: "destroyed"};
+      if (kept.id !== definition.id || kept.schema.join("\u0000") !== schema().join("\u0000")) return {ok: false, reason: "definition"};
+      a.restore(kept);
+      if (definition.filter?.kind === "match") { filterInput(kept.filter.value, false); if (kept.point.id) a.select(kept.point.id, kept.point.column ? a.columns().findIndex(column => column.key === kept.point.column) : undefined); }
+      if (kept.editor && editSession) {
+        editSession.raw = kept.editor.raw; editSession.basis = kept.editor.basis;
+        if (a.editBasis) a.editBasis(kept.editor.basis);
+      }
+      if (kept.point.id && !dataRows().some(row => row.id === kept.point.id)) deferredRestore = kept;
+      if (kept.producer && producerDefinition()) {
+        draft = {row: {id: `@table-producer:${definition.id}`, producer: true, under: kept.producer.under, cells: Object.assign({}, kept.producer.cells)}, basis: kept.producer.basis, initialColumn: kept.producer.initialColumn};
+        a.putProducer(draft.row);
+        if (kept.editor) { openEditor(draft.row.id, kept.editor.column); a.writeEditor(kept.editor.value); }
+      }
+      changed(); return {ok: true};
+    }
+    function reset(next) {
+      if (closed) return {ok: false, reason: "destroyed"};
+      if (draft || a.editor() || jobs.size) return {ok: false, reason: "dirty-schema"};
+      source?.abort(); if (unsubscribe) unsubscribe(); epoch++;
+      definition = next; revision = next.source.revision ?? null; error = ""; sourceError = ""; matchTexts = new WeakMap();
+      a.configure(next); changed();
+      if (next.initialFocus === "filter") a.openFilter(true); else { a.closeFilter(); if (active() && next.initialFocus !== "none") a.focus("rows"); }
+      read(); return {ok: true};
+    }
+    return {
+      dispatch: command, update, reset, state: stateValue, moveDraft, snapshot, restore, changed: () => changed(true), read, canEdit, editorOpened, editorClosed, filterInput, filterKey, matchRows, editorKey, commit, producer: producerValue, leaveState,
+      focus(target = "rows") { if (active()) a.focus(target); },
+      suspend() { if (suspended) return; suspended = true; a.suspend(true); changed(); },
+      resume() { if (!suspended) return; suspended = false; a.suspend(false); changed(); },
+      start() { if (definition.filter?.kind === "match") filterInput(a.query(), false); if (!a.point().id) { const first = dataRows()[0]; if (first) a.select(first.id); } if (definition.initialFocus === "filter") a.openFilter(true); else if (active() && definition.initialFocus !== "none") a.focus("rows"); Promise.resolve().then(read); },
+      destroy() { if (closed) return; closed = true; editSession = null; epoch++; source?.abort(); if (unsubscribe) unsubscribe(); for (const job of jobs.values()) job.controller.abort(); jobs.clear(); },
     };
   }
 
   /**
    * Mount a table-view into CONTAINER; return a live handle (the streaming API).
    * @param {Element} container
-   * @param {View} view
-   * @param {MountOptions} [opts]
-   * @returns {Handle}
+   * @param {View|TableViewDefinition} provided
+   * @param {MountOptions|TableViewWidgetHost} [settings]
+   * @param {TableViewRestoreOptions} [restoreOptions]
+   * @returns {Handle & TableViewHandle}
    */
-  function mount(container, view, opts) {
+  function mount(container, provided, settings, restoreOptions) {
     injectStyle();
-    const o = opts || {};   // narrowing sticks in closures (a reassigned param would not)
+    /** @type {TableViewDefinition|null} */
+    let definition = provided && "source" in provided ? provided : null;
+    /** @type {TableViewWidgetHost} */
+    const host = definition ? settings || {} : {};
+    /** @type {any} */
+    let api = null;
+    /** @type {TableViewController|null} */ let controller = null;
+    let dead = false, suspended = false;
+    /** @type {Array<() => void>} */ let renderedCleanups = [];
+    /** @type {any} */ const o = definition
+      ? Object.assign({filterDock: "strip", actionHints: false}, definition.presentation || {}, restoreOptions || {},
+          {marks: !!definition.marks, flags: !!definition.flaggedAction,
+           wrapRows: !!definition.layout?.wrapRows,
+           initialQuery: definition.filter?.initialQuery || definition.presentation?.initialQuery || ""})
+      : settings || {};
+    /** @type {View} */ const view = definition ? definitionView(definition) : /** @type {View} */ (provided);
+    if (definition?.source.kind === "remote") o.onFilter = () => readSource();
+    const activeWidget = () => !dead && !suspended && (!host.active || host.active());
+    function definitionColumns(columns) {
+      return columns.map(column => Object.assign({}, column, {
+        editable: !!column.editor, secret: column.editor?.kind === "secret" || column.secret,
+        checkbox: column.checkbox || (column.editor?.kind === "checkbox" ? {checked: "true", unchecked: "false"} : undefined),
+      }));
+    }
+    function definitionView(next) {
+      const columns = definitionColumns(next.columns);
+      const actions = (next.actions || []).map(action => ({command: action.id, label: action.label || action.id, key: action.keys?.[0]}));
+      return {title: next.title, columns, rows: next.source.rows || [], actions, sort: next.sort};
+    }
+    function notify() { if (!dead && controller) controller.changed(); }
+    const producerTerms = o.onFilter ? o.filterTerms || [] : [];
+    const producerTerm = tok => !tok.quoted && tok.key === null
+      && producerTerms.some(term => term.toLowerCase() === tok.value.toLowerCase());
     const composer = o.composer === true;
     // INLINE: the mount IS a small box someone else has drawn, so it keeps the
     // rows and summons the filter, dropping the page furniture — no title, no
@@ -2269,7 +2844,7 @@
      */
     const summoned = dock !== "none" && !inline;
     const omnibox = o.omnibox === true || composer || inline;
-    const marks = o.marks === true;
+    let marks = o.marks === true;
     const markGutter = marks && o.markGutter === true;
     /**
      * Whether the FLAG state is drawn.  Absent it follows `marks', the one
@@ -2277,7 +2852,7 @@
      * alone draws the flag ground gutterless, `flags: false' under
      * `marks: true' takes the flag drawing back off.
      */
-    const flags = o.flags === undefined ? marks : o.flags === true;
+    let flags = o.flags === undefined ? marks : o.flags === true;
     const actionHints = o.actionHints !== false;   // absent means the legend shows
     const showSortStatus = o.showSortStatus !== false;
     let footerStatus = typeof o.footerStatus === "string" ? o.footerStatus.trim() : "";
@@ -2330,9 +2905,13 @@
     const chrome = markGutter ? 1 : 0;
     /** Rows per page, or 0 for the whole set at once — which is every consumer
      *  that has not asked otherwise. */
-    const pageSize = Math.max(0, Math.trunc(Number(o.pageSize) || 0));
+    let wrapRows = o.wrapRows === true;
+    const requestedPageSize = Math.max(0, Math.trunc(Number(o.pageSize) || 0));
+    const pageSize = wrapRows ? Math.min(requestedPageSize || 64, 64) : requestedPageSize;
     /** The page on show, counted from zero. */
     let page = 0;
+    /** @type {number|null} */ let sourceTotal = null;
+    const remotePaging = () => definition?.source.kind === "remote" && !!definition.source.paging;
     /**
      * Which of the two presentations a paged view is in.  PAGED (false) is the
      * slice, the virtualizer running inside one page.  CONTINUOUS (true) runs
@@ -2453,7 +3032,7 @@
       if (idleAt) clearTimeout(idleAt);
       idleAt = setTimeout(() => {
         idleAt = 0;
-        idle(() => { if (mine === idleGen) titleIndex(); });
+        idle(() => { if (!dead && mine === idleGen) titleIndex(); });
       }, SETTLE);
     }
 
@@ -2505,7 +3084,8 @@
     let multiAt;
 
     /** The `title' column's index, or -1; where a whole-title offer is read. */
-    function titleColumn() { return columns().findIndex((c) => c.key === "title"); }
+    function titleColumn() { return columns().findIndex((c) => c.key === (definition ? definition.primaryColumn : "title")); }
+    function fillColumn() { return columns().findIndex((c) => c.key === (definition ? definition.layout?.fillColumn : "title")); }
 
     /**
      * The tag vocabulary, derived once per row set: the tags themselves, sorted,
@@ -2546,7 +3126,6 @@
                                 ["tv-calm", calm], ["tv-omni", omnibox && !palette],
                                 ["tv-pal", palette], ["tv-inline", inline],
                                 ["tv-dock", dock === "strip"],
-                                ["tv-persistent-filter", !!o.persistentFilter],
                                 ["tv-summon", summoned]]);
     container.innerHTML = "";
     container.appendChild(root);
@@ -2582,7 +3161,6 @@
     filterWrap.appendChild(filterNeg);
     filterWrap.appendChild(input);
     filterWrap.appendChild(acEl);
-    const stopCaret = o.steadyCaret ? steadyCaret(input, filterWrap) : () => {};
     // A SUMMONED MOUNT DRAWS NO TITLE and hangs its chips in a row of their
     // own: the bar it would sit in belongs to the box, which is away until it
     // is called for, and a title that comes and goes with the box is no title.
@@ -2672,15 +3250,6 @@
     }
 
     function columns() { return state.view.columns || []; }
-    function stackedRows() { return !!o.icons || columns().some((column) => column.detail); }
-    /**
-     * The SAVED VIEWS the producer named, each a `{name, query}'. The
-     * vocabulary `view:' completes from, and the whole of what this side knows
-     * about them: a view is APPLIED by whoever owns the fetching, so a producer
-     * that grows one needs nothing here.
-     * @returns {{name: string, query?: string}[]}
-     */
-    function savedViews() { return state.view.views || []; }
     function actions() { return state.view.actions || []; }
     function colByKey(k) { return columns().find((c) => c.key === k); }
     /** The columns a sort key may name: every one the view carries, `sortable'
@@ -2781,7 +3350,7 @@
       const keys = columnKeys();
       for (const k of [PLANNED_KEY, SUBSTRING_KEY])
         if (keys.indexOf(k) === -1) keys.push(k);
-      for (const k of VIEW_KEYS) if (keys.indexOf(k) === -1) keys.push(k);
+      for (const k of SHAPING_KEYS) if (keys.indexOf(k) === -1) keys.push(k);
       return keys;
     }
 
@@ -3070,7 +3639,7 @@
       const axes = new Map();
       compiledDay = localDay();   // one clock read, before any row
       for (const tok of parseQuery(q, queryKeys())) {
-        if (tok.key && VIEW_KEYS.indexOf(tok.key) !== -1) continue;
+        if (tok.key && SHAPING_KEYS.indexOf(tok.key) !== -1) continue;
         // ONE READING PER TOKEN: the same atoms decide whether it is dropped and
         // what it tests, and reaching them samples the columns (`datedKey').
         const atoms = atomsOf(tok);
@@ -3122,15 +3691,15 @@
         if (orderCmp) sorted.sort(orderCmp);
         placeProducers(sorted);
       }
-      orderTest = queryMatcher(state.filter);
-      order = orderTest ? sorted.filter((r) => !standing(r) || orderTest(r))
-                        : sorted.slice();
+      orderTest = definition?.filter?.kind === "match" ? row => row.custom || rowText(row).search.includes(state.filter.toLowerCase()) : queryMatcher(state.filter);
+      order = definition?.filter?.kind === "match" && controller ? controller.matchRows(sorted)
+        : orderTest ? sorted.filter((r) => !standing(r) || orderTest(r)) : sorted.slice();
       return order;
     }
 
     /** How many pages the filtered set makes, never fewer than one. */
     function pageCount() {
-      return pageSize ? Math.max(1, Math.ceil(ordered().length / pageSize)) : 1;
+      return pageSize ? Math.max(1, Math.ceil((remotePaging() && sourceTotal !== null ? sourceTotal : ordered().length) / pageSize)) : 1;
     }
 
     /**
@@ -3142,7 +3711,7 @@
      */
     function paged() {
       const rows = ordered();
-      if (!pageSize || continuous) return rows;
+      if (remotePaging() || !pageSize || continuous) return rows;
       if (page >= pageCount()) page = pageCount() - 1;   // the set shrank under it
       const at = page * pageSize;
       return rows.slice(at, at + pageSize);
@@ -3181,15 +3750,11 @@
      * in the same breath, which is what makes the switch invisible.
      */
     function goContinuous() {
-      if (!pageSize || continuous) return;
+      if (remotePaging() || !pageSize || continuous || wrapRows) return;
       const skipped = page * pageSize;
       continuous = true;
+      scroll.scrollTop += skipped * geom.row;
       if (selAt >= 0) selAt += skipped;
-      if (stackedRows()) {
-        renderRows(true);
-        const row = tbody.children[skipped];
-        if (row) scroll.scrollTop += row.getBoundingClientRect().top - tbody.getBoundingClientRect().top;
-      } else scroll.scrollTop += skipped * geom.row;
     }
 
     /** Whether ROW passes the current filter. @param {Row} r */
@@ -3215,7 +3780,7 @@
      */
     function colWidths() {
       if (widths) return widths;
-      const cols = columns(), chain = sortChain(), fill = titleColumn() !== -1;
+      const cols = columns(), chain = sortChain(), fill = fillColumn() !== -1;
       const multi = multiColumn(), rows = ordered();
       /** The widest CELL each column holds, in characters; 0 where it holds none. */
       const cell = cols.map(() => 0);
@@ -3230,11 +3795,13 @@
         const at = chain.findIndex(({ key }) => key.column === c.key);
         // column geometry (header marks paid outside the cells' measure): docs/web-renderer.org
         const mark = at === -1 ? 0 : sortMark(chain, at).length + 1;
-        const head = String(c.header || c.key).length;
-        const pill = c.type === "badge" && cell[i] ? PILL_PAD : 0;
-        return { ch: fill ? (cell[i] || head) + mark
-                          : Math.max(head + mark, cell[i]),
-                 ground: CELL_PAD + pill };
+        const head = String(c.header ?? c.key).length;
+        const doctor = !definition && c.key === "doctor";
+        const pill = doctor ? 20 : c.type === "badge" && cell[i] ? PILL_PAD : 0;
+        if (doctor) cell[i] = head;
+        return { ch: c.widthPx === undefined ? Math.max((c.minWidthCh || 0) + mark, fill ? (cell[i] || head) + mark
+                          : Math.max(head + mark, cell[i])) : 0,
+                 ground: c.widthPx === undefined ? CELL_PAD + pill : c.widthPx };
       });
       if (rows.length) widths = fitted;
       return fitted;
@@ -3264,7 +3831,7 @@
      */
     function tagsRoom() {
       const at = multiColumn();
-      if (at === -1 || titleColumn() === -1) return Infinity;
+      if (at === -1 || fillColumn() === -1) return Infinity;
       return tagRoom(Math.min(colWidths()[at].ch, COL_MAX_CH));
     }
 
@@ -3278,8 +3845,7 @@
      * `title' column keeps the widths as hints under the auto layout.
      */
     function applyWidths() {
-      if (stackedRows()) { table.classList.remove("tv-fill"); table.style.minWidth = ""; return; }
-      const w = colWidths(), at = titleColumn(), fill = at !== -1;
+      const w = colWidths(), at = fillColumn(), fill = at !== -1;
       if (table.classList.contains("tv-fill") !== fill)
         table.classList.toggle("tv-fill", fill);
       let ch = fill ? Math.min(w[at].ch, TITLE_MIN_CH) : 0;
@@ -3287,7 +3853,7 @@
       if (fill && chrome) { ch += BOX_CH; pad += CELL_PAD; }
       for (let i = 0; i < colEls.length; i++) {
         const n = fill ? Math.min(w[i].ch, COL_MAX_CH) : w[i].ch;
-        const px = fill && i === at ? "" : `calc(${n}ch + ${w[i].ground}px)`;
+        const px = fill && i === at ? "" : columns()[i].widthPx !== undefined ? `${columns()[i].widthPx}px` : `calc(${n}ch + ${w[i].ground}px)`;
         if (fill && i !== at) { ch += n; pad += w[i].ground; }
         if (colEls[i].style.width !== px) colEls[i].style.width = px;
       }
@@ -3307,16 +3873,10 @@
      * (docs/bugs/fixed/2026-09-13-a-cell-editor-closing-rebuilds-the-head-bare.md).
      */
     function renderHead() {
-      table.classList.toggle("tv-details", stackedRows());
-      table.classList.toggle("tv-icons", !!o.icons);
-      if (stackedRows()) {
-        const main = columns().filter((column) => !column.detail).length;
-        const tracks = [...Array(chrome).fill("auto"), ...(o.icons ? ["var(--tv-icon-size, 36px)"] : []), "minmax(0,1fr)", ...Array(Math.max(0, main - 1)).fill("auto")];
-        table.style.setProperty("--tv-row-tracks", tracks.join(" "));
-        table.style.setProperty("--tv-detail-start", String(o.icons ? chrome + 2 : 1));
-        table.style.setProperty("--tv-icon-column", String(chrome + 1));
-        table.style.setProperty("--tv-icon-rows", String(1 + columns().filter((column) => column.detail).length));
-      }
+      if (dead) return;
+      const heldHeader = cellEdit?.kind === "header" ? cellEdit : null;
+      const focusedHeader = !!heldHeader && heldHeader.input.contains(document.activeElement);
+      if (heldHeader) heldHeader.input.remove();
       colgroup.innerHTML = "";
       headRow.innerHTML = "";
       colEls = [];
@@ -3344,12 +3904,12 @@
         hd.className = "tv-hd";
         const label = document.createElement("span");
         label.className = "tv-hn";
-        label.textContent = String(c.header || c.key);
+        label.textContent = String(c.header ?? c.key);
         const arrow = document.createElement("span");
         arrow.className = "tv-arrow";
         hd.appendChild(label);
         hd.appendChild(arrow);
-        if (c.valueType && c.valueType.name) {
+        if (!definition && c.valueType && c.valueType.name) {
           const vt = document.createElement("span");
           const source = c.valueType.source;
           const ref = source ? `${source.module}.${source.symbol}` : "proposed type";
@@ -3364,6 +3924,10 @@
         arrowEls.push(arrow);
       }
       renderArrows();
+      if (heldHeader) {
+        const cell = headRow.querySelectorAll("th[data-key]")[heldHeader.col];
+        if (cell) { cell.replaceChildren(heldHeader.input); heldHeader.cell = cell; if (focusedHeader && (!definition || activeWidget())) heldHeader.input.focus(); }
+      }
       applyWidths();          // the colgroup is new; the widths are not on it
     }
 
@@ -3450,8 +4014,7 @@
      */
     function cellClasses(r, c, linkedAt, multi) {
       const col = columns()[c], inCol = c === state.selCol;
-      return [["tv-detail", !!col && !!col.detail],
-              ["tv-right", !!col && col.align === "right"],
+      return [["tv-right", !!col && col.align === "right"],
               ["tv-colsel", inCol],
               ["tv-cell-sel", inCol && r.id === state.selected],
               // the multi-valued cell NAMES ITSELF, which is the whole of what a
@@ -3480,6 +4043,33 @@
         if (cl.contains(pairs[k][0]) !== pairs[k][1]) cl.toggle(pairs[k][0], pairs[k][1]);
     }
 
+    /** @type {Record<string, string>} */
+    const familyProblemDetails = {
+      "no-current": "No current Snapshot remains; all leaves are rejected.",
+      missing: "Snapshot bytes are missing.",
+      mismatch: "Snapshot bytes differ from their recorded checksum.",
+      unparseable: "Snapshot bytes cannot be parsed.",
+    };
+    const doctorColors = {
+      damage: [["#a33539", "#fcebed"], ["#ffabb0", "#38252e"]],
+      warning: [["#885000", "#fff3d9"], ["#f1c275", "#352b1e"]],
+      choice: [["#236681", "#e9f4f8"], ["#99d2ec", "#20313f"]],
+    };
+    /** @param {Row} row @param {Cell} summary @returns {string} */
+    function doctorHTML(row, summary) {
+      if (!summary) return "";
+      const problems = row.familyProblems || [], count = Number(row.conflictCount);
+      const tone = problems.some(p => p !== "no-current") ? "damage"
+        : problems.includes("no-current") ? "warning" : "choice";
+      const details = (count > 1 ? [`${count} current Snapshot candidates remain.`] : [])
+        .concat(problems.map(p => familyProblemDetails[p] || p), ["Open History to inspect and recover (H)."])
+        .join(" ");
+      const [ink, background] = doctorColors[tone][dark ? 1 : 0];
+      return `<button type="button" class="tv-doctor" tabindex="-1" data-tone="${tone}"`
+        + ` style="--tv-doctor-ink:${ink};--tv-doctor-bg:${background}" title="${esc(details)}"`
+        + ` aria-label="${esc(`Health: ${displayText(summary)}. ${details}`)}"></button>`;
+    }
+
     /**
      * A row's <tr>. I is its index in the display order, MULTI `multiColumn()'
      * and ROOM `tagsRoom()' — both one answer for the whole window.
@@ -3492,21 +4082,16 @@
       let tds = chrome ? `<td class="tv-box"></td>` : "";
       for (let c = 0; c < cols.length; c++) {
         const box = cols[c].checkbox;
-        const value = box
+        const value = cols[c].render ? '<span class="tv-custom-cell"></span>' : !definition && cols[c].key === "doctor" ? doctorHTML(r, cs[cols[c].key]) : box
           ? `<input type="checkbox" class="tv-cell-checkbox${box.appearance === "switch" ? " tv-cell-switch" : ""}"${box.appearance === "switch" ? ' role="switch"' : ""} tabindex="-1" aria-label="${esc(cols[c].header || cols[c].key)}"`
             + (displayText(cs[cols[c].key]) === box.checked ? " checked" : "")
             + (r.producer || cols[c].editable ? "" : " disabled") + ">"
-          : cellHTML(cols[c], cs[cols[c].key], dark, c === multi ? room : null);
-        const conflictCount = Number(r.conflictCount);
-        const shown = c === titleColumn() && conflictCount > 1
-          ? value + `<span class="tv-conflict" title="${esc(String(conflictCount))} unresolved versions">conflict</span>`
-          : value;
-        tds += `<td class="${classAttr(cellClasses(r, c, linkedAt, multi))}">`
-             + `${shown}</td>`;
+          : cellHTML(cols[c], cs[cols[c].key], dark, c === multi ? room : null, wrapRows);
+        const tone = o.cellTone && o.cellTone(r, cols[c]);
+        const content = tone ? `<span class="tv-pill tv-tone" data-tone="${esc(tone)}">${value}</span>` : value;
+        tds += `<td class="${classAttr(cellClasses(r, c, linkedAt, multi))}">${content}</td>`;
       }
-      const icon = o.icons && typeof r.icon === "string" && /^data:image\/png;base64,[A-Za-z0-9+/]+={0,2}$/.test(r.icon)
-        ? ` style="--tv-row-icon:url('${r.icon}')"` : "";
-      return `<tr class="${classAttr(rowClasses(r, i))}" data-id="${esc(r.id)}"${icon}>${tds}</tr>`;
+      return `<tr class="${classAttr(rowClasses(r, i))}" data-id="${esc(r.id)}">${tds}</tr>`;
     }
 
     /** A spacer row H pixels tall, standing in for the rows outside the window. */
@@ -3522,6 +4107,7 @@
      * @param {boolean} [force]
      */
     function renderRows(force) {
+      if (dead) return;
       if (composer) return;   // no table behind the bar: nothing to paint
       keepSelection();
       const rows = paged();
@@ -3530,8 +4116,8 @@
       const port = scroll.clientHeight || rowH * 20;   // before layout: a screenful
       // overscan covers the rounding and the band the sticky header hides.
       const top = Math.max(0, (scroll.scrollTop || 0) - geom.head);
-      const first = stackedRows() ? 0 : Math.max(0, Math.floor(top / rowH) - OVERSCAN);
-      const last = stackedRows() ? total : Math.min(total, first + Math.ceil(port / rowH) + OVERSCAN * 2);
+      const first = wrapRows ? 0 : Math.max(0, Math.floor(top / rowH) - OVERSCAN);
+      const last = wrapRows ? total : Math.min(total, first + Math.ceil(port / rowH) + OVERSCAN * 2);
       if (!force && first === win.first && last === win.last) return;
       win.first = first;
       win.last = last;
@@ -3542,7 +4128,32 @@
       let html = first > 0 ? padHTML(first * rowH) : "";
       for (let i = first; i < last; i++) html += rowHTML(rows[i], i, multi, room);
       if (last < total) html += padHTML((total - last) * rowH);
+      const heldEditor = cellEdit && cellEdit.kind === "cell" ? cellEdit : null;
+      const editorFocused = !!heldEditor && heldEditor.input.contains(document.activeElement);
+      for (const clean of renderedCleanups) clean();
+      renderedCleanups = [];
+      if (heldEditor) heldEditor.input.remove();
       tbody.innerHTML = html;
+      const renderers = columns().map((column, index) => ({column, index})).filter(entry => entry.column.render);
+      if (renderers.length) {
+        const rowNodes = tbody.querySelectorAll("tr[data-id]");
+        for (let at = 0; at < rowNodes.length; at++) {
+          const row = rows[first + at];
+          const cells = rowNodes[at].querySelectorAll("td:not(.tv-box)");
+          for (const entry of renderers) {
+            const cleanup = entry.column.render(cells[entry.index], cellContext(row, entry.column));
+            if (typeof cleanup === "function") renderedCleanups.push(cleanup);
+          }
+        }
+      }
+      if (heldEditor) {
+        const rowNode = [...tbody.querySelectorAll("tr[data-id]")].find(node => node.getAttribute("data-id") === heldEditor.id);
+        const cell = rowNode?.querySelectorAll("td:not(.tv-box)")[heldEditor.col];
+        if (cell) {
+          cell.replaceChildren(heldEditor.input); heldEditor.cell = cell;
+          if (editorFocused && (!definition || activeWidget())) heldEditor.input.focus();
+        }
+      }
 
       applyWidths();
       markClipped();
@@ -3580,7 +4191,7 @@
 
     /** Re-read the row and header heights the spacers are sized from. */
     function measure() {
-      if (stackedRows()) return; // wrapped rows use their DOM bounds
+      if (wrapRows) return;
       const tr = /** @type {HTMLElement|null} */ (tbody.querySelector("tr[data-id]"));
       if (!tr || typeof tr.getBoundingClientRect !== "function") return;
       const head = thead.getBoundingClientRect().height;
@@ -3620,12 +4231,12 @@
      * @returns {{page: number, pages: number, from: number, to: number, total: number}}
      */
     function pageInfo() {
-      const total = ordered().length;
+      const total = remotePaging() && sourceTotal !== null ? sourceTotal : ordered().length;
       const pages = pageCount();
       const at = cursorPage();
       return pageSize
         ? { page: at + 1, pages, from: total ? at * pageSize + 1 : 0,
-            to: Math.min(total, (at + 1) * pageSize), total }
+            to: Math.min(total, at * pageSize + (remotePaging() ? ordered().length : pageSize)), total }
         : { page: 1, pages: 1, from: total ? 1 : 0, to: total, total };
     }
 
@@ -3713,6 +4324,7 @@
       state.selCol = id === null || id === undefined ? null : cellCol(col);
       selAt = indexOfSelected();
       stampSelection();
+      if (api) notify();
     }
 
     /**
@@ -3783,7 +4395,7 @@
      * together, so without the option there is nothing to hide rather than
      * something hidden. The set itself fills either way, which is what lets a
      * consumer read the ids back off a table that paints none of them.
-     * @param {boolean} drawn  @returns {RowState}
+     * @param {() => boolean} drawn  @returns {RowState}
      */
     function rowState(drawn) {
       /** @type {Set<string>} */
@@ -3791,7 +4403,7 @@
       return {
         ids,
         /** Does ID wear this state, as the table draws it? @param {string} id */
-        shows(id) { return drawn && ids.has(id); },
+        shows(id) { return drawn() && ids.has(id); },
         /** Put the state on ID or take it off.
          *  @param {string} id  @returns {boolean} the state it landed in */
         toggle(id) {
@@ -3836,8 +4448,8 @@
       };
     }
 
-    const markSet = rowState(marks);
-    const flagSet = rowState(flags);
+    const markSet = rowState(() => marks);
+    const flagSet = rowState(() => flags);
 
     /**
      * Mark every row of the CURRENT FILTERED SET — all of it, never the page on
@@ -3876,14 +4488,23 @@
      * @param {string} id  @param {number} [col]  @returns {boolean}
      */
     function selectRow(id, col) {
-      const rows = paged();
-      const i = rows.findIndex((r) => r.id === id);
+      let rows = paged();
+      let i = rows.findIndex((r) => r.id === id);
+      if (i === -1 && pageSize && !continuous) {
+        const index = ordered().findIndex((row) => row.id === id);
+        if (index < 0) return false;
+        const target = Math.floor(index / pageSize);
+        if (target !== page) { page = target; renderRows(true); }
+        rows = paged();
+        i = rows.findIndex((r) => r.id === id);
+      }
       if (i === -1 || !standing(rows[i])) return false;
       const was = selAt;
       state.selected = id;
       state.selCol = cellCol(col);
       selAt = i;
       paintSelection(was);
+      if (api) notify();
       return true;
     }
 
@@ -3930,7 +4551,7 @@
           const was = scroll.scrollTop;
           scroll.scrollTop = was + step * EASE;
           // a refused step is an arrival: scrollTop snaps to a device pixel past scrollHeight's fractional end, so ending only on arrival loops forever.
-          if (scroll.scrollTop === was) { scroll.scrollTop = easeAt; easing = false; }
+          if (scroll.scrollTop === was) easing = false;
         }
         wantWindow = true;
       }
@@ -3950,10 +4571,9 @@
      * viewport's height.
      */
     function aimed(port) {
-      const row = stackedRows() ? tbody.children[aim.row] : null;
-      const bounds = row ? row.getBoundingClientRect() : null;
-      const top = bounds ? bounds.top - scroll.getBoundingClientRect().top + scroll.scrollTop - scroll.clientTop
-                         : geom.head + aim.row * geom.row;
+      const element = wrapRows ? tbody.querySelectorAll("tr[data-id]")[aim.row] : null;
+      const bounds = element?.getBoundingClientRect();
+      const top = bounds ? bounds.top - scroll.getBoundingClientRect().top + scroll.scrollTop : geom.head + aim.row * geom.row;
       const foot = top + (bounds ? bounds.height : geom.row);
       let to = aim.from;
       if (aim.down) { if (foot - aim.from > port * 2 / 3) to = foot - port * 2 / 3; }
@@ -4036,6 +4656,7 @@
      * door would not deliver cannot ride the next gesture that reads the box.
      */
     function endNarrow() {
+      if (definition?.filter?.kind === "match") { narrowing = false; return; }
       if (!narrowing) return;
       const kept = typedQuery();          // the box, less what it refused
       narrowing = false;
@@ -4143,7 +4764,13 @@
       const from = at === -1 ? (dir > 0 ? 0 : rows.length - 1) : at + dir;
       const next = standingFrom(rows, from, dir);
       if (next !== -1) return selectRow(rows[next].id, col ?? undefined);
+      if (remotePaging()) {
+        const moved = turnTo(page + dir, dir > 0 ? "first" : "last");
+        if (moved) readSource();
+        return moved;
+      }
       if (!pageSize || continuous) return false;         // the true end of the set
+      if (wrapRows) return turnTo(page + dir, dir > 0 ? "first" : "last");
       goContinuous();
       rows = paged();
       const here = rows.findIndex((r) => r.id === state.selected);
@@ -4250,6 +4877,7 @@
 
     function dispatch(command, row) {
       if (!row) return;
+      if (definition) { setSelected(row.id); widgetDispatch(command); return; }
       if (o.onAction) o.onAction(command, row.id, row);
       root.dispatchEvent(new CustomEvent("tableview-action",
         { detail: { command, id: row.id, row } }));
@@ -4309,10 +4937,18 @@
       if (!tr) return;
       if (onBox(t) || onMarkEdge(e, tr)) {
         if (tr.dataset.id !== undefined) markSet.toggle(tr.dataset.id);
+        notify();
         return;
       }
       setSelected(tr.dataset.id ?? null,
                   colOf(tr, /** @type {HTMLElement|null} */ (t.closest("td"))));
+      if (definition) {
+        // A POINTER ACTIVATES WHAT THE CELL DREW: a click on a bare cell only selects it.
+        const column = state.selCol === null ? null : columns()[state.selCol], td = t.closest("td");
+        if (column?.activate && "action" in column.activate && td && t !== td) { e.preventDefault(); widgetDispatch("activate"); }
+      } else if (t.closest(".tv-doctor")) {
+        e.preventDefault(); dispatch("headline-history", rowOf(state.rows, tr));
+      }
     });
 
     // ── CELL EDITING ──────────────────────────────────────────────────────
@@ -4330,21 +4966,35 @@
      * and the column repeat.  A repaint's re-open KEEPS the number it held: the
      * editor never closed, the node under it was rebuilt. */
     let cellToken = 0;
-    const columnEditable = (col) => { const c = columns()[col]; return !!(c && c.editable); };
+    const columnEditable = (col, id = null) => {
+      const c = columns()[col];
+      if (!definition) return !!(c && c.editable);
+      if (controller) return controller.canEdit(id, c?.key || "");
+      if (!c?.editor) return false;
+      const row = state.rows.find(candidate => candidate.id === id);
+      return !!row && (!c.editor.when || c.editor.when(cellContext(row, c)));
+    };
     const cellRaw = (id, col) => {
       const r = state.rows.find((x) => x.id === id), c = columns()[col];
       return r && c ? String((r.cells || {})[c.key] ?? "") : "";
     };
     function closeCellEditor() {
       if (!cellEdit) return;
+      const closing = /** @type {any} */ (cellEdit);
+      const restoreFocus = closing.input.contains(document.activeElement);
       cellEdit = null;
+      controller?.editorClosed();
+      if (closing.cleanup) closing.cleanup();
+      if (closing.custom?.destroy) closing.custom.destroy();
       // Restore the drawn cell: the producer may have changed the data (a redraw
       // shows it) or not (the redraw shows the value unchanged).
       renderRows(true);
       renderHead();
+      if (restoreFocus && definition && activeWidget()) root.focus();
     }
     function commitCellEditor() {
       if (!cellEdit) return;
+      if (definition) { commitWidgetEdit(); return; }
       const { id, col, kind, input } = cellEdit;
       const value = input.value;
       closeCellEditor();
@@ -4364,7 +5014,8 @@
       input.className = "tv-cell-edit";
       const column = columns()[col];
       const checkbox = kind === "cell" && column && column.checkbox;
-      input.type = checkbox ? "checkbox" : column && column.secret ? "password" : "text";
+      const declaredEditor = kind === "header" ? column?.headerEditor : column?.editor;
+      input.type = checkbox ? "checkbox" : declaredEditor?.kind === "secret" || column && column.secret ? "password" : "text";
       if (checkbox) {
         if (checkbox.appearance === "switch") {
           input.classList.add("tv-cell-switch");
@@ -4382,18 +5033,48 @@
       cell.appendChild(input);
       const open = keep || { raw, token: ++cellToken };
       cellEdit = { cell, id, col, kind, input, raw: open.raw, token: open.token };
-      input.focus();
-      if (!checkbox) {
-        if (sel) input.setSelectionRange(sel[0], sel[1]);
-        else if (input.select) input.select();
+      if (definition) {
+        const context = cellContext(state.rows.find(row => row.id === id) || {id: "", cells: {}}, column);
+        const editor = kind === "header" ? column.headerEditor : column.editor;
+        const edit = /** @type {any} */ (cellEdit);
+        edit.contract = editor;
+        edit.basis = undefined;
+        edit.row = context.row;
+        if (editor?.kind === "custom" && editor.mount) {
+          const custom = editor.mount(cell, context);
+          cell.replaceChildren(custom.element);
+          edit.custom = custom; edit.input = custom.element;
+        } else if (editor?.bind) edit.cleanup = editor.bind(input, context);
       }
-      input.addEventListener("keydown", (e) => {
+      if (definition) controller?.editorOpened();
+      if (!cellEdit) return false;
+      const opened = /** @type {any} */ (cellEdit);
+      const field = opened.input;
+      if (!definition || activeWidget()) {
+        if (opened.custom?.focus) opened.custom.focus(); else field.focus();
+      }
+      if (!checkbox) {
+        if (sel && field.setSelectionRange) field.setSelectionRange(sel[0], sel[1]);
+        else if (field.select) field.select();
+      }
+      field.addEventListener("beforeinput", e => { if (field.dataset.tvPending === "true") e.preventDefault(); });
+      // THE NEXT CONTENT KEYSTROKE TAKES A REFUSAL'S DRESS BACK, model and row together.
+      field.addEventListener("input", () => {
+        const tr = field.closest("tr.tv-producer.tv-refused");
+        const row = tr && state.rows.find(candidate => candidate.producer && candidate.id === tr.getAttribute("data-id"));
+        if (row) { row.refused = ""; tr.classList.remove("tv-refused"); }
+      });
+      field.addEventListener("click", e => { if (field.dataset.tvPending === "true" && field.type === "checkbox") e.preventDefault(); });
+      field.addEventListener("keydown", (e) => {
         // The input takes its own keys; a driver's key map does not see them.
         e.stopPropagation();
+        if (e.defaultPrevented) return;
+        if (field.dataset.tvPending === "true" && (e.key === " " || e.key === "Tab")) { e.preventDefault(); return; }
         // THE PRODUCER IS ASKED FIRST, this being the only dispatch a key inside
         // a cell reaches: a row it owns has keys of its own, and `true' says it
         // took this one.
         if (o.onCellKey && cellEdit && o.onCellKey(e, openCell())) return;
+        if (definition && editorKey(e)) return;
         if (e.key === "Enter" || e.key === "Tab") { e.preventDefault(); commitCellEditor(); }
         else if (e.key === "Escape") { e.preventDefault(); closeCellEditor(); }
       });
@@ -4403,7 +5084,11 @@
      * opened on, and which open this is. @returns {OpenCell} */
     const openCell = () => ({
       id: cellEdit.id, col: cellEdit.col, key: keyOf(cellEdit.col),
-      value: cellEdit.input.value, raw: cellEdit.raw, token: cellEdit.token });
+      value: readEditorValue(), raw: cellEdit.raw, token: cellEdit.token });
+    function readEditorValue() {
+      const editing = /** @type {any} */ (cellEdit);
+      return editing?.custom ? editing.custom.value() : editing?.input.value || "";
+    }
     /** COL's key, or `"" ' past the columns. */
     const keyOf = (col) => { const c = columns()[col]; return c ? c.key : ""; };
     /** Is ID a producer's own row? ITS CELLS ARE ALL EDITABLE: a per-column
@@ -4418,7 +5103,7 @@
      * line comes back without ever entering `r.cells'.
      * @param {{raw: string, token: number}|null} [keep]  `holdEditor''s own open. */
     function editCell(id, col, sel, raw, keep) {
-      if (!producerRow(id) && !columnEditable(col)) return false;
+      if (definition ? !columnEditable(col, id) : !producerRow(id) && !columnEditable(col)) return false;
       closeCellEditor();
       const tr = /** @type {HTMLElement|null} */
         ([...tbody.querySelectorAll("tr[data-id]")]
@@ -4432,7 +5117,7 @@
      * that state, so a producer asks it rather than reading the DOM back. */
     const getEditing = () =>
       (cellEdit && cellEdit.kind === "cell"
-        ? { id: cellEdit.id, col: cellEdit.col, key: keyOf(cellEdit.col) } : null);
+        ? { id: cellEdit.id, col: cellEdit.col, key: keyOf(cellEdit.col), value: readEditorValue() } : null);
 
     /** WHERE ID's COL CELL IS DRAWN, or null past the rows this page shows. The
      * widget knows where a row stands, so a producer laying an overlay OVER a
@@ -4461,17 +5146,16 @@
       const at = getEditing();
       if (!at || at.id === null) return null;
       const { input, raw, token } = cellEdit;
-      cellEdit = null;
-      return { id: at.id, col: at.col, value: input.value, raw, token,
-               sel: [input.selectionStart ?? input.value.length,
-                     input.selectionEnd ?? input.value.length] };
+      return { id: at.id, col: at.col, value: readEditorValue(), raw, token,
+               sel: [input.selectionStart ?? readEditorValue().length,
+                     input.selectionEnd ?? readEditorValue().length] };
     }
     /** The editor HELD put back, caret and all — never `select()'d: every store
      * tick repaints, and a select-all there swallows the reader's next key.
      * @param {{id: string, col: number, value: string, raw: string,
      *          token: number, sel: [number, number]}|null} held */
     function resumeEditor(held) {
-      if (held) editCell(held.id, held.col, held.sel, held.value, held);
+      if (held && !cellEdit) editCell(held.id, held.col, held.sel, held.value, held);
     }
     /** Redraw under an open cell editor, which survives it.
      * @param {boolean} [force]  redraw a window that has not moved. */
@@ -4481,7 +5165,7 @@
       resumeEditor(held);
     }
     function editHeader(col) {
-      if (!columnEditable(col)) return false;
+      if (definition ? !columns()[col]?.headerEditor : !columnEditable(col)) return false;
       closeCellEditor();
       const th = [...headRow.querySelectorAll("th[data-key]")][col];
       const c = columns()[col];
@@ -4497,6 +5181,20 @@
       const id = tr.getAttribute("data-id"), col = colOf(tr, td), box = columns()[col]?.checkbox;
       if (!box) return;
       const value = input.checked ? box.checked : box.unchecked;
+      if (definition) {
+        const producer = !!state.rows.find(row => row.id === id)?.producer;
+        if (cellEdit && !(producer && cellEdit.id === id && controller?.moveDraft(columns()[col].key))) {
+          input.checked = cellRaw(id, col) === box.checked;
+          api.setFooterStatus("finish or cancel the current edit first");
+          return;
+        }
+        if (!cellEdit) editCell(id, col);
+        if (!cellEdit) return;
+        cellEdit.input.value = value; cellEdit.input.checked = value === box.checked;
+        // A DRAFT'S SWITCH STANDS IN ITS OPEN EDITOR; a data Row's commits at once.
+        if (producer) cellEdit.input.focus(); else commitWidgetEdit();
+        return;
+      }
       commitCellEditor();
       if (o.onEdit) o.onEdit(id, col, value, "cell");
       root.dispatchEvent(new CustomEvent("tableview-edit", {detail: {id, col, value, kind: "cell"}}));
@@ -4510,7 +5208,8 @@
       if (!t) return;
       const tr = /** @type {HTMLElement|null} */ (t.closest("tr[data-id]"));
       const td = /** @type {HTMLElement|null} */ (t.closest("td"));
-      if (tr && td && tr.dataset.id !== undefined) editCell(tr.dataset.id, colOf(tr, td));
+      if (tr && td && tr.dataset.id !== undefined
+          && editCell(tr.dataset.id, colOf(tr, td))) e.stopImmediatePropagation();
     });
     // ──────────────────────────────────────────────────────────────────────
 
@@ -4529,7 +5228,7 @@
       const touch = e.touches && e.touches[0];
       if (!tr || !touch) return;
       // a press on the box stays the box; else the completing touchend swallows the toggle's click and the 44px target can't be checked.
-      if (onBox(t)) return;
+      if (onBox(t) || (t && t.closest(".tv-doctor"))) return;
       // A LONG PRESS IS A ROW'S DEFAULT COMMAND, and a producer's own row is no
       // command's target — the same wall the cursor meets.
       if (!standing(rowOf(state.rows, tr) || {})) return;
@@ -4544,8 +5243,8 @@
         if (pressOn === null) return;
         pressRan = true;
         setSelected(pressOn, at);
-        const cmd = defaultCommand();
-        if (cmd) dispatch(cmd, state.rows.find((r) => r.id === pressOn));
+        if (definition) widgetDispatch("activate");
+        else { const cmd = defaultCommand(); if (cmd) dispatch(cmd, state.rows.find((r) => r.id === pressOn)); }
       }, LONG_PRESS);
     });
 
@@ -4564,14 +5263,18 @@
 
     scroll.addEventListener("dblclick", (e) => {
       const t = hit(e);
+      if (!definition && t && t.closest(".tv-doctor")) { e.preventDefault(); return; }
       const tr = t && /** @type {HTMLElement|null} */ (t.closest("tr[data-id]"));
       if (!tr) return;
       // A ROW'S DEFAULT COMMAND NAMES THE ROW, and a producer's own is no
       // command's target — it opened its cell editor on the same click.
       const r = rowOf(state.rows, tr);
       if (!r || !standing(r)) return;
-      const cmd = defaultCommand();
-      if (cmd) dispatch(cmd, r);
+      if (definition) {
+        const col = colOf(tr, t.closest("td"));
+        if (columns()[col]?.activate && "action" in columns()[col].activate) { e.preventDefault(); return; }
+        setSelected(r.id, col); widgetDispatch("activate");
+      } else { const cmd = defaultCommand(); if (cmd) dispatch(cmd, r); }
     });
 
     scroll.addEventListener("scroll", () => { wantWindow = true; cancelPress(); schedule(); });
@@ -4595,7 +5298,8 @@
         return null;
       const toks = parseQuery(text, queryKeys());
       if (!toks.length || toks.some((t) => t.key !== null || t.negated
-                                           || t.added || t.quoted))
+                                           || t.added || t.quoted
+                                           || producerTerm(t)))
         return null;
       return `${SUBSTRING_KEY}:"${text}"`;
     }
@@ -4678,7 +5382,7 @@
      */
     function spelled(tok) {
       const t = asToken(tok);
-      if (!t || t.key !== null || !t.value) return tok;
+      if (!t || t.key !== null || !t.value || producerTerm(t)) return tok;
       const value = /[\s&"]/.test(t.value) ? `"${t.value}"` : t.value;
       return `${signMark(t)}${SUBSTRING_KEY}:${value}`;
     }
@@ -4753,32 +5457,14 @@
     }
 
     /**
-     * Whether TOK names a saved view: a view key naming one the producer
-     * declared. An unknown name keeps the ordinary chip — what a name MEANS is
-     * the producer's, so this side calls none of them wrong — and so does the
-     * half-typed `view:', naming none.  A SIGNED token names none either: the
-     * producer answers `+view:' with a refusal, as it does `+sort:'.
-     * @param {string} tok  @returns {boolean}
-     */
-    function namesView(tok) {
-      const t = asToken(tok);
-      if (!t || t.key !== VIEW_KEY || t.negated || t.added) return false;
-      const want = t.value.toLowerCase();
-      return savedViews().some((v) => String(v.name || "").toLowerCase() === want);
-    }
-
-    /**
-     * The dress a chip wears for the view token it states: the sort hue, the
-     * columns hue, the saved-view hue, or none — one classifier, so the strip's
-     * render names no token kind of its own and a new view token registers its
-     * class here.
+     * The dress a chip wears for the shaping token it states: the sort hue,
+     * the columns hue, or none.
      * @param {string} tok  @returns {string}
      */
     const chipClassOf = (tok) =>
       (asToken(tok)?.negated ? " tv-chip-negated" : "")
       + (ordersRows(tok) ? " tv-chip-sort"
-        : showsColumns(tok) ? " tv-chip-cols"
-        : namesView(tok) ? " tv-chip-view" : "");
+        : showsColumns(tok) ? " tv-chip-cols" : "");
 
     /**
      * The ONE token spelling the order query Q names, in canonical arrow form.
@@ -4947,6 +5633,7 @@
       if (o.onFilter) o.onFilter(q);
       else if (onFrame) frame(applyFilter);
       else applyFilter();
+      notify();
     }
 
     /**
@@ -4977,6 +5664,19 @@
       const on = input.value.startsWith("-");
       filterWrap.classList.toggle("tv-negating", on);
       input.setAttribute("aria-label", on ? "Negated filter" : "Filter");
+    }
+    /** Replace the word immediately before SPC with the query's one negation
+     * spelling.  The boundary keeps `knot ' and quoted prose literal. */
+    function normalizeWordNegation() {
+      const start = input.selectionStart, end = input.selectionEnd;
+      if (start === null || end === null || start !== end) return false;
+      const before = input.value.slice(0, start);
+      if (!/(^|\s)not$/i.test(before)) return false;
+      input.value = before.slice(0, -3) + "-" + input.value.slice(end);
+      const caret = start - 2;
+      if (input.setSelectionRange) input.setSelectionRange(caret, caret);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      return true;
     }
     /**
      * Arm the delivery a keystroke implies, in the modes where one does.  A
@@ -5096,8 +5796,6 @@
           return { stage: "columns", tok: t, col: null,
                    prefix: comma === -1 ? v : v.slice(comma + 1) };
         }
-        if (t.key === VIEW_KEY)
-          return { stage: "view", tok: t, col: null, prefix: t.value.toLowerCase() };
         const col = colByKey(t.key);
         if (!col) return null;
         // A DATE COLUMN'S VALUE IS A STAGE OF ITS OWN: what stands there is a
@@ -5187,17 +5885,10 @@
         }
         return out.slice(0, AC_MAX);
       }
-      if (st.stage === "view") {
-        for (const v of savedViews()) {
-          if (out.length >= AC_MAX) break;
-          const name = String(v.name || "");
-          if (!name.toLowerCase().startsWith(p)) continue;
-          out.push({ text: name, count: -1, full: true, dim: false,
-                     aside: v.query ? String(v.query) : undefined });
-        }
-        return out.slice(0, AC_MAX);
-      }
       if (!st.col) {
+        const terms = producerTerms.filter(term => term.toLowerCase().startsWith(p)).slice(0, AC_MAX);
+        for (const term of terms)
+          out.push({text: term, count: -1, full: true, dim: false, aside: "filter"});
         const hits = [];
         for (const c of columns()) {
           if (!domainValues(c) && columns().indexOf(c) !== multiColumn()) continue;
@@ -5206,7 +5897,7 @@
             const lower = String(v).toLowerCase();
             if (!opensWith(lower, p)) continue;
             const meta = META.test(String(v));
-            hits.push({ text: c.key + ":" + v,
+            hits.push({ text: c.key + ":" + fieldValue(String(v)),
                         count: meta ? -1 : dom.counts.get(lower) || 0,
                         whole: spells(lower, p), dim: meta });
           }
@@ -5215,16 +5906,6 @@
                          || b.count - a.count
                          || (a.text < b.text ? -1 : 1));
         const exact = hits.length > 0 && hits[0].whole;
-        // A SAVED VIEW SHAPES, so the narrowed door offers none: `offeredKeys'
-        // drops the three keys, and this drops the names that spell one.
-        if (!narrowing)
-          for (const v of savedViews()) {
-            if (out.length >= AC_MAX) break;
-            const name = String(v.name || "");
-            if (!name.toLowerCase().startsWith(p)) continue;
-            out.push({ text: VIEW_KEY + ":" + name, count: -1, full: true, dim: false,
-                       aside: v.query ? String(v.query) : undefined });
-          }
         if (exact) {
           const top = hits.shift();
           out.push({ text: top.text, count: top.count, full: true, dim: top.dim });
@@ -5255,7 +5936,7 @@
                        count: -1, full: true, dim: false });
           }
         }
-        const spelled = exact || keys.some((k) => k.toLowerCase() === p);
+        const spelled = terms.length > 0 || exact || keys.some((k) => k.toLowerCase() === p);
         out.splice(spelled ? 1 : 0, 0, literalOffer(st.prefix));
         if (out.length > AC_MAX) out.pop();
         return out;
@@ -5290,8 +5971,8 @@
       let whole = null;
       for (const v of domain) {
         if (whole && out.length >= AC_MAX) break;
-        const lower = String(v).toLowerCase(), text = head + String(v);
-        if (carried && carried.has(meant(text.toLowerCase()))) continue;
+        const lower = String(v).toLowerCase(), raw = head + String(v), text = fieldValue(raw);
+        if (carried && carried.has(meant(raw.toLowerCase()))) continue;
         if (!opensWith(lower, p2)) continue;
         // THE DOMAIN COUNTS ROWS SPELLING A CELL, where `>=D' serves rows that
         // spell something else — so an offer behind a head prints no count
@@ -5341,6 +6022,9 @@
       }
       return out;
     }
+
+    /** @param {string} text @returns {string} */
+    const fieldValue = text => /[\s&]/.test(text) ? `"${text}"` : text;
 
     /**
      * The literal offer: what was typed, as a free-text token.  DRAWN quoted,
@@ -5459,14 +6143,6 @@
       const caret = t.start + ins.length;
       if (input.setSelectionRange) input.setSelectionRange(caret, caret);
       armFilter();
-      const selected = asToken(item.text);
-      if (stage === "view" || (stage === "key" && selected && selected.key === VIEW_KEY)) {
-        if (debounce) { clearTimeout(debounce); debounce = 0; }
-        chipUp(true);
-        handOver();
-        deliver();
-        return;
-      }
       openAc();          // a key opens its values; a finished value closes the list
     }
 
@@ -5483,7 +6159,7 @@
     input.addEventListener("blur", () => {
       closeAc();
       endNarrow();           // the session is the box's; one owner for the flag
-      if (dock === "strip" && !o.persistentFilter) root.classList.remove("tv-typing");
+      if (dock === "strip") root.classList.remove("tv-typing");
     });
 
     /**
@@ -5498,10 +6174,17 @@
     }
 
     input.addEventListener("keydown", (e) => {
+      if (definition?.filter?.kind === "match" && matchKey(e)) return;
       // A consumer may give its filter a row cursor of its own. Ask before the
       // completion list claims arrows and C-n/C-p, since those keys mean row
       // movement in a chooser even while its narrowing field has focus.
       if (o.onFilterKey && o.onFilterKey(e)) {
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
+      if (e.key === " " && !e.ctrlKey && !e.altKey && !e.metaKey
+          && normalizeWordNegation()) {
         e.preventDefault();
         e.stopPropagation();
         return;
@@ -5632,6 +6315,10 @@
 
     // streaming: setQuery seeds chips and delivers nothing — docs/web-renderer.org
     function seedQuery(q) {
+      if (definition?.filter?.kind === "match") {
+        chips.length = 0; input.value = q; lastQuery = q; state.filter = q;
+        dropOrder(); renderChips(); return;
+      }
       chips.length = 0;
       if (typeof q === "string" && q.trim())
         for (const t of parseQuery(q, queryKeys())) pushChip(q.slice(t.start, t.end));
@@ -5675,10 +6362,192 @@
     };
     if (typeof addEventListener === "function") addEventListener("resize", onResize);
 
-    return {
+    const widgetDispatch = command => controller ? controller.dispatch(command) : {handled: false, ok: false};
+    const updateWidget = frame => controller ? controller.update(frame) : {ok: false, reason: "definition"};
+    const resetWidget = next => controller ? controller.reset(next) : {ok: false, reason: "definition"};
+    const widgetState = () => controller?.state();
+    const snapshotWidget = () => controller ? controller.snapshot() : renderSnapshot();
+    const restoreWidget = kept => controller ? controller.restore(kept) : {ok: false, reason: "definition"};
+    const leaveState = () => controller ? controller.leaveState() : cellEdit ? "dirty" : "clean";
+    const readSource = () => controller?.read();
+    const editorKey = event => controller?.editorKey(event) || false;
+    const commitWidgetEdit = () => controller?.commit();
+    function cellContext(row, column) {
+      return {row, column, value: row?.cells?.[column?.key], producer: !!row?.producer, dark};
+    }
+    function widgetKey(event) {
+      if (event.defaultPrevented) return;
+      const key = host.key ? host.key(event) : defaultKey(event);
+      const result = widgetDispatch({type: "key", key, event});
+      if (result.handled) event.preventDefault();
+    }
+    function defaultKey(event) {
+      if (event.key === "Enter") return "RET";
+      if (event.key === "Escape") return "ESC";
+      if (event.key === "Backspace") return "DEL";
+      if (event.ctrlKey) return `C-${event.key}`;
+      return event.key;
+    }
+    function matchInput(event) {
+      if (controller?.filterInput(input.value)) event.stopImmediatePropagation();
+    }
+    function matchKey(event) { return controller?.filterKey(event) || false; }
+    function renderSnapshot() {
+      const editing = /** @type {any} */ (cellEdit);
+      return {id: definition?.id || null, schema: columns().map(column => column.key),
+        point: {id: state.selected, column: state.selCol === null ? null : columns()[state.selCol]?.key || null},
+        query: lastQuery, filter: {open: filtering(), value: input.value, start: input.selectionStart, end: input.selectionEnd, direction: input.selectionDirection},
+        sort: api.getSort(), marks: [...markSet.ids], flags: [...flagSet.ids], page, continuous,
+        scroll: {top: scroll.scrollTop, left: scroll.scrollLeft},
+        editor: editing ? {id: editing.id, kind: editing.kind, column: keyOf(editing.col), value: readEditorValue(), raw: editing.raw, basis: editing.basis,
+          start: editing.input.selectionStart ?? null, end: editing.input.selectionEnd ?? null} : undefined};
+    }
+    function restoreRender(kept) {
+      seedQuery(kept.query);
+      stated = normalizeSort(kept.sort); state.sortKeys = stated;
+      markSet.ids.clear(); for (const id of kept.marks) markSet.ids.add(id);
+      flagSet.ids.clear(); for (const id of kept.flags) flagSet.ids.add(id);
+      page = kept.page; continuous = kept.continuous;
+      state.selected = kept.point.id;
+      state.selCol = kept.point.column === null ? null : columns().findIndex(column => column.key === kept.point.column);
+      clearTexts(); dropSorted(); renderRows(true);
+      scroll.scrollTop = kept.scroll.top; scroll.scrollLeft = kept.scroll.left;
+      input.value = kept.filter.value;
+      renderNegation();
+      if (kept.filter.open && activeWidget()) openFilter({narrow: true});
+      if (input.setSelectionRange) input.setSelectionRange(kept.filter.start, kept.filter.end, kept.filter.direction || undefined);
+      if (kept.editor && (kept.editor.kind === "header" || kept.editor.id && state.rows.some(row => row.id === kept.editor.id))) {
+        const at = columns().findIndex(column => column.key === kept.editor.column);
+        if (kept.editor.kind === "header") editHeader(at); else editCell(kept.editor.id, at);
+        if (cellEdit) {
+          const editing = /** @type {any} */ (cellEdit);
+          if (editing.custom?.setValue) editing.custom.setValue(kept.editor.value); else editing.input.value = kept.editor.value;
+          editing.raw = kept.editor.raw; editing.basis = kept.editor.basis;
+          editing.input.setSelectionRange?.(kept.editor.start, kept.editor.end);
+        }
+      }
+    }
+    function configureRender(next) {
+      definition = next;
+      sourceTotal = null;
+      marks = !!next.marks; flags = !!next.flaggedAction;
+      wrapRows = !!next.layout?.wrapRows;
+      if (next.source.kind === "remote") o.onFilter = () => readSource();
+      else delete o.onFilter;
+      api.setView(definitionView(next));
+      if (next.filter?.initialQuery || next.presentation?.initialQuery) seedQuery(next.filter?.initialQuery || next.presentation?.initialQuery);
+      clearTexts(); dropSorted(); renderRows(true);
+      const first = api.getVisible().find(standing); if (first) api.select(first.id);
+    }
+    function applyRender(frame) {
+      if (frame.total !== undefined) sourceTotal = frame.total;
+      if (frame.kind === "patch") { api.applyDelta(frame.ops); return; }
+      if (frame.columns) {
+        const editor = /** @type {any} */ (cellEdit);
+        const key = editor ? keyOf(editor.col) : null;
+        const pointKey = state.selCol === null ? null : keyOf(state.selCol);
+        const old = columns();
+        const geometryChanged = old.length !== frame.columns.length || frame.columns.some((column, index) => {
+          const was = old[index];
+          return !was || ["key", "header", "type", "align", "sortable", "multi", "minWidthCh", "widthPx"].some(field => was[field] !== column[field]);
+        });
+        state.view.columns = definitionColumns(frame.columns);
+        if (editor) editor.col = columns().findIndex(column => column.key === key);
+        state.selCol = pointKey === null ? null : columns().findIndex(column => column.key === pointKey);
+        if (geometryChanged) { widths = null; clearTexts(); renderHead(); }
+      }
+      if (frame.actions) state.view.actions = frame.actions.map(action => ({command: action.id, key: action.keys?.[0], label: action.label || action.id}));
+      if (frame.title !== undefined) { state.view.title = frame.title; titleEl.textContent = frame.title; }
+      // A NEW QUESTION fits its own answer; a refresh of the same one keeps the widths.
+      if (frame.refit) widths = null;
+      api.setRows(frame.rows);
+    }
+    function createWidgetController() {
+      const legacy = !definition;
+      const configured = definition || {id: "legacy", columns: state.view.columns, source: {kind: "local", rows: state.rows},
+        actions: actions().map(action => ({id: action.command, keys: action.key ? [action.key] : [], targets: "point", run: request => {
+          const row = state.rows.find(candidate => candidate.id === request.ids[0]);
+          if (row && o.onAction) o.onAction(action.command, row.id, row);
+        }})), marks, presentation: o};
+      const nativeHost = Object.assign({}, host, {
+        active: () => !dead && !suspended && (!host.active || host.active()),
+        changed: observed => {
+          if (host.changed) host.changed(observed);
+          root.dispatchEvent(new CustomEvent("tableview-state", {detail: observed}));
+        },
+      });
+      const adapter = {
+        rows: () => state.rows,
+        visible: () => shownRows(),
+        dark: () => dark,
+        columns,
+        point: () => ({id: state.selected, col: state.selCol}),
+        query: () => lastQuery,
+        filter: () => ({open: filtering(), value: input.value, start: input.selectionStart, end: input.selectionEnd, direction: input.selectionDirection}),
+        editor: () => cellEdit ? Object.assign({}, openCell(), {kind: cellEdit.kind,
+          row: /** @type {any} */ (cellEdit).row || state.rows.find(row => row.id === cellEdit.id) || null,
+          basis: /** @type {any} */ (cellEdit).basis, contract: /** @type {any} */ (cellEdit).contract}) : null,
+        marked: () => [...markSet.ids], flagged: () => [...flagSet.ids],
+        select: selectRow, move: selectStep,
+        setQuery: value => { seedQuery(value); if (!o.onFilter) { state.filter = lastQuery; dropOrder(); renderRows(true); } },
+        openFilter: narrow => openFilter({narrow}), closeFilter,
+        edit: (id, key, kind = "cell") => kind === "header" ? editHeader(columns().findIndex(column => column.key === key)) : editCell(id, columns().findIndex(column => column.key === key)),
+        matchValue: (value, literal) => {
+          if (input.value !== value) input.value = value;
+          lastQuery = value; state.filter = value;
+          state.rows = state.rows.filter(row => !row.custom);
+          if (literal) state.rows.unshift(literal);
+          clearTexts(); dropSorted(); renderRows(true); renderNegation();
+        },
+        writeEditor: value => {
+          const editing = /** @type {any} */ (cellEdit);
+          if (editing?.custom?.setValue) editing.custom.setValue(value);
+          else if (editing) editing.input.value = value;
+        },
+        closeEditor: closeCellEditor,
+        editStatus: pending => {
+          if (cellEdit) {
+            cellEdit.input.readOnly = pending;
+            cellEdit.input.setAttribute("aria-busy", String(pending));
+            cellEdit.input.dataset.tvPending = String(pending);
+          }
+        },
+        editBasis: basis => { if (cellEdit) /** @type {any} */ (cellEdit).basis = basis; },
+        editIdentity: id => { if (cellEdit) { cellEdit.id = id; const editing = /** @type {any} */ (cellEdit); if (editing.row) editing.row = Object.assign({}, editing.row, {id}); } },
+        setMarks: ids => { markSet.ids.clear(); for (const id of ids) markSet.ids.add(id); stampSelection(); renderHint(); },
+        setFlags: ids => { flagSet.ids.clear(); for (const id of ids) flagSet.ids.add(id); stampSelection(); renderHint(); },
+        apply: applyRender, configure: configureRender,
+        putProducer: row => {
+          const existing = state.rows.find(candidate => candidate.producer && candidate.id.startsWith("@table-producer:"));
+          if (row) api.upsertRow(row); else if (existing) api.deleteRow(existing.id);
+        },
+        sort: sortPromote,
+        page: step => turnTo(cursorPage() + step, step > 0 ? "first" : "last"),
+        pageSize: () => pageSize,
+        total: () => sourceTotal === null ? state.rows.length - (controller?.producer() ? 1 : 0) : sourceTotal,
+        // THE ENDS ARE PROGRESSIVE: on the page's end row the same press turns the page.
+        edge: last => {
+          const rows = shownRows().filter(standing), row = last ? rows[rows.length - 1] : rows[0];
+          if (!row) return false;
+          if (state.selected === row.id && pageSize && !continuous && turnTo(cursorPage() + (last ? 1 : -1), last ? "last" : "first")) {
+            const turned = shownRows().filter(standing), end = last ? turned[turned.length - 1] : turned[0];
+            return !!end && selectRow(end.id, state.selCol ?? undefined);
+          }
+          return selectRow(row.id, state.selCol ?? undefined);
+        },
+        dropQuery: stripLastToken, snapshot: renderSnapshot, restore: restoreRender,
+        focus: target => { if (target === "filter") openFilter({narrow: true}); else if (target === "editor" && cellEdit) cellEdit.input.focus(); else { input.blur(); root.focus(); } },
+        suspend: on => { suspended = on; if (!legacy) root.inert = on; }, status: message => api.setFooterStatus(message),
+      };
+      controller = createController(adapter, configured, nativeHost);
+    }
+
+    api = {
       el: root,
       /** @param {View} v */
       setView(v) {
+        if (dead) return;
+        closeCellEditor();
         state.view = v || { columns: [] };
         state.rows = (v && v.rows) ? v.rows.slice() : [];
         stated = normalizeSort(v && v.sort);
@@ -5714,6 +6583,7 @@
        * @param {Row[]} rows
        */
       setRows(rows) {
+        if (dead) return;
         const held = holdEditor();
         state.rows = (rows || []).slice().concat(ownRows());
         placeProducers(state.rows);
@@ -5725,6 +6595,7 @@
       },
       /** @param {Row} row */
       upsertRow(row) {
+        if (dead) return;
         const i = state.rows.findIndex((r) => r.id === row.id);
         if (i === -1) state.rows.push(row); else state.rows[i] = row;
         texts.delete(row.id);
@@ -5739,6 +6610,7 @@
       },
       /** @param {string} id */
       deleteRow(id) {
+        if (dead) return;
         // TAKEN BEFORE THE ROW GOES, so an editor standing in it is dropped
         // here rather than left holding a node the redraw has orphaned.
         const held = holdEditor();
@@ -5754,6 +6626,7 @@
       },
       /** @param {Op[]} ops */
       applyDelta(ops) {
+        if (dead) return;
         const held = holdEditor();
         for (const op of ops || []) {
           if (op.op === "reset") {
@@ -5769,7 +6642,11 @@
           // store's rows, and a phantom among them would shift every index.
           const win = paged().filter(standing);
           const store = (row) => state.rows.findIndex((r) => r.id === row.id);
-          if (op.op === "insert") {
+          if (op.op === "upsert") {
+            const at = store(op.row);
+            if (at === -1) state.rows.push(op.row); else state.rows[at] = op.row;
+            texts.delete(op.row.id);
+          } else if (op.op === "insert") {
             const at = op.index < win.length ? store(win[op.index]) : -1;
             state.rows.splice(at === -1 ? state.rows.length : at, 0, op.row);
             texts.delete(op.row.id);
@@ -5888,7 +6765,17 @@
        * gesture may not.
        */
       destroy() {
-        stopCaret();
+        if (dead) return;
+        dead = true;
+        controller?.destroy();
+        closeCellEditor();
+        for (const clean of renderedCleanups) clean();
+        renderedCleanups = [];
+        root.removeEventListener("keydown", widgetKey);
+        if (frameId) { if (typeof cancelAnimationFrame === "function") cancelAnimationFrame(frameId); else clearTimeout(frameId); }
+        if (fitWait) { if (typeof cancelAnimationFrame === "function") cancelAnimationFrame(fitWait); else clearTimeout(fitWait); }
+        if (debounce) clearTimeout(debounce);
+        cancelPress();
         if (themeQuery && themeQuery.removeEventListener)
           themeQuery.removeEventListener("change", onTheme);
         if (themeWatch) themeWatch.disconnect();
@@ -5934,7 +6821,9 @@
        */
       setSort(sort) { stated = normalizeSort(sort); applyChain(stated); },
       setFooterStatus(status) {
-        footerStatus = String(status == null ? "" : status).trim();
+        const next = String(status == null ? "" : status).trim();
+        if (footerStatus === next) return;
+        footerStatus = next;
         renderHint();
       },
       openFilter,
@@ -5969,10 +6858,41 @@
       getFlagged() { return flagSet.list(); },
       /** How many rows are flagged, the hidden ones counted. @returns {number} */
       flaggedCount() { return flagSet.ids.size; },
+      dispatch: widgetDispatch,
+      update: updateWidget,
+      reset: resetWidget,
+      state: widgetState,
+      snapshot: snapshotWidget,
+      restore: restoreWidget,
+      suspend() { controller?.suspend(); },
+      resume() { controller?.resume(); },
+      leaveState,
+      focus(target = "rows") {
+        if (!activeWidget()) return;
+        if (target === "filter") openFilter({narrow: true});
+        else if (target === "editor" && cellEdit) cellEdit.input.focus();
+        else { input.blur(); root.focus(); }
+      },
     };
+    createWidgetController();
+    if (definition) {
+      if (definition.filter?.kind === "match" && !restoreOptions?.restore) controller.filterInput(lastQuery, false);
+      root.classList.add("tv-widget");
+      root.style.fontSize = "13px";
+      root.style.fontFamily = 'var(--glance-mono, "JetBrains Mono", "Fira Code", "SF Mono", Menlo, Consolas, monospace)';
+      root.tabIndex = 0;
+      if (host.bindKeys) root.addEventListener("keydown", widgetKey);
+      input.addEventListener("input", matchInput, true);
+      if (restoreOptions?.restore) restoreWidget(restoreOptions.restore);
+      else if (definition.initialFocus === "filter") openFilter({narrow: true});
+      else if (!state.selected) { const first = api.getVisible().find(standing); if (first) api.select(first.id); }
+      if (definition.initialFocus !== "filter" && definition.initialFocus !== "none" && !restoreOptions?.restore && activeWidget()) root.focus();
+      Promise.resolve().then(() => readSource());
+    }
+    return api;
   }
 
-  const TableView = { mount, displayText, comparator, parseQuery };
+  const TableView = { mount, createController, displayText, comparator, parseQuery };
   root.TableView = TableView;
   // @ts-ignore -- optional CommonJS export (no @types/node dependency)
   if (typeof module !== "undefined" && module.exports) module.exports = TableView;

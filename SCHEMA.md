@@ -235,6 +235,8 @@ A renderer that stays live accepts, after the initial view:
 
 - `{ "op": "insert", "index": I, "row": Row }` — splice `row` in at window index `I`.
 - `{ "op": "delete", "index": I }` — drop the row at window index `I`.
+- `{ "op": "upsert", "row": Row }` — replace the loaded row with matching `id`,
+  else append it; keyed by identity, so it carries no window index.
 - `{ "op": "reset", "rows": array<Row> }` — replace the whole window.
 
 `I` counts in the **window** — the rows as displayed, after any renderer-local
