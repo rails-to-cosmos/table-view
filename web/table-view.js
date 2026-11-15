@@ -3761,9 +3761,9 @@
     function matches(r) { return !orderTest || orderTest(r); }
 
     /**
-     * Column widths.  Under the FILL POLICY the CELLS decide and a header
-     * widens nothing: a column of `[#A]' badges reads exactly as wide as
-     * `[#A]', a longer header ellipsizing into it.  A column holding no cell
+     * Column widths. Under the FILL POLICY cells and declared badges decide;
+     * headers widen nothing. A badge column reserves its widest choice before
+     * any row selects it, and a longer header ellipsizes into that width.  A column holding no cell
      * has only its header to measure.  Without a `title' column to fill, the
      * width is the widest cell or the header and its mark.
      *
@@ -3782,8 +3782,10 @@
       if (widths) return widths;
       const cols = columns(), chain = sortChain(), fill = fillColumn() !== -1;
       const multi = multiColumn(), rows = ordered();
-      /** The widest CELL each column holds, in characters; 0 where it holds none. */
-      const cell = cols.map(() => 0);
+      // Badge choices reserve space before a row changes to one of them.
+      const cell = cols.map(c => c.type === "badge"
+        ? (c.badges || []).reduce((width, badge) => Math.max(width, displayText(badge.value).length), 0)
+        : 0);
       for (const r of rows) {
         const t = rowText(r);
         for (let i = 0; i < cell.length; i++) {

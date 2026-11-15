@@ -87,6 +87,10 @@ Measured against a 12,674-headline Org corpus.
 - =TITLE_MIN= — the fill column's floor, taken by the table's =min-width= not
   the column, so a too-narrow window SCROLLS rather than crushing the title. 40
   chars shows 83% of the corpus's titles whole.
+- *Badge columns reserve their declared choices.* The fitted width includes
+  the widest badge palette value as well as loaded cells, within =COL_MAX=.
+  Selecting a longer known state then keeps both its pill and the existing
+  column width intact. Unused long choices reserve space from the start.
 - *A pill's ground is pixels, paid in pixels, +1px*: a badge column whose widest
   cell IS the badge needs the pill's real px ground plus a hair — a width lands
   on the engine's 1/64px grid and rounds DOWN, so an exact allowance is a
