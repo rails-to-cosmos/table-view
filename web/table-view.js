@@ -2439,8 +2439,9 @@
       const eligible = row => !row.producer && !row.custom && (!action?.eligible || action.eligible(row));
       const flags = new Set(a.flagged());
       if (all) {
+        const rows = definition.flaggedScope === "filtered" ? a.filtered?.() : dataRows();
+        if (!rows) return fail("filtered-rows-unavailable");
         flags.clear();
-        const rows = definition.flaggedScope === "filtered" && a.filtered ? a.filtered() : dataRows();
         for (const row of rows) if (eligible(row)) flags.add(row.id);
       } else {
         const id = a.point().id, row = dataRows().find(row => row.id === id);
