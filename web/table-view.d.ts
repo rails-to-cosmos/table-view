@@ -345,6 +345,7 @@ interface TableViewDefinition {
   actions?: TableViewActionDefinition[];
   activate?: {action: string} | {edit: string};
   flaggedAction?: string;
+  flaggedScope?: "filtered";
   create?: TableViewProducerDefinition | {action: string};
   sort?: TableViewSort | TableViewSort[];
   presentation?: TableViewMountOptions;
@@ -400,6 +401,7 @@ interface TableViewControllerEdit extends TableViewFrozenEdit {col: number; toke
 interface TableViewControllerAdapter {
   rows(): readonly TableViewRow[];
   visible?(): readonly TableViewRow[];
+  filtered?(): readonly TableViewRow[];
   columns(): readonly TableViewColumn[];
   point(): TableViewSelection;
   query(): string;

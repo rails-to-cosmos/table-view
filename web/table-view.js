@@ -2440,7 +2440,8 @@
       const flags = new Set(a.flagged());
       if (all) {
         flags.clear();
-        for (const row of dataRows()) if (eligible(row)) flags.add(row.id);
+        const rows = definition.flaggedScope === "filtered" && a.filtered ? a.filtered() : dataRows();
+        for (const row of rows) if (eligible(row)) flags.add(row.id);
       } else {
         const id = a.point().id, row = dataRows().find(row => row.id === id);
         if (!row) return fail("no-target");
@@ -6481,6 +6482,7 @@
       const adapter = {
         rows: () => state.rows,
         visible: () => shownRows(),
+        filtered: () => ordered(),
         dark: () => dark,
         columns,
         point: () => ({id: state.selected, col: state.selCol}),
