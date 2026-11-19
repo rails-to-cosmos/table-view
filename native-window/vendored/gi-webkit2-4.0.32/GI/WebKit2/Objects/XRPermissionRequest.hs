@@ -145,6 +145,7 @@ import qualified GHC.OverloadedLabels as OL
 import qualified GHC.Records as R
 import qualified Data.Word as DW
 import qualified Data.Int as DI
+import qualified Data.Bits as DB
 import qualified System.Posix.Types as SPT
 import qualified Foreign.C.Types as FCT
 
