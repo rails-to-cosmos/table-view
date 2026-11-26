@@ -97,7 +97,7 @@ pattern MINOR_VERSION = 54 :: Int32
 -- | Like 'GI.JavaScriptCore.Functions.getMicroVersion', but from the headers used at
 -- application compile time, rather than from the library linked
 -- against at application run time.
-pattern MICRO_VERSION = 2 :: Int32
+pattern MICRO_VERSION = 3 :: Int32
 
 -- | Like 'GI.JavaScriptCore.Functions.getMajorVersion', but from the headers used at
 -- application compile time, rather than from the library linked
